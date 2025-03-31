@@ -25,17 +25,13 @@ class Record extends $pb.GeneratedMessage {
     return result;
   }
   Record._() : super();
-  factory Record.fromBuffer($core.List<$core.int> i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Record.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory Record.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Record.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Record',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Record',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'value')
     ..hasRequiredFields = false;
 
@@ -46,8 +42,7 @@ class Record extends $pb.GeneratedMessage {
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
-  Record copyWith(void Function(Record) updates) =>
-      super.copyWith((message) => updates(message as Record)) as Record;
+  Record copyWith(void Function(Record) updates) => super.copyWith((message) => updates(message as Record)) as Record;
 
   $pb.BuilderInfo get info_ => _i;
 
@@ -56,8 +51,7 @@ class Record extends $pb.GeneratedMessage {
   Record createEmptyInstance() => create();
   static $pb.PbList<Record> createRepeated() => $pb.PbList<Record>();
   @$core.pragma('dart2js:noInline')
-  static Record getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Record>(create);
+  static Record getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Record>(create);
   static Record? _defaultInstance;
 
   @$pb.TagNumber(1)
@@ -85,17 +79,13 @@ class Number extends $pb.GeneratedMessage {
     return result;
   }
   Number._() : super();
-  factory Number.fromBuffer($core.List<$core.int> i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Number.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory Number.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Number.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Number',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Number',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'), createEmptyInstance: create)
     ..a<$core.int>(1, _omitFieldNames ? '' : 'value', $pb.PbFieldType.O3)
     ..hasRequiredFields = false;
 
@@ -106,8 +96,7 @@ class Number extends $pb.GeneratedMessage {
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
-  Number copyWith(void Function(Number) updates) =>
-      super.copyWith((message) => updates(message as Number)) as Number;
+  Number copyWith(void Function(Number) updates) => super.copyWith((message) => updates(message as Number)) as Number;
 
   $pb.BuilderInfo get info_ => _i;
 
@@ -116,8 +105,7 @@ class Number extends $pb.GeneratedMessage {
   Number createEmptyInstance() => create();
   static $pb.PbList<Number> createRepeated() => $pb.PbList<Number>();
   @$core.pragma('dart2js:noInline')
-  static Number getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Number>(create);
+  static Number getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Number>(create);
   static Number? _defaultInstance;
 
   @$pb.TagNumber(1)
@@ -137,17 +125,13 @@ class Number extends $pb.GeneratedMessage {
 class Empty extends $pb.GeneratedMessage {
   factory Empty() => create();
   Empty._() : super();
-  factory Empty.fromBuffer($core.List<$core.int> i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Empty.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory Empty.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Empty.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Empty',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Empty',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'), createEmptyInstance: create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('Using this can add significant overhead to your binary. '
@@ -157,8 +141,7 @@ class Empty extends $pb.GeneratedMessage {
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
-  Empty copyWith(void Function(Empty) updates) =>
-      super.copyWith((message) => updates(message as Empty)) as Empty;
+  Empty copyWith(void Function(Empty) updates) => super.copyWith((message) => updates(message as Empty)) as Empty;
 
   $pb.BuilderInfo get info_ => _i;
 
@@ -167,11 +150,9 @@ class Empty extends $pb.GeneratedMessage {
   Empty createEmptyInstance() => create();
   static $pb.PbList<Empty> createRepeated() => $pb.PbList<Empty>();
   @$core.pragma('dart2js:noInline')
-  static Empty getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Empty>(create);
+  static Empty getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Empty>(create);
   static Empty? _defaultInstance;
 }
 
 const _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
-const _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

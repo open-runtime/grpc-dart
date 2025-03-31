@@ -28,25 +28,19 @@ class TestService extends Service {
   String get $name => 'Test';
 
   Future<int> Function(ServiceCall call, Future<int> request)? unaryHandler;
-  Future<int> Function(ServiceCall call, Stream<int> request)?
-      clientStreamingHandler;
-  Stream<int> Function(ServiceCall call, Future<int> request)?
-      serverStreamingHandler;
-  Stream<int> Function(ServiceCall call, Stream<int> request)?
-      bidirectionalHandler;
+  Future<int> Function(ServiceCall call, Stream<int> request)? clientStreamingHandler;
+  Stream<int> Function(ServiceCall call, Future<int> request)? serverStreamingHandler;
+  Stream<int> Function(ServiceCall call, Stream<int> request)? bidirectionalHandler;
 
   TestService() {
     $addMethod(ServerHarness.createMethod('Unary', _unary, false, false));
-    $addMethod(ServerHarness.createMethod(
-        'ClientStreaming', _clientStreaming, true, false));
-    $addMethod(ServerHarness.createMethod(
-        'ServerStreaming', _serverStreaming, false, true));
-    $addMethod(ServerHarness.createMethod(
-        'Bidirectional', _bidirectional, true, true));
-    $addMethod(ServiceMethod<int, int>('RequestError', _bidirectional, true,
-        true, (List<int> value) => throw 'Failed', mockEncode));
-    $addMethod(ServiceMethod<int, int>('ResponseError', _bidirectional, true,
-        true, mockDecode, (int value) => throw 'Failed'));
+    $addMethod(ServerHarness.createMethod('ClientStreaming', _clientStreaming, true, false));
+    $addMethod(ServerHarness.createMethod('ServerStreaming', _serverStreaming, false, true));
+    $addMethod(ServerHarness.createMethod('Bidirectional', _bidirectional, true, true));
+    $addMethod(ServiceMethod<int, int>(
+        'RequestError', _bidirectional, true, true, (List<int> value) => throw 'Failed', mockEncode));
+    $addMethod(ServiceMethod<int, int>(
+        'ResponseError', _bidirectional, true, true, mockDecode, (int value) => throw 'Failed'));
   }
 
   Future<int> _unary(ServiceCall call, Future<int> request) {
@@ -114,8 +108,7 @@ class TestServerStream extends ServerTransportStream {
   bool get canPush => true;
 
   @override
-  ServerTransportStream push(List<Header> requestHeaders) =>
-      throw 'unimplemented';
+  ServerTransportStream push(List<Header> requestHeaders) => throw 'unimplemented';
 }
 
 class ServerHarness extends _Harness {
@@ -125,10 +118,9 @@ class ServerHarness extends _Harness {
         interceptors: <Interceptor>[interceptor.call],
       );
 
-  static ServiceMethod<int, int> createMethod(String name,
-      Function methodHandler, bool clientStreaming, bool serverStreaming) {
-    return ServiceMethod<int, int>(name, methodHandler, clientStreaming,
-        serverStreaming, mockDecode, mockEncode);
+  static ServiceMethod<int, int> createMethod(
+      String name, Function methodHandler, bool clientStreaming, bool serverStreaming) {
+    return ServiceMethod<int, int>(name, methodHandler, clientStreaming, serverStreaming, mockDecode, mockEncode);
   }
 }
 
@@ -183,10 +175,8 @@ abstract class _Harness {
       handlers[handlerIndex++](message);
     }
 
-    fromServer.stream.listen(
-        expectAsync1(handleMessages, count: handlers.length),
-        onError: expectAsync1((dynamic _) {}, count: 0),
-        onDone: expectAsync0(() {}, count: 1));
+    fromServer.stream.listen(expectAsync1(handleMessages, count: handlers.length),
+        onError: expectAsync1((dynamic _) {}, count: 0), onDone: expectAsync0(() {}, count: 1));
   }
 
   void expectErrorResponse(int status, String message) {
@@ -194,18 +184,11 @@ abstract class _Harness {
   }
 
   void expectTrailingErrorResponse(int status, String message) {
-    setupTest([
-      headerValidator(),
-      errorTrailerValidator(status, message, validateHeader: false)
-    ]);
+    setupTest([headerValidator(), errorTrailerValidator(status, message, validateHeader: false)]);
   }
 
-  void sendRequestHeader(String path,
-      {String authority = 'test',
-      Map<String, String>? metadata,
-      Duration? timeout}) {
-    final headers = Http2ClientConnection.createCallHeaders(
-        true, authority, path, timeout, metadata, null,
+  void sendRequestHeader(String path, {String authority = 'test', Map<String, String>? metadata, Duration? timeout}) {
+    final headers = Http2ClientConnection.createCallHeaders(true, authority, path, timeout, metadata, null,
         userAgent: 'dart-grpc/1.0.0 test');
     toServer.add(HeadersStreamMessage(headers));
   }

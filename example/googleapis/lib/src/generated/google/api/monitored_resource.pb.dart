@@ -65,19 +65,15 @@ class MonitoredResourceDescriptor extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'MonitoredResourceDescriptor',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.api'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MonitoredResourceDescriptor',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.api'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'type')
     ..aOS(2, _omitFieldNames ? '' : 'displayName')
     ..aOS(3, _omitFieldNames ? '' : 'description')
-    ..pc<$0.LabelDescriptor>(
-        4, _omitFieldNames ? '' : 'labels', $pb.PbFieldType.PM,
+    ..pc<$0.LabelDescriptor>(4, _omitFieldNames ? '' : 'labels', $pb.PbFieldType.PM,
         subBuilder: $0.LabelDescriptor.create)
     ..aOS(5, _omitFieldNames ? '' : 'name')
-    ..e<$2.LaunchStage>(
-        7, _omitFieldNames ? '' : 'launchStage', $pb.PbFieldType.OE,
+    ..e<$2.LaunchStage>(7, _omitFieldNames ? '' : 'launchStage', $pb.PbFieldType.OE,
         defaultOrMaker: $2.LaunchStage.LAUNCH_STAGE_UNSPECIFIED,
         valueOf: $2.LaunchStage.valueOf,
         enumValues: $2.LaunchStage.values)
@@ -86,28 +82,22 @@ class MonitoredResourceDescriptor extends $pb.GeneratedMessage {
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
       'Will be removed in next major version')
-  MonitoredResourceDescriptor clone() =>
-      MonitoredResourceDescriptor()..mergeFromMessage(this);
+  MonitoredResourceDescriptor clone() => MonitoredResourceDescriptor()..mergeFromMessage(this);
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
-  MonitoredResourceDescriptor copyWith(
-          void Function(MonitoredResourceDescriptor) updates) =>
-      super.copyWith(
-              (message) => updates(message as MonitoredResourceDescriptor))
-          as MonitoredResourceDescriptor;
+  MonitoredResourceDescriptor copyWith(void Function(MonitoredResourceDescriptor) updates) =>
+      super.copyWith((message) => updates(message as MonitoredResourceDescriptor)) as MonitoredResourceDescriptor;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static MonitoredResourceDescriptor create() =>
-      MonitoredResourceDescriptor._();
+  static MonitoredResourceDescriptor create() => MonitoredResourceDescriptor._();
   MonitoredResourceDescriptor createEmptyInstance() => create();
-  static $pb.PbList<MonitoredResourceDescriptor> createRepeated() =>
-      $pb.PbList<MonitoredResourceDescriptor>();
+  static $pb.PbList<MonitoredResourceDescriptor> createRepeated() => $pb.PbList<MonitoredResourceDescriptor>();
   @$core.pragma('dart2js:noInline')
-  static MonitoredResourceDescriptor getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<MonitoredResourceDescriptor>(create);
+  static MonitoredResourceDescriptor getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MonitoredResourceDescriptor>(create);
   static MonitoredResourceDescriptor? _defaultInstance;
 
   /// Required. The monitored resource type. For example, the type
@@ -230,14 +220,11 @@ class MonitoredResource extends $pb.GeneratedMessage {
   factory MonitoredResource.fromBuffer($core.List<$core.int> i,
           [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory MonitoredResource.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory MonitoredResource.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'MonitoredResource',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.api'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MonitoredResource',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.api'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'type')
     ..m<$core.String, $core.String>(2, _omitFieldNames ? '' : 'labels',
         entryClassName: 'MonitoredResource.LabelsEntry',
@@ -254,19 +241,17 @@ class MonitoredResource extends $pb.GeneratedMessage {
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
   MonitoredResource copyWith(void Function(MonitoredResource) updates) =>
-      super.copyWith((message) => updates(message as MonitoredResource))
-          as MonitoredResource;
+      super.copyWith((message) => updates(message as MonitoredResource)) as MonitoredResource;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
   static MonitoredResource create() => MonitoredResource._();
   MonitoredResource createEmptyInstance() => create();
-  static $pb.PbList<MonitoredResource> createRepeated() =>
-      $pb.PbList<MonitoredResource>();
+  static $pb.PbList<MonitoredResource> createRepeated() => $pb.PbList<MonitoredResource>();
   @$core.pragma('dart2js:noInline')
-  static MonitoredResource getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<MonitoredResource>(create);
+  static MonitoredResource getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MonitoredResource>(create);
   static MonitoredResource? _defaultInstance;
 
   /// Required. The monitored resource type. This field must match
@@ -319,16 +304,12 @@ class MonitoredResourceMetadata extends $pb.GeneratedMessage {
   factory MonitoredResourceMetadata.fromBuffer($core.List<$core.int> i,
           [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory MonitoredResourceMetadata.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory MonitoredResourceMetadata.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'MonitoredResourceMetadata',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.api'),
-      createEmptyInstance: create)
-    ..aOM<$1.Struct>(1, _omitFieldNames ? '' : 'systemLabels',
-        subBuilder: $1.Struct.create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MonitoredResourceMetadata',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.api'), createEmptyInstance: create)
+    ..aOM<$1.Struct>(1, _omitFieldNames ? '' : 'systemLabels', subBuilder: $1.Struct.create)
     ..m<$core.String, $core.String>(2, _omitFieldNames ? '' : 'userLabels',
         entryClassName: 'MonitoredResourceMetadata.UserLabelsEntry',
         keyFieldType: $pb.PbFieldType.OS,
@@ -339,26 +320,22 @@ class MonitoredResourceMetadata extends $pb.GeneratedMessage {
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
       'Will be removed in next major version')
-  MonitoredResourceMetadata clone() =>
-      MonitoredResourceMetadata()..mergeFromMessage(this);
+  MonitoredResourceMetadata clone() => MonitoredResourceMetadata()..mergeFromMessage(this);
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
-  MonitoredResourceMetadata copyWith(
-          void Function(MonitoredResourceMetadata) updates) =>
-      super.copyWith((message) => updates(message as MonitoredResourceMetadata))
-          as MonitoredResourceMetadata;
+  MonitoredResourceMetadata copyWith(void Function(MonitoredResourceMetadata) updates) =>
+      super.copyWith((message) => updates(message as MonitoredResourceMetadata)) as MonitoredResourceMetadata;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
   static MonitoredResourceMetadata create() => MonitoredResourceMetadata._();
   MonitoredResourceMetadata createEmptyInstance() => create();
-  static $pb.PbList<MonitoredResourceMetadata> createRepeated() =>
-      $pb.PbList<MonitoredResourceMetadata>();
+  static $pb.PbList<MonitoredResourceMetadata> createRepeated() => $pb.PbList<MonitoredResourceMetadata>();
   @$core.pragma('dart2js:noInline')
-  static MonitoredResourceMetadata getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<MonitoredResourceMetadata>(create);
+  static MonitoredResourceMetadata getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MonitoredResourceMetadata>(create);
   static MonitoredResourceMetadata? _defaultInstance;
 
   ///  Output only. Values for predefined system metadata labels.
@@ -391,5 +368,4 @@ class MonitoredResourceMetadata extends $pb.GeneratedMessage {
 }
 
 const _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
-const _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

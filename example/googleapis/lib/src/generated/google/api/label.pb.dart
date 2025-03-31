@@ -40,17 +40,13 @@ class LabelDescriptor extends $pb.GeneratedMessage {
   factory LabelDescriptor.fromBuffer($core.List<$core.int> i,
           [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory LabelDescriptor.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory LabelDescriptor.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'LabelDescriptor',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.api'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'LabelDescriptor',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.api'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'key')
-    ..e<LabelDescriptor_ValueType>(
-        2, _omitFieldNames ? '' : 'valueType', $pb.PbFieldType.OE,
+    ..e<LabelDescriptor_ValueType>(2, _omitFieldNames ? '' : 'valueType', $pb.PbFieldType.OE,
         defaultOrMaker: LabelDescriptor_ValueType.STRING,
         valueOf: LabelDescriptor_ValueType.valueOf,
         enumValues: LabelDescriptor_ValueType.values)
@@ -65,19 +61,17 @@ class LabelDescriptor extends $pb.GeneratedMessage {
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
   LabelDescriptor copyWith(void Function(LabelDescriptor) updates) =>
-      super.copyWith((message) => updates(message as LabelDescriptor))
-          as LabelDescriptor;
+      super.copyWith((message) => updates(message as LabelDescriptor)) as LabelDescriptor;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
   static LabelDescriptor create() => LabelDescriptor._();
   LabelDescriptor createEmptyInstance() => create();
-  static $pb.PbList<LabelDescriptor> createRepeated() =>
-      $pb.PbList<LabelDescriptor>();
+  static $pb.PbList<LabelDescriptor> createRepeated() => $pb.PbList<LabelDescriptor>();
   @$core.pragma('dart2js:noInline')
-  static LabelDescriptor getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<LabelDescriptor>(create);
+  static LabelDescriptor getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LabelDescriptor>(create);
   static LabelDescriptor? _defaultInstance;
 
   /// The label key.
@@ -121,5 +115,4 @@ class LabelDescriptor extends $pb.GeneratedMessage {
 }
 
 const _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
-const _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

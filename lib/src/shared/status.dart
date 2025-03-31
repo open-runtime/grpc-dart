@@ -182,8 +182,7 @@ class GrpcError implements Exception {
   final List<GeneratedMessage>? details;
 
   /// Custom error code.
-  const GrpcError.custom(this.code,
-      [this.message, this.details, this.rawResponse, this.trailers = const {}]);
+  const GrpcError.custom(this.code, [this.message, this.details, this.rawResponse, this.trailers = const {}]);
 
   /// The operation completed successfully.
   const GrpcError.ok([this.message, this.details, this.rawResponse])
@@ -207,8 +206,7 @@ class GrpcError implements Exception {
   /// [failedPrecondition]. [invalidArgument] indicates arguments that are
   /// problematic regardless of the state of the system (e.g., a malformed file
   /// name).
-  const GrpcError.invalidArgument(
-      [this.message, this.details, this.rawResponse])
+  const GrpcError.invalidArgument([this.message, this.details, this.rawResponse])
       : trailers = const {},
         code = StatusCode.invalidArgument;
 
@@ -217,8 +215,7 @@ class GrpcError implements Exception {
   /// operation has completed successfully. For example, a successful response
   /// from a server could have been delayed long enough for the deadline to
   /// expire.
-  const GrpcError.deadlineExceeded(
-      [this.message, this.details, this.rawResponse])
+  const GrpcError.deadlineExceeded([this.message, this.details, this.rawResponse])
       : trailers = const {},
         code = StatusCode.deadlineExceeded;
 
@@ -238,15 +235,13 @@ class GrpcError implements Exception {
   /// some resource (use [resourceExhausted] instead for those errors).
   /// [permissionDenied] must not be used if the caller cannot be identified
   /// (use [unauthenticated] instead for those errors).
-  const GrpcError.permissionDenied(
-      [this.message, this.details, this.rawResponse])
+  const GrpcError.permissionDenied([this.message, this.details, this.rawResponse])
       : trailers = const {},
         code = StatusCode.permissionDenied;
 
   /// Some resource has been exhausted, perhaps a per-user quota, or perhaps the
   /// entire file system is out of space.
-  const GrpcError.resourceExhausted(
-      [this.message, this.details, this.rawResponse])
+  const GrpcError.resourceExhausted([this.message, this.details, this.rawResponse])
       : trailers = const {},
         code = StatusCode.resourceExhausted;
 
@@ -264,8 +259,7 @@ class GrpcError implements Exception {
   ///     because the directory is non-empty, [failedPrecondition] should be
   ///     returned since the client should not retry unless they have first
   ///     fixed up the directory by deleting files from it.
-  const GrpcError.failedPrecondition(
-      [this.message, this.details, this.rawResponse])
+  const GrpcError.failedPrecondition([this.message, this.details, this.rawResponse])
       : trailers = const {},
         code = StatusCode.failedPrecondition;
 
@@ -303,9 +297,7 @@ class GrpcError implements Exception {
   /// Internal errors. Means some invariants expected by underlying system has
   /// been broken. If you see one of these errors, something is very broken.
   // TODO(sigurdm): This should probably not be an [Exception].
-  const GrpcError.internal(
-      [this.message, this.details, this.rawResponse, this.trailers])
-      : code = StatusCode.internal;
+  const GrpcError.internal([this.message, this.details, this.rawResponse, this.trailers]) : code = StatusCode.internal;
 
   /// The service is currently unavailable.  This is a most likely a transient
   /// condition and may be corrected by retrying with a backoff.
@@ -323,14 +315,12 @@ class GrpcError implements Exception {
 
   /// The request does not have valid authentication credentials for the
   /// operation.
-  const GrpcError.unauthenticated(
-      [this.message, this.details, this.rawResponse])
+  const GrpcError.unauthenticated([this.message, this.details, this.rawResponse])
       : trailers = const {},
         code = StatusCode.unauthenticated;
 
   /// Given a status code, return the name
-  String get codeName =>
-      StatusCode.name(code) ?? StatusCode.name(StatusCode.unknown)!;
+  String get codeName => StatusCode.name(code) ?? StatusCode.name(StatusCode.unknown)!;
 
   @override
   bool operator ==(other) {
@@ -342,8 +332,7 @@ class GrpcError implements Exception {
   int get hashCode => code.hashCode ^ (message?.hashCode ?? 17);
 
   @override
-  String toString() =>
-      'gRPC Error (code: $code, codeName: $codeName, message: $message, '
+  String toString() => 'gRPC Error (code: $code, codeName: $codeName, message: $message, '
       'details: $details, rawResponse: $rawResponse, trailers: $trailers)';
 }
 
@@ -404,19 +393,13 @@ GeneratedMessage parseErrorDetailsFromAny(Any any) {
 ///     Status & Status-Message to propagate to the application layer when this
 ///     occurs.
 ///
-void validateHttpStatusAndContentType(
-    int? httpStatus, Map<String, String> headers,
-    {Object? rawResponse}) {
+void validateHttpStatusAndContentType(int? httpStatus, Map<String, String> headers, {Object? rawResponse}) {
   if (httpStatus == null) {
-    throw GrpcError.unknown(
-        'HTTP response status is unknown', null, rawResponse);
+    throw GrpcError.unknown('HTTP response status is unknown', null, rawResponse);
   }
 
   if (httpStatus == 0) {
-    throw GrpcError.unknown(
-        'HTTP request completed without a status (potential CORS issue)',
-        null,
-        rawResponse);
+    throw GrpcError.unknown('HTTP request completed without a status (potential CORS issue)', null, rawResponse);
   }
 
   final status = StatusCode.fromHttpStatus(httpStatus);
@@ -430,8 +413,7 @@ void validateHttpStatusAndContentType(
     if (error == null || error.code == StatusCode.unknown) {
       throw GrpcError.custom(
         status,
-        error?.message ??
-            'HTTP connection completed with $httpStatus instead of 200',
+        error?.message ?? 'HTTP connection completed with $httpStatus instead of 200',
         error?.details,
         rawResponse,
         error?.trailers ?? toCustomTrailers(headers),
@@ -447,8 +429,7 @@ void validateHttpStatusAndContentType(
 
   // Check if content-type header indicates a supported format.
   if (!_validContentTypePrefix.any(contentType.startsWith)) {
-    throw GrpcError.unknown(
-        'unsupported content-type ($contentType)', null, rawResponse);
+    throw GrpcError.unknown('unsupported content-type ($contentType)', null, rawResponse);
   }
 }
 
@@ -462,9 +443,7 @@ GrpcError? grpcErrorDetailsFromTrailers(Map<String, String> trailers) {
     return GrpcError.custom(
       statusCode,
       message,
-      statusDetails == null
-          ? const <GeneratedMessage>[]
-          : decodeStatusDetails(statusDetails),
+      statusDetails == null ? const <GeneratedMessage>[] : decodeStatusDetails(statusDetails),
       null,
       toCustomTrailers(trailers),
     );
@@ -486,11 +465,7 @@ const _statusDetailsHeader = 'grpc-status-details-bin';
 /// All accepted content-type header's prefix. We are being more permissive
 /// then gRPC and gRPC-Web specifications because some of the services
 /// return slightly different content-types.
-const _validContentTypePrefix = [
-  'application/grpc',
-  'application/json+protobuf',
-  'application/x-protobuf'
-];
+const _validContentTypePrefix = ['application/grpc', 'application/json+protobuf', 'application/x-protobuf'];
 
 /// Given a string of base64url data, attempt to parse a Status object from it.
 /// Once parsed, it will then map each detail item and attempt to parse it into
@@ -504,8 +479,7 @@ const _validContentTypePrefix = [
 @visibleForTesting
 List<GeneratedMessage> decodeStatusDetails(String data) {
   try {
-    final parsedStatus = Status.fromBuffer(
-        base64Url.decode(data.padRight((data.length + 3) & ~3, '=')));
+    final parsedStatus = Status.fromBuffer(base64Url.decode(data.padRight((data.length + 3) & ~3, '=')));
     return parsedStatus.details.map(parseErrorDetailsFromAny).toList();
   } catch (e) {
     return <GeneratedMessage>[];

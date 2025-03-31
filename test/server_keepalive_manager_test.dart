@@ -71,9 +71,7 @@ void main() {
       expect(goAway, true);
     });
   });
-  test(
-      'Sending too many pings without data doesn`t kill connection if the server doesn`t care',
-      () async {
+  test('Sending too many pings without data doesn`t kill connection if the server doesn`t care', () async {
     FakeAsync().run((async) {
       initServer(ServerKeepAliveOptions(
         maxBadPings: null,

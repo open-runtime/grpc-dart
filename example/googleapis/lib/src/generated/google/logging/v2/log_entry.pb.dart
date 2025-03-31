@@ -99,11 +99,9 @@ class LogEntry extends $pb.GeneratedMessage {
     return result;
   }
   LogEntry._() : super();
-  factory LogEntry.fromBuffer($core.List<$core.int> i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory LogEntry.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory LogEntry.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory LogEntry.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
   static const $core.Map<$core.int, LogEntry_Payload> _LogEntry_PayloadByTag = {
@@ -112,46 +110,32 @@ class LogEntry extends $pb.GeneratedMessage {
     6: LogEntry_Payload.jsonPayload,
     0: LogEntry_Payload.notSet
   };
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'LogEntry',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'LogEntry',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..oo(0, [2, 3, 6])
-    ..aOM<$0.Any>(2, _omitFieldNames ? '' : 'protoPayload',
-        subBuilder: $0.Any.create)
+    ..aOM<$0.Any>(2, _omitFieldNames ? '' : 'protoPayload', subBuilder: $0.Any.create)
     ..aOS(3, _omitFieldNames ? '' : 'textPayload')
     ..aOS(4, _omitFieldNames ? '' : 'insertId')
-    ..aOM<$1.Struct>(6, _omitFieldNames ? '' : 'jsonPayload',
-        subBuilder: $1.Struct.create)
-    ..aOM<$2.HttpRequest>(7, _omitFieldNames ? '' : 'httpRequest',
-        subBuilder: $2.HttpRequest.create)
-    ..aOM<$3.MonitoredResource>(8, _omitFieldNames ? '' : 'resource',
-        subBuilder: $3.MonitoredResource.create)
-    ..aOM<$4.Timestamp>(9, _omitFieldNames ? '' : 'timestamp',
-        subBuilder: $4.Timestamp.create)
-    ..e<$5.LogSeverity>(
-        10, _omitFieldNames ? '' : 'severity', $pb.PbFieldType.OE,
-        defaultOrMaker: $5.LogSeverity.DEFAULT,
-        valueOf: $5.LogSeverity.valueOf,
-        enumValues: $5.LogSeverity.values)
+    ..aOM<$1.Struct>(6, _omitFieldNames ? '' : 'jsonPayload', subBuilder: $1.Struct.create)
+    ..aOM<$2.HttpRequest>(7, _omitFieldNames ? '' : 'httpRequest', subBuilder: $2.HttpRequest.create)
+    ..aOM<$3.MonitoredResource>(8, _omitFieldNames ? '' : 'resource', subBuilder: $3.MonitoredResource.create)
+    ..aOM<$4.Timestamp>(9, _omitFieldNames ? '' : 'timestamp', subBuilder: $4.Timestamp.create)
+    ..e<$5.LogSeverity>(10, _omitFieldNames ? '' : 'severity', $pb.PbFieldType.OE,
+        defaultOrMaker: $5.LogSeverity.DEFAULT, valueOf: $5.LogSeverity.valueOf, enumValues: $5.LogSeverity.values)
     ..m<$core.String, $core.String>(11, _omitFieldNames ? '' : 'labels',
         entryClassName: 'LogEntry.LabelsEntry',
         keyFieldType: $pb.PbFieldType.OS,
         valueFieldType: $pb.PbFieldType.OS,
         packageName: const $pb.PackageName('google.logging.v2'))
     ..aOS(12, _omitFieldNames ? '' : 'logName')
-    ..aOM<LogEntryOperation>(15, _omitFieldNames ? '' : 'operation',
-        subBuilder: LogEntryOperation.create)
+    ..aOM<LogEntryOperation>(15, _omitFieldNames ? '' : 'operation', subBuilder: LogEntryOperation.create)
     ..aOS(22, _omitFieldNames ? '' : 'trace')
     ..aOM<LogEntrySourceLocation>(23, _omitFieldNames ? '' : 'sourceLocation',
         subBuilder: LogEntrySourceLocation.create)
-    ..aOM<$4.Timestamp>(24, _omitFieldNames ? '' : 'receiveTimestamp',
-        subBuilder: $4.Timestamp.create)
+    ..aOM<$4.Timestamp>(24, _omitFieldNames ? '' : 'receiveTimestamp', subBuilder: $4.Timestamp.create)
     ..aOS(27, _omitFieldNames ? '' : 'spanId')
     ..aOB(30, _omitFieldNames ? '' : 'traceSampled')
-    ..aOM<LogSplit>(35, _omitFieldNames ? '' : 'split',
-        subBuilder: LogSplit.create)
+    ..aOM<LogSplit>(35, _omitFieldNames ? '' : 'split', subBuilder: LogSplit.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('Using this can add significant overhead to your binary. '
@@ -171,8 +155,7 @@ class LogEntry extends $pb.GeneratedMessage {
   LogEntry createEmptyInstance() => create();
   static $pb.PbList<LogEntry> createRepeated() => $pb.PbList<LogEntry>();
   @$core.pragma('dart2js:noInline')
-  static LogEntry getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LogEntry>(create);
+  static LogEntry getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LogEntry>(create);
   static LogEntry? _defaultInstance;
 
   LogEntry_Payload whichPayload() => _LogEntry_PayloadByTag[$_whichOneof(0)]!;
@@ -553,15 +536,11 @@ class LogEntryOperation extends $pb.GeneratedMessage {
   factory LogEntryOperation.fromBuffer($core.List<$core.int> i,
           [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory LogEntryOperation.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory LogEntryOperation.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'LogEntryOperation',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'LogEntryOperation',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOS(2, _omitFieldNames ? '' : 'producer')
     ..aOB(3, _omitFieldNames ? '' : 'first')
@@ -576,19 +555,17 @@ class LogEntryOperation extends $pb.GeneratedMessage {
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
   LogEntryOperation copyWith(void Function(LogEntryOperation) updates) =>
-      super.copyWith((message) => updates(message as LogEntryOperation))
-          as LogEntryOperation;
+      super.copyWith((message) => updates(message as LogEntryOperation)) as LogEntryOperation;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
   static LogEntryOperation create() => LogEntryOperation._();
   LogEntryOperation createEmptyInstance() => create();
-  static $pb.PbList<LogEntryOperation> createRepeated() =>
-      $pb.PbList<LogEntryOperation>();
+  static $pb.PbList<LogEntryOperation> createRepeated() => $pb.PbList<LogEntryOperation>();
   @$core.pragma('dart2js:noInline')
-  static LogEntryOperation getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<LogEntryOperation>(create);
+  static LogEntryOperation getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LogEntryOperation>(create);
   static LogEntryOperation? _defaultInstance;
 
   /// Optional. An arbitrary operation identifier. Log entries with the same
@@ -671,15 +648,11 @@ class LogEntrySourceLocation extends $pb.GeneratedMessage {
   factory LogEntrySourceLocation.fromBuffer($core.List<$core.int> i,
           [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory LogEntrySourceLocation.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory LogEntrySourceLocation.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'LogEntrySourceLocation',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'LogEntrySourceLocation',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'file')
     ..aInt64(2, _omitFieldNames ? '' : 'line')
     ..aOS(3, _omitFieldNames ? '' : 'function')
@@ -688,26 +661,22 @@ class LogEntrySourceLocation extends $pb.GeneratedMessage {
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
       'Will be removed in next major version')
-  LogEntrySourceLocation clone() =>
-      LogEntrySourceLocation()..mergeFromMessage(this);
+  LogEntrySourceLocation clone() => LogEntrySourceLocation()..mergeFromMessage(this);
   @$core.Deprecated('Using this can add significant overhead to your binary. '
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
-  LogEntrySourceLocation copyWith(
-          void Function(LogEntrySourceLocation) updates) =>
-      super.copyWith((message) => updates(message as LogEntrySourceLocation))
-          as LogEntrySourceLocation;
+  LogEntrySourceLocation copyWith(void Function(LogEntrySourceLocation) updates) =>
+      super.copyWith((message) => updates(message as LogEntrySourceLocation)) as LogEntrySourceLocation;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
   static LogEntrySourceLocation create() => LogEntrySourceLocation._();
   LogEntrySourceLocation createEmptyInstance() => create();
-  static $pb.PbList<LogEntrySourceLocation> createRepeated() =>
-      $pb.PbList<LogEntrySourceLocation>();
+  static $pb.PbList<LogEntrySourceLocation> createRepeated() => $pb.PbList<LogEntrySourceLocation>();
   @$core.pragma('dart2js:noInline')
-  static LogEntrySourceLocation getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<LogEntrySourceLocation>(create);
+  static LogEntrySourceLocation getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LogEntrySourceLocation>(create);
   static LogEntrySourceLocation? _defaultInstance;
 
   /// Optional. Source file name. Depending on the runtime environment, this
@@ -779,18 +748,13 @@ class LogSplit extends $pb.GeneratedMessage {
     return result;
   }
   LogSplit._() : super();
-  factory LogSplit.fromBuffer($core.List<$core.int> i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory LogSplit.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory LogSplit.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory LogSplit.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'LogSplit',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'LogSplit',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'uid')
     ..a<$core.int>(2, _omitFieldNames ? '' : 'index', $pb.PbFieldType.O3)
     ..a<$core.int>(3, _omitFieldNames ? '' : 'totalSplits', $pb.PbFieldType.O3)
@@ -813,8 +777,7 @@ class LogSplit extends $pb.GeneratedMessage {
   LogSplit createEmptyInstance() => create();
   static $pb.PbList<LogSplit> createRepeated() => $pb.PbList<LogSplit>();
   @$core.pragma('dart2js:noInline')
-  static LogSplit getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LogSplit>(create);
+  static LogSplit getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LogSplit>(create);
   static LogSplit? _defaultInstance;
 
   /// A globally unique identifier for all log entries in a sequence of split log
@@ -862,5 +825,4 @@ class LogSplit extends $pb.GeneratedMessage {
 }
 
 const _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
-const _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

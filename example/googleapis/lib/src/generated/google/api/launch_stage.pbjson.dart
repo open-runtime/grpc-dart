@@ -29,7 +29,7 @@ const LaunchStage$json = {
 };
 
 /// Descriptor for `LaunchStage`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List launchStageDescriptor = $convert.base64Decode(
-    'CgtMYXVuY2hTdGFnZRIcChhMQVVOQ0hfU1RBR0VfVU5TUEVDSUZJRUQQABIRCg1VTklNUExFTU'
-    'VOVEVEEAYSDQoJUFJFTEFVTkNIEAcSEAoMRUFSTFlfQUNDRVNTEAESCQoFQUxQSEEQAhIICgRC'
-    'RVRBEAMSBgoCR0EQBBIOCgpERVBSRUNBVEVEEAU=');
+final $typed_data.Uint8List launchStageDescriptor =
+    $convert.base64Decode('CgtMYXVuY2hTdGFnZRIcChhMQVVOQ0hfU1RBR0VfVU5TUEVDSUZJRUQQABIRCg1VTklNUExFTU'
+        'VOVEVEEAYSDQoJUFJFTEFVTkNIEAcSEAoMRUFSTFlfQUNDRVNTEAESCQoFQUxQSEEQAhIICgRC'
+        'RVRBEAMSBgoCR0EQBBIOCgpERVBSRUNBVEVEEAU=');

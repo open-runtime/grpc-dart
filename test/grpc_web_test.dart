@@ -133,12 +133,9 @@ void main() {
   });
 
   final invalidResponseTests = {
-    'cors': GrpcError.unknown(
-        'HTTP request completed without a status (potential CORS issue)'),
-    'status-503': GrpcError.unavailable(
-        'HTTP connection completed with 503 instead of 200'),
-    'bad-content-type':
-        GrpcError.unknown('unsupported content-type (text/html)'),
+    'cors': GrpcError.unknown('HTTP request completed without a status (potential CORS issue)'),
+    'status-503': GrpcError.unavailable('HTTP connection completed with 503 instead of 200'),
+    'bad-content-type': GrpcError.unknown('unsupported content-type (text/html)'),
   };
 
   for (var entry in invalidResponseTests.entries) {
@@ -150,10 +147,8 @@ void main() {
     // See [startHttpServer] in [grpc_web_server.dart] for the server part.
     test('invalid response: ${entry.key}', () async {
       final channel = GrpcWebClientChannel.xhr(server.httpUri);
-      final service = EchoServiceClient(channel,
-          options: WebCallOptions(bypassCorsPreflight: true));
-      expect(() => service.echo(EchoRequest()..message = 'test:${entry.key}'),
-          throwsA(entry.value));
+      final service = EchoServiceClient(channel, options: WebCallOptions(bypassCorsPreflight: true));
+      expect(() => service.echo(EchoRequest()..message = 'test:${entry.key}'), throwsA(entry.value));
     });
   }
 }
@@ -181,8 +176,7 @@ class GrpcWebServer {
   static Future<GrpcWebServer> start() async {
     // Spawn the server code on the server side, it will send us back port
     // number we should be talking to.
-    final serverChannel =
-        spawnHybridUri('grpc_web_server.dart', stayAlive: true);
+    final serverChannel = spawnHybridUri('grpc_web_server.dart', stayAlive: true);
     final portCompleter = Completer<Map>();
     final exitCompleter = Completer<void>();
     serverChannel.stream.listen((event) {
@@ -207,10 +201,7 @@ class GrpcWebServer {
     // Note: we would like to test https as well, but we can't easily do it
     // because browsers like chrome don't trust self-signed certificates by
     // default.
-    return GrpcWebServer(
-        serverChannel,
-        exitCompleter.future,
-        Uri.parse('http://localhost:$grpcPort'),
+    return GrpcWebServer(serverChannel, exitCompleter.future, Uri.parse('http://localhost:$grpcPort'),
         Uri.parse('http://localhost:$httpPort'));
   }
 }

@@ -167,11 +167,9 @@ class ServerHandler extends ServiceCall {
     final serviceName = pathSegments[1];
     final methodName = pathSegments[2];
     if (_codecRegistry != null) {
-      final acceptedEncodings =
-          clientMetadata!['grpc-accept-encoding']?.split(',') ?? [];
-      _callEncodingCodec = acceptedEncodings
-          .map(_codecRegistry.lookup)
-          .firstWhere((c) => c != null, orElse: () => null);
+      final acceptedEncodings = clientMetadata!['grpc-accept-encoding']?.split(',') ?? [];
+      _callEncodingCodec =
+          acceptedEncodings.map(_codecRegistry.lookup).firstWhere((c) => c != null, orElse: () => null);
     }
 
     final service = _serviceLookup(serviceName);
@@ -241,10 +239,8 @@ class ServerHandler extends ServiceCall {
 
     _responses = _descriptor.handle(this, requests.stream);
 
-    _responseSubscription = _responses.listen(_onResponse,
-        onError: _onResponseError,
-        onDone: _onResponseDone,
-        cancelOnError: true);
+    _responseSubscription =
+        _responses.listen(_onResponse, onError: _onResponseError, onDone: _onResponseDone, cancelOnError: true);
     _incomingSubscription!.onData(_onDataActive);
     _incomingSubscription!.onDone(_onDoneExpected);
 
@@ -295,8 +291,7 @@ class ServerHandler extends ServiceCall {
     try {
       request = _descriptor.deserialize(data.data);
     } catch (error, trace) {
-      final grpcError =
-          GrpcError.internal('Error deserializing request: $error');
+      final grpcError = GrpcError.internal('Error deserializing request: $error');
       _sendError(grpcError, trace);
       _requests!
         ..addError(grpcError, trace)
@@ -353,16 +348,14 @@ class ServerHandler extends ServiceCall {
     final outgoingHeadersMap = <String, String>{
       ':status': '200',
       'content-type': 'application/grpc',
-      if (_callEncodingCodec != null)
-        'grpc-encoding': _callEncodingCodec!.encodingName,
+      if (_callEncodingCodec != null) 'grpc-encoding': _callEncodingCodec!.encodingName,
     };
 
     outgoingHeadersMap.addAll(_customHeaders!);
     _customHeaders = null;
 
     final outgoingHeaders = <Header>[];
-    outgoingHeadersMap.forEach((key, value) =>
-        outgoingHeaders.add(Header(ascii.encode(key), utf8.encode(value))));
+    outgoingHeadersMap.forEach((key, value) => outgoingHeaders.add(Header(ascii.encode(key), utf8.encode(value))));
     _stream.sendHeaders(outgoingHeaders);
     _headersSent = true;
   }
@@ -395,16 +388,14 @@ class ServerHandler extends ServiceCall {
     _customTrailers = null;
     outgoingTrailersMap['grpc-status'] = status.toString();
     if (message != null) {
-      outgoingTrailersMap['grpc-message'] =
-          Uri.encodeFull(message).replaceAll('%20', ' ');
+      outgoingTrailersMap['grpc-message'] = Uri.encodeFull(message).replaceAll('%20', ' ');
     }
     if (errorTrailers != null) {
       outgoingTrailersMap.addAll(errorTrailers);
     }
 
     final outgoingTrailers = <Header>[];
-    outgoingTrailersMap.forEach((key, value) =>
-        outgoingTrailers.add(Header(ascii.encode(key), utf8.encode(value))));
+    outgoingTrailersMap.forEach((key, value) => outgoingTrailers.add(Header(ascii.encode(key), utf8.encode(value))));
     _stream.sendHeaders(outgoingTrailers, endStream: true);
     // We're done!
     _cancelResponseSubscription();

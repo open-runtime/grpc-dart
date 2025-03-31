@@ -63,13 +63,11 @@ class GrpcMessageSink implements Sink<GrpcMessage> {
 }
 
 List<int> frame(List<int> rawPayload, [Codec? codec]) {
-  final compressedPayload =
-      codec == null ? rawPayload : codec.compress(rawPayload);
+  final compressedPayload = codec == null ? rawPayload : codec.compress(rawPayload);
   final payloadLength = compressedPayload.length;
   final bytes = Uint8List(payloadLength + 5);
   final header = bytes.buffer.asByteData(0, 5);
-  header.setUint8(
-      0, (codec == null || codec.encodingName == 'identity') ? 0 : 1);
+  header.setUint8(0, (codec == null || codec.encodingName == 'identity') ? 0 : 1);
   header.setUint32(1, payloadLength);
   bytes.setRange(5, bytes.length, compressedPayload);
   return bytes;

@@ -21,14 +21,12 @@ class CodecRegistry {
       : _codecs = {for (var codec in codecs) codec.encodingName: codec},
         _supportedEncodings = codecs.map((c) {
           if (c.encodingName.contains(',')) {
-            throw ArgumentError.value(c.encodingName, 'codecs',
-                'contains entries with names containing ","');
+            throw ArgumentError.value(c.encodingName, 'codecs', 'contains entries with names containing ","');
           }
           return c.encodingName;
         }).join(',') {
     if (_codecs.length != codecs.length) {
-      throw ArgumentError.value(
-          codecs, 'codecs', 'contains multiple entries with the same name');
+      throw ArgumentError.value(codecs, 'codecs', 'contains multiple entries with the same name');
     }
   }
 

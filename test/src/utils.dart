@@ -30,10 +30,7 @@ Map<String, String> headersToMap(List<Header> headers) =>
     {for (var h in headers) ascii.decode(h.name): ascii.decode(h.value)};
 
 void validateRequestHeaders(Map<String, String> headers,
-    {String? path,
-    String authority = 'test',
-    String? timeout,
-    Map<String, String>? customHeaders}) {
+    {String? path, String authority = 'test', String? timeout, Map<String, String>? customHeaders}) {
   expect(headers[':method'], 'POST');
   expect(headers[':scheme'], 'https');
   if (path != null) {
@@ -51,9 +48,7 @@ void validateRequestHeaders(Map<String, String> headers,
 }
 
 void validateResponseHeaders(Map<String, String> headers,
-    {int status = 200,
-    bool allowTrailers = false,
-    Map<String, String>? customHeaders}) {
+    {int status = 200, bool allowTrailers = false, Map<String, String>? customHeaders}) {
   expect(headers[':status'], '200');
   expect(headers['content-type'], startsWith('application/grpc'));
   if (!allowTrailers) {
@@ -76,8 +71,7 @@ void validateResponseTrailers(Map<String, String> trailers,
   });
 }
 
-GrpcMetadata validateMetadataMessage(StreamMessage message,
-    {bool endStream = false}) {
+GrpcMetadata validateMetadataMessage(StreamMessage message, {bool endStream = false}) {
   expect(message, TypeMatcher<HeadersStreamMessage>());
   expect(message.endStream, endStream);
 
@@ -102,15 +96,13 @@ void Function(StreamMessage message) headerValidator() {
   };
 }
 
-void Function(StreamMessage message) errorTrailerValidator(
-    int status, String statusMessage,
+void Function(StreamMessage message) errorTrailerValidator(int status, String statusMessage,
     {bool validateHeader = false}) {
   return (StreamMessage message) {
     final trailer = validateMetadataMessage(message, endStream: true);
     if (validateHeader) {
       validateResponseHeaders(trailer.metadata, allowTrailers: true);
     }
-    validateResponseTrailers(trailer.metadata,
-        status: status, message: statusMessage);
+    validateResponseTrailers(trailer.metadata, status: status, message: statusMessage);
   };
 }

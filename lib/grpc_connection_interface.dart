@@ -22,8 +22,7 @@ export 'src/client/channel.dart' show ClientChannelBase;
 export 'src/client/connection.dart' show ClientConnection;
 export 'src/client/http2_channel.dart' show ClientChannel;
 export 'src/client/options.dart' show ChannelOptions;
-export 'src/client/transport/transport.dart'
-    show GrpcTransportStream, ErrorHandler;
+export 'src/client/transport/transport.dart' show GrpcTransportStream, ErrorHandler;
 
 export 'src/shared/codec.dart';
 export 'src/shared/codec_registry.dart';

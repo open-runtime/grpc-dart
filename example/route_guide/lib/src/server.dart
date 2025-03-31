@@ -28,8 +28,7 @@ class RouteGuideService extends RouteGuideServiceBase {
   /// The [context] object provides access to client metadata, cancellation, etc.
   @override
   Future<Feature> getFeature(grpc.ServiceCall call, Point request) async {
-    return featuresDb.firstWhere((f) => f.location == request,
-        orElse: () => Feature()..location = request);
+    return featuresDb.firstWhere((f) => f.location == request, orElse: () => Feature()..location = request);
   }
 
   Rectangle _normalize(Rectangle r) {
@@ -56,8 +55,7 @@ class RouteGuideService extends RouteGuideServiceBase {
   /// ListFeatures handler. Returns a stream of features within the given
   /// rectangle.
   @override
-  Stream<Feature> listFeatures(
-      grpc.ServiceCall call, Rectangle request) async* {
+  Stream<Feature> listFeatures(grpc.ServiceCall call, Rectangle request) async* {
     final normalizedRectangle = _normalize(request);
     // For each feature, check if it is in the given bounding box
     for (var feature in featuresDb) {
@@ -73,8 +71,7 @@ class RouteGuideService extends RouteGuideServiceBase {
   /// about the "trip": number of points, number of known features visited,
   /// total distance traveled, and total time spent.
   @override
-  Future<RouteSummary> recordRoute(
-      grpc.ServiceCall call, Stream<Point> request) async {
+  Future<RouteSummary> recordRoute(grpc.ServiceCall call, Stream<Point> request) async {
     var pointCount = 0;
     var featureCount = 0;
     var distance = 0.0;
@@ -84,8 +81,7 @@ class RouteGuideService extends RouteGuideServiceBase {
     await for (var location in request) {
       if (!timer.isRunning) timer.start();
       pointCount++;
-      final feature =
-          featuresDb.firstWhereOrNull((f) => f.location == location);
+      final feature = featuresDb.firstWhereOrNull((f) => f.location == location);
       if (feature != null) {
         featureCount++;
       }
@@ -106,8 +102,7 @@ class RouteGuideService extends RouteGuideServiceBase {
   /// responds with a stream of all previous messages at each of those
   /// locations.
   @override
-  Stream<RouteNote> routeChat(
-      grpc.ServiceCall call, Stream<RouteNote> request) async* {
+  Stream<RouteNote> routeChat(grpc.ServiceCall call, Stream<RouteNote> request) async* {
     await for (var note in request) {
       final notes = routeNotes.putIfAbsent(note.location, () => <RouteNote>[]);
       for (var note in notes) {
@@ -134,8 +129,7 @@ class RouteGuideService extends RouteGuideServiceBase {
     final dLat = toRadians(lat2 - lat1);
     final dLon = toRadians(lon2 - lon1);
 
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(phi1) * cos(phi2) * sin(dLon / 2) * sin(dLon / 2);
+    final a = sin(dLat / 2) * sin(dLat / 2) + cos(phi1) * cos(phi2) * sin(dLon / 2) * sin(dLon / 2);
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
 
     return R * c;

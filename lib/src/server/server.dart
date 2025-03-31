@@ -57,11 +57,7 @@ class ServerTlsCredentials extends ServerCredentials {
   ///
   /// If the [certificate] or [privateKey] is encrypted, the password must also
   /// be provided.
-  ServerTlsCredentials(
-      {this.certificate,
-      this.certificatePassword,
-      this.privateKey,
-      this.privateKeyPassword});
+  ServerTlsCredentials({this.certificate, this.certificatePassword, this.privateKey, this.privateKeyPassword});
 
   @override
   SecurityContext get securityContext {
@@ -70,8 +66,7 @@ class ServerTlsCredentials extends ServerCredentials {
       context.usePrivateKeyBytes(privateKey!, password: privateKeyPassword);
     }
     if (certificate != null) {
-      context.useCertificateChainBytes(certificate!,
-          password: certificatePassword);
+      context.useCertificateChainBytes(certificate!, password: certificatePassword);
     }
     return context;
   }
@@ -125,8 +120,7 @@ class ConnectionServer {
     final onDataReceivedController = StreamController<void>();
     ServerKeepAlive(
       options: _keepAliveOptions,
-      tooManyBadPings: () async =>
-          await connection.terminate(ErrorCode.ENHANCE_YOUR_CALM),
+      tooManyBadPings: () async => await connection.terminate(ErrorCode.ENHANCE_YOUR_CALM),
       pingNotifier: connection.onPingReceived,
       dataNotifier: onDataReceivedController.stream,
     ).handle();
@@ -318,8 +312,7 @@ class Server extends ConnectionServer {
     )..handle();
   }
 
-  @Deprecated(
-      'This is internal functionality, and will be removed in next major version.')
+  @Deprecated('This is internal functionality, and will be removed in next major version.')
   void serveStream(ServerTransportStream stream) {
     serveStream_(stream: stream);
   }

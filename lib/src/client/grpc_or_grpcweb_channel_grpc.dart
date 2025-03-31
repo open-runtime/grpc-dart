@@ -29,9 +29,7 @@ class GrpcOrGrpcWebClientChannelInternal extends ClientChannel {
           grpcHost,
           port: grpcPort,
           options: ChannelOptions(
-            credentials: grpcTransportSecure
-                ? ChannelCredentials.secure()
-                : ChannelCredentials.insecure(),
+            credentials: grpcTransportSecure ? ChannelCredentials.secure() : ChannelCredentials.insecure(),
           ),
         );
 

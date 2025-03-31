@@ -59,8 +59,7 @@ class GrpcHttpDecoder extends Converter<StreamMessage, GrpcMessage> {
   }
 }
 
-class _GrpcMessageConversionSink
-    implements ChunkedConversionSink<StreamMessage> {
+class _GrpcMessageConversionSink implements ChunkedConversionSink<StreamMessage> {
   final Sink<GrpcMessage> _out;
   final bool _forResponse;
 
@@ -83,8 +82,7 @@ class _GrpcMessageConversionSink
         final headerRemaining = _dataHeader.lengthInBytes - _dataOffset;
         final chunkRemaining = chunkLength - chunkReadOffset;
         final toCopy = min(headerRemaining, chunkRemaining);
-        _dataHeader.setRange(
-            _dataOffset, _dataOffset + toCopy, chunkData, chunkReadOffset);
+        _dataHeader.setRange(_dataOffset, _dataOffset + toCopy, chunkData, chunkReadOffset);
         _dataOffset += toCopy;
         chunkReadOffset += toCopy;
         if (_dataOffset == _dataHeader.lengthInBytes) {
@@ -100,14 +98,12 @@ class _GrpcMessageConversionSink
         if (dataRemaining > 0) {
           final chunkRemaining = chunkLength - chunkReadOffset;
           final toCopy = min(dataRemaining, chunkRemaining);
-          _data!.setRange(
-              _dataOffset, _dataOffset + toCopy, chunkData, chunkReadOffset);
+          _data!.setRange(_dataOffset, _dataOffset + toCopy, chunkData, chunkReadOffset);
           _dataOffset += toCopy;
           chunkReadOffset += toCopy;
         }
         if (_dataOffset == _data!.lengthInBytes) {
-          _out.add(GrpcData(_data!,
-              isCompressed: _dataHeader.buffer.asByteData().getUint8(0) != 0));
+          _out.add(GrpcData(_data!, isCompressed: _dataHeader.buffer.asByteData().getUint8(0) != 0));
           _data = null;
           _dataOffset = 0;
         }
@@ -130,9 +126,7 @@ class _GrpcMessageConversionSink
       if (_forResponse) {
         // Validate :status and content-type header here synchronously before
         // attempting to parse subsequent DataStreamMessage.
-        final httpStatus = headers.containsKey(':status')
-            ? int.tryParse(headers[':status']!)
-            : null;
+        final httpStatus = headers.containsKey(':status') ? int.tryParse(headers[':status']!) : null;
 
         // Validation might throw an exception. When [GrpcHttpDecoder] is
         // used as a [StreamTransformer] the underlying implementation of

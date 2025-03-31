@@ -23,8 +23,7 @@ Future<void> main(List<String> args) async {
   final serverPort = 0;
   final proxyPort = int.tryParse(args.first);
 
-  final proxy =
-      proxyPort != null ? Proxy(host: 'localhost', port: proxyPort) : null;
+  final proxy = proxyPort != null ? Proxy(host: 'localhost', port: proxyPort) : null;
 
   final port = proxyPort ?? serverPort;
 
@@ -34,13 +33,11 @@ Future<void> main(List<String> args) async {
     ChannelOptions(proxy: proxy),
   );
   await connector.initSocket('localhost', port);
-  final incoming =
-      proxy == null ? connector.socket : await connector.connectToProxy(proxy);
+  final incoming = proxy == null ? connector.socket : await connector.connectToProxy(proxy);
 
   final uri = Uri.parse('http://localhost:0');
 
-  final transport =
-      ClientTransportConnection.viaStreams(incoming, connector.socket);
+  final transport = ClientTransportConnection.viaStreams(incoming, connector.socket);
 
   final request = transport.makeRequest(
     [

@@ -27,12 +27,10 @@ class GreeterClient extends $grpc.Client {
       ($core.List<$core.int> value) => $0.HelloReply.fromBuffer(value));
 
   GreeterClient($grpc.ClientChannel channel,
-      {$grpc.CallOptions? options,
-      $core.Iterable<$grpc.ClientInterceptor>? interceptors})
+      {$grpc.CallOptions? options, $core.Iterable<$grpc.ClientInterceptor>? interceptors})
       : super(channel, options: options, interceptors: interceptors);
 
-  $grpc.ResponseFuture<$0.HelloReply> sayHello($0.HelloRequest request,
-      {$grpc.CallOptions? options}) {
+  $grpc.ResponseFuture<$0.HelloReply> sayHello($0.HelloRequest request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$sayHello, request, options: options);
   }
 }
@@ -51,11 +49,9 @@ abstract class GreeterServiceBase extends $grpc.Service {
         ($0.HelloReply value) => value.writeToBuffer()));
   }
 
-  $async.Future<$0.HelloReply> sayHello_Pre(
-      $grpc.ServiceCall call, $async.Future<$0.HelloRequest> request) async {
+  $async.Future<$0.HelloReply> sayHello_Pre($grpc.ServiceCall call, $async.Future<$0.HelloRequest> request) async {
     return sayHello(call, await request);
   }
 
-  $async.Future<$0.HelloReply> sayHello(
-      $grpc.ServiceCall call, $0.HelloRequest request);
+  $async.Future<$0.HelloReply> sayHello($grpc.ServiceCall call, $0.HelloRequest request);
 }

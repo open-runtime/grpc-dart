@@ -44,8 +44,7 @@ const _reservedHeaders = [
 /// by previous metadata providers) and the [uri] that is being called, and is
 /// expected to modify the map before returning or before completing the
 /// returned [Future].
-typedef MetadataProvider = FutureOr<void> Function(
-    Map<String, String> metadata, String uri);
+typedef MetadataProvider = FutureOr<void> Function(Map<String, String> metadata, String uri);
 
 /// Runtime options for an RPC.
 class CallOptions {
@@ -81,15 +80,13 @@ class CallOptions {
     );
   }
 
-  factory CallOptions.from(Iterable<CallOptions> options) =>
-      options.fold(CallOptions(), (p, o) => p.mergedWith(o));
+  factory CallOptions.from(Iterable<CallOptions> options) => options.fold(CallOptions(), (p, o) => p.mergedWith(o));
 
   CallOptions mergedWith(CallOptions? other) {
     if (other == null) return this;
     final mergedMetadata = Map.of(metadata)..addAll(other.metadata);
     final mergedTimeout = other.timeout ?? timeout;
-    final mergedProviders = List.of(metadataProviders)
-      ..addAll(other.metadataProviders);
+    final mergedProviders = List.of(metadataProviders)..addAll(other.metadataProviders);
     final mergedCompression = other.compression ?? compression;
     return CallOptions._(
       Map.unmodifiable(mergedMetadata),
@@ -120,8 +117,7 @@ class WebCallOptions extends CallOptions {
   final bool? withCredentials;
   // TODO(mightyvoice): add a list of extra QueryParameter for gRPC.
 
-  WebCallOptions._(Map<String, String> metadata, Duration? timeout,
-      List<MetadataProvider> metadataProviders,
+  WebCallOptions._(Map<String, String> metadata, Duration? timeout, List<MetadataProvider> metadataProviders,
       {this.bypassCorsPreflight, this.withCredentials})
       : super._(metadata, timeout, metadataProviders, null);
 
@@ -136,10 +132,8 @@ class WebCallOptions extends CallOptions {
       List<MetadataProvider>? providers,
       bool? bypassCorsPreflight,
       bool? withCredentials}) {
-    return WebCallOptions._(Map.unmodifiable(metadata ?? {}), timeout,
-        List.unmodifiable(providers ?? []),
-        bypassCorsPreflight: bypassCorsPreflight ?? false,
-        withCredentials: withCredentials ?? false);
+    return WebCallOptions._(Map.unmodifiable(metadata ?? {}), timeout, List.unmodifiable(providers ?? []),
+        bypassCorsPreflight: bypassCorsPreflight ?? false, withCredentials: withCredentials ?? false);
   }
 
   @override
@@ -148,23 +142,17 @@ class WebCallOptions extends CallOptions {
 
     final mergedMetadata = Map.of(metadata)..addAll(other.metadata);
     final mergedTimeout = other.timeout ?? timeout;
-    final mergedProviders = List.of(metadataProviders)
-      ..addAll(other.metadataProviders);
+    final mergedProviders = List.of(metadataProviders)..addAll(other.metadataProviders);
 
     if (other is! WebCallOptions) {
-      return WebCallOptions._(Map.unmodifiable(mergedMetadata), mergedTimeout,
-          List.unmodifiable(mergedProviders),
-          bypassCorsPreflight: bypassCorsPreflight,
-          withCredentials: withCredentials);
+      return WebCallOptions._(Map.unmodifiable(mergedMetadata), mergedTimeout, List.unmodifiable(mergedProviders),
+          bypassCorsPreflight: bypassCorsPreflight, withCredentials: withCredentials);
     }
 
-    final mergedBypassCorsPreflight =
-        other.bypassCorsPreflight ?? bypassCorsPreflight;
+    final mergedBypassCorsPreflight = other.bypassCorsPreflight ?? bypassCorsPreflight;
     final mergedWithCredentials = other.withCredentials ?? withCredentials;
-    return WebCallOptions._(Map.unmodifiable(mergedMetadata), mergedTimeout,
-        List.unmodifiable(mergedProviders),
-        bypassCorsPreflight: mergedBypassCorsPreflight,
-        withCredentials: mergedWithCredentials);
+    return WebCallOptions._(Map.unmodifiable(mergedMetadata), mergedTimeout, List.unmodifiable(mergedProviders),
+        bypassCorsPreflight: mergedBypassCorsPreflight, withCredentials: mergedWithCredentials);
   }
 }
 
@@ -191,8 +179,7 @@ class ClientCall<Q, R> implements Response {
   final TimelineTask? _requestTimeline;
   TimelineTask? _responseTimeline;
 
-  ClientCall(this._method, this._requests, this.options,
-      [this._requestTimeline]) {
+  ClientCall(this._method, this._requests, this.options, [this._requestTimeline]) {
     _requestTimeline?.start('gRPC Request: ${_method.path}', arguments: {
       'method': _method.path,
       'timeout': options.timeout?.toString(),
@@ -208,8 +195,7 @@ class ClientCall<Q, R> implements Response {
   }
 
   void _terminateWithError(Object e) {
-    final error =
-        e is GrpcError ? e : GrpcError.unavailable('Error making call: $e');
+    final error = e is GrpcError ? e : GrpcError.unavailable('Error making call: $e');
     _finishTimelineWithError(error, _requestTimeline);
     _responses.addErrorIfNotClosed(error);
     _safeTerminate();
@@ -219,8 +205,7 @@ class ClientCall<Q, R> implements Response {
     final sanitizedMetadata = <String, String>{};
     metadata.forEach((String key, String value) {
       final lowerCaseKey = key.trim().toLowerCase();
-      if (!lowerCaseKey.startsWith(':') &&
-          !_reservedHeaders.contains(lowerCaseKey)) {
+      if (!lowerCaseKey.startsWith(':') && !_reservedHeaders.contains(lowerCaseKey)) {
         sanitizedMetadata[lowerCaseKey] = value.trim();
       }
     });
@@ -230,9 +215,7 @@ class ClientCall<Q, R> implements Response {
 // TODO(sigurdm): Find out why we do this.
   static String audiencePath(ClientMethod method) {
     final lastSlashPos = method.path.lastIndexOf('/');
-    return lastSlashPos == -1
-        ? method.path
-        : method.path.substring(0, lastSlashPos);
+    return lastSlashPos == -1 ? method.path : method.path.substring(0, lastSlashPos);
   }
 
   void onConnectionReady(ClientConnection connection) {
@@ -244,8 +227,8 @@ class ClientCall<Q, R> implements Response {
       final metadata = Map<String, String>.of(options.metadata);
       Future.forEach(
               options.metadataProviders,
-              (MetadataProvider provider) => provider(metadata,
-                  '${connection.scheme}://${connection.authority}${audiencePath(_method)}'))
+              (MetadataProvider provider) =>
+                  provider(metadata, '${connection.scheme}://${connection.authority}${audiencePath(_method)}'))
           .then((_) => _sendRequest(connection, _sanitizeMetadata(metadata)))
           .catchError(_terminateWithError);
     }
@@ -278,9 +261,7 @@ class ClientCall<Q, R> implements Response {
         })
         .handleError(_onRequestError)
         .listen(stream.outgoingMessages.add,
-            onError: stream.outgoingMessages.addError,
-            onDone: stream.outgoingMessages.close,
-            cancelOnError: true);
+            onError: stream.outgoingMessages.addError, onDone: stream.outgoingMessages.close, cancelOnError: true);
     _stream = stream;
     // The response stream might have been listened to before _stream was ready,
     // so try setting up the subscription here as well.
@@ -303,14 +284,10 @@ class ClientCall<Q, R> implements Response {
   /// Subscribe to incoming response messages, once [_stream] is available, and
   /// the caller has subscribed to the [_responses] stream.
   void _onResponseListen() {
-    if (_stream != null &&
-        _responses.hasListener &&
-        _responseSubscription == null) {
+    if (_stream != null && _responses.hasListener && _responseSubscription == null) {
       // ignore: cancel_subscriptions
-      final subscription = _stream!.incomingMessages.listen(_onResponseData,
-          onError: _onResponseError,
-          onDone: _onResponseDone,
-          cancelOnError: true);
+      final subscription = _stream!.incomingMessages
+          .listen(_onResponseData, onError: _onResponseError, onDone: _onResponseDone, cancelOnError: true);
       if (_responses.isPaused) {
         subscription.pause();
       }

@@ -25,11 +25,8 @@ class Client {
 
   Future<void> main(List<String> args) async {
     final channel = ClientChannel('127.0.0.1',
-        port: 8080,
-        options:
-            const ChannelOptions(credentials: ChannelCredentials.insecure()));
-    stub = RouteGuideClient(channel,
-        options: CallOptions(timeout: Duration(seconds: 30)));
+        port: 8080, options: const ChannelOptions(credentials: ChannelCredentials.insecure()));
+    stub = RouteGuideClient(channel, options: CallOptions(timeout: Duration(seconds: 30)));
     // Run all of the demos in order.
     try {
       await runGetFeature();
@@ -45,11 +42,8 @@ class Client {
   void printFeature(Feature feature) {
     final latitude = feature.location.latitude;
     final longitude = feature.location.longitude;
-    final name = feature.name.isEmpty
-        ? 'no feature'
-        : 'feature called "${feature.name}"';
-    print(
-        'Found $name at ${latitude / coordFactor}, ${longitude / coordFactor}');
+    final name = feature.name.isEmpty ? 'no feature' : 'feature called "${feature.name}"';
+    print('Found $name at ${latitude / coordFactor}, ${longitude / coordFactor}');
   }
 
   /// Run the getFeature demo. Calls getFeature with a point known to have a
@@ -95,8 +89,7 @@ class Client {
 
       for (var i = 0; i < count; i++) {
         final point = featuresDb[random.nextInt(featuresDb.length)].location;
-        print(
-            'Visiting point ${point.latitude / coordFactor}, ${point.longitude / coordFactor}');
+        print('Visiting point ${point.latitude / coordFactor}, ${point.longitude / coordFactor}');
         yield point;
         await Future.delayed(Duration(milliseconds: 200 + random.nextInt(100)));
       }
@@ -140,8 +133,7 @@ class Client {
 
     final call = stub.routeChat(outgoingNotes());
     await for (var note in call) {
-      print(
-          'Got message ${note.message} at ${note.location.latitude}, ${note.location.longitude}');
+      print('Got message ${note.message} at ${note.location.latitude}, ${note.location.longitude}');
     }
   }
 }

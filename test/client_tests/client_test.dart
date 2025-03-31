@@ -78,8 +78,7 @@ void main() {
     }
 
     await harness.runTest(
-      clientCall: harness.client.unary(requestValue,
-          options: CallOptions(metadata: {'grpc-accept-encoding': 'gzip'})),
+      clientCall: harness.client.unary(requestValue, options: CallOptions(metadata: {'grpc-accept-encoding': 'gzip'})),
       expectedResult: responseValue,
       expectedCustomHeaders: {'grpc-accept-encoding': 'gzip'},
       expectedPath: '/Test/Unary',
@@ -157,8 +156,7 @@ void main() {
     }
 
     await harness.runTest(
-      clientCall:
-          harness.client.bidirectional(Stream.fromIterable(requests)).toList(),
+      clientCall: harness.client.bidirectional(Stream.fromIterable(requests)).toList(),
       expectedResult: responses,
       expectedPath: '/Test/Bidirectional',
       serverHandlers: [handleRequest, handleRequest, handleRequest],
@@ -189,8 +187,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException:
-          GrpcError.unimplemented('More than one response received'),
+      expectedException: GrpcError.unimplemented('More than one response received'),
       serverHandlers: [handleRequest],
     );
   });
@@ -229,8 +226,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException:
-          GrpcError.unimplemented('Received data before headers'),
+      expectedException: GrpcError.unimplemented('Received data before headers'),
       serverHandlers: [handleRequest],
     );
   });
@@ -245,8 +241,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException:
-          GrpcError.unimplemented('Received data after trailers'),
+      expectedException: GrpcError.unimplemented('Received data after trailers'),
       serverHandlers: [handleRequest],
     );
   });
@@ -282,8 +277,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException:
-          GrpcError.custom(customStatusCode, customStatusMessage),
+      expectedException: GrpcError.custom(customStatusCode, customStatusMessage),
       serverHandlers: [handleRequest],
     );
   });
@@ -296,15 +290,13 @@ void main() {
       ]));
       // Send a frame that might be misinterpreted as a length-prefixed proto
       // message and cause OOM.
-      harness.toClient
-          .add(DataStreamMessage([0, 0xFF, 0xFF, 0xFF, 0xFF], endStream: true));
+      harness.toClient.add(DataStreamMessage([0, 0xFF, 0xFF, 0xFF, 0xFF], endStream: true));
       harness.toClient.close();
     }
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.unavailable(
-          'HTTP connection completed with 503 instead of 200'),
+      expectedException: GrpcError.unavailable('HTTP connection completed with 503 instead of 200'),
       serverHandlers: [handleRequest],
     );
   });
@@ -323,16 +315,12 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException:
-          GrpcError.unknown('unsupported content-type (text/html)'),
+      expectedException: GrpcError.unknown('unsupported content-type (text/html)'),
       serverHandlers: [handleRequest],
     );
   });
 
-  for (var contentType in [
-    'application/json+protobuf',
-    'application/x-protobuf'
-  ]) {
+  for (var contentType in ['application/json+protobuf', 'application/x-protobuf']) {
     test('$contentType content type is accepted', () async {
       const requestValue = 17;
       const responseValue = 19;
@@ -376,8 +364,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException:
-          GrpcError.custom(customStatusCode, customStatusMessage),
+      expectedException: GrpcError.custom(customStatusCode, customStatusMessage),
       serverHandlers: [handleRequest],
     );
   });
@@ -477,11 +464,7 @@ void main() {
     harness.channel.onConnectionStateChanged.listen((state) {
       connectionStates.add(state);
     }, onDone: () {
-      expect(connectionStates, [
-        ConnectionState.connecting,
-        ConnectionState.ready,
-        ConnectionState.shutdown
-      ]);
+      expect(connectionStates, [ConnectionState.connecting, ConnectionState.ready, ConnectionState.shutdown]);
     });
 
     await makeUnaryCall();
@@ -493,15 +476,12 @@ void main() {
     harness.channel.onConnectionStateChanged.listen((state) {
       connectionStates.add(state);
     }, onDone: () {
-      expect(
-          connectionStates, [ConnectionState.connecting, ConnectionState.idle]);
+      expect(connectionStates, [ConnectionState.connecting, ConnectionState.idle]);
     });
 
-    final expectedException =
-        GrpcError.unavailable('Error connecting: Connection error');
+    final expectedException = GrpcError.unavailable('Error connecting: Connection error');
 
-    await harness.expectThrows(
-        harness.client.unary(dummyValue), expectedException);
+    await harness.expectThrows(harness.client.unary(dummyValue), expectedException);
   });
 
   test('Connections time out if idle', () async {
@@ -511,14 +491,9 @@ void main() {
       connectionStates.add(state);
       if (state == ConnectionState.idle) done.complete();
     }, onDone: () async {
-      expect(connectionStates,
-          [ConnectionState.connecting, ConnectionState.ready]);
+      expect(connectionStates, [ConnectionState.connecting, ConnectionState.ready]);
       await done.future;
-      expect(connectionStates, [
-        ConnectionState.connecting,
-        ConnectionState.ready,
-        ConnectionState.idle
-      ]);
+      expect(connectionStates, [ConnectionState.connecting, ConnectionState.ready, ConnectionState.idle]);
     });
 
     harness.channelOptions.idleTimeout = const Duration(microseconds: 10);
@@ -545,30 +520,21 @@ void main() {
 
   test('authority is computed correctly', () {
     final emptyOptions = ChannelOptions();
-    expect(Http2ClientConnection('localhost', 8080, emptyOptions).authority,
-        'localhost:8080');
-    expect(Http2ClientConnection('localhost', 443, emptyOptions).authority,
-        'localhost');
-    final channelOptions = ChannelOptions(
-        credentials: ChannelCredentials.insecure(authority: 'myauthority.com'));
-    expect(Http2ClientConnection('localhost', 8080, channelOptions).authority,
-        'myauthority.com');
-    expect(Http2ClientConnection('localhost', 443, channelOptions).authority,
-        'myauthority.com');
+    expect(Http2ClientConnection('localhost', 8080, emptyOptions).authority, 'localhost:8080');
+    expect(Http2ClientConnection('localhost', 443, emptyOptions).authority, 'localhost');
+    final channelOptions = ChannelOptions(credentials: ChannelCredentials.insecure(authority: 'myauthority.com'));
+    expect(Http2ClientConnection('localhost', 8080, channelOptions).authority, 'myauthority.com');
+    expect(Http2ClientConnection('localhost', 443, channelOptions).authority, 'myauthority.com');
   });
 
-  test(
-      'decodeStatusDetails should decode details into a List<GeneratedMessage> if base64 present',
-      () {
+  test('decodeStatusDetails should decode details into a List<GeneratedMessage> if base64 present', () {
     final decodedDetails = decodeStatusDetails(
         'CAMSEGFtb3VudCB0b28gc21hbGwafgopdHlwZS5nb29nbGVhcGlzLmNvbS9nb29nbGUucnBjLkJhZFJlcXVlc3QSUQpPCgZhbW91bnQSRVRoZSByZXF1aXJlZCBjdXJyZW5jeSBjb252ZXJzaW9uIHdvdWxkIHJlc3VsdCBpbiBhIHplcm8gdmFsdWUgcGF5bWVudA');
     expect(decodedDetails, isA<List<GeneratedMessage>>());
     expect(decodedDetails.length, 1);
   });
 
-  test(
-      'decodeStatusDetails should decode details into an empty list for an invalid base64 string',
-      () {
+  test('decodeStatusDetails should decode details into an empty list for an invalid base64 string', () {
     final decodedDetails = decodeStatusDetails('xxxxxxxxxxxxxxxxxxxxxx');
     expect(decodedDetails, isA<List<GeneratedMessage>>());
     expect(decodedDetails.length, 0);

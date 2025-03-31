@@ -80,8 +80,7 @@ void main() {
     await server.shutdown();
   });
 
-  test('Server terminates connection after too many pings without data',
-      () async {
+  test('Server terminates connection after too many pings without data', () async {
     await fakeClient.echo(EchoRequest());
     await Future.delayed(timeout * maxBadPings * 2);
     await fakeClient.echo(EchoRequest());
@@ -90,8 +89,7 @@ void main() {
     expect(fakeChannel.newConnectionCounter, 2);
   });
 
-  test('Server doesnt terminate connection after pings, as data is sent',
-      () async {
+  test('Server doesnt terminate connection after pings, as data is sent', () async {
     for (var i = 0; i < 10; i++) {
       await fakeClient.echo(EchoRequest());
       await Future.delayed(timeout * 0.2);
@@ -101,8 +99,7 @@ void main() {
     expect(fakeChannel.newConnectionCounter, 1);
   });
 
-  test('Server doesnt ack the ping, making the client shutdown the transport',
-      () async {
+  test('Server doesnt ack the ping, making the client shutdown the transport', () async {
     //Send a first request, get a connection
     await unresponsiveClient.echo(EchoRequest());
     expect(unresponsiveChannel.newConnectionCounter, 1);
@@ -132,8 +129,7 @@ class FakeClientChannel extends ClientChannel {
     return fakeHttp2ClientConnection!;
   }
 
-  int get newConnectionCounter =>
-      fakeHttp2ClientConnection?.newConnectionCounter ?? 0;
+  int get newConnectionCounter => fakeHttp2ClientConnection?.newConnectionCounter ?? 0;
 }
 
 /// A [Http2ClientConnection] exposing a counter for new connections
@@ -160,8 +156,7 @@ class UnresponsiveClientChannel extends FakeClientChannel {
 
   @override
   ClientConnection createConnection() {
-    fakeHttp2ClientConnection =
-        UnresponsiveHttp2ClientConnection(host, port, options);
+    fakeHttp2ClientConnection = UnresponsiveHttp2ClientConnection(host, port, options);
     return fakeHttp2ClientConnection!;
   }
 }
@@ -182,10 +177,7 @@ class UnresponsiveHttp2ClientConnection extends FakeHttp2ClientConnection {
 }
 
 class FakeClientKeepAlive extends ClientKeepAlive {
-  FakeClientKeepAlive(
-      {required super.options,
-      required super.ping,
-      required super.onPingTimeout});
+  FakeClientKeepAlive({required super.options, required super.ping, required super.onPingTimeout});
 
   @override
   void onFrameReceived() {
@@ -195,11 +187,9 @@ class FakeClientKeepAlive extends ClientKeepAlive {
 
 class FakeEchoService extends EchoServiceBase {
   @override
-  Future<EchoResponse> echo(ServiceCall call, EchoRequest request) async =>
-      EchoResponse(message: 'Echo messsage');
+  Future<EchoResponse> echo(ServiceCall call, EchoRequest request) async => EchoResponse(message: 'Echo messsage');
 
   @override
-  Stream<ServerStreamingEchoResponse> serverStreamingEcho(
-          ServiceCall call, ServerStreamingEchoRequest request) =>
+  Stream<ServerStreamingEchoResponse> serverStreamingEcho(ServiceCall call, ServerStreamingEchoRequest request) =>
       throw UnsupportedError('Not used in this test');
 }

@@ -36,13 +36,11 @@ Future<void> main() async {
     'https://www.googleapis.com/auth/logging.write',
   ];
 
-  final authenticator = ServiceAccountAuthenticator(
-      serviceAccountFile.readAsStringSync(), scopes);
+  final authenticator = ServiceAccountAuthenticator(serviceAccountFile.readAsStringSync(), scopes);
   final projectId = authenticator.projectId;
 
   final channel = ClientChannel('logging.googleapis.com');
-  final logging =
-      LoggingServiceV2Client(channel, options: authenticator.toCallOptions);
+  final logging = LoggingServiceV2Client(channel, options: authenticator.toCallOptions);
 
   final request = WriteLogEntriesRequest()
     ..entries.add(LogEntry()

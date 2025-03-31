@@ -25,17 +25,13 @@ class HelloRequest extends $pb.GeneratedMessage {
     return result;
   }
   HelloRequest._() : super();
-  factory HelloRequest.fromBuffer($core.List<$core.int> i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory HelloRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory HelloRequest.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory HelloRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'HelloRequest',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'helloworld'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'HelloRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'helloworld'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'name')
     ..hasRequiredFields = false;
 
@@ -47,19 +43,16 @@ class HelloRequest extends $pb.GeneratedMessage {
       'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
       'Will be removed in next major version')
   HelloRequest copyWith(void Function(HelloRequest) updates) =>
-      super.copyWith((message) => updates(message as HelloRequest))
-          as HelloRequest;
+      super.copyWith((message) => updates(message as HelloRequest)) as HelloRequest;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
   static HelloRequest create() => HelloRequest._();
   HelloRequest createEmptyInstance() => create();
-  static $pb.PbList<HelloRequest> createRepeated() =>
-      $pb.PbList<HelloRequest>();
+  static $pb.PbList<HelloRequest> createRepeated() => $pb.PbList<HelloRequest>();
   @$core.pragma('dart2js:noInline')
-  static HelloRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<HelloRequest>(create);
+  static HelloRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<HelloRequest>(create);
   static HelloRequest? _defaultInstance;
 
   @$pb.TagNumber(1)
@@ -87,17 +80,13 @@ class HelloReply extends $pb.GeneratedMessage {
     return result;
   }
   HelloReply._() : super();
-  factory HelloReply.fromBuffer($core.List<$core.int> i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory HelloReply.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(i, r);
-  factory HelloReply.fromJson($core.String i,
-          [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
+  factory HelloReply.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'HelloReply',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'helloworld'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'HelloReply',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'helloworld'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'message')
     ..hasRequiredFields = false;
 
@@ -118,8 +107,7 @@ class HelloReply extends $pb.GeneratedMessage {
   HelloReply createEmptyInstance() => create();
   static $pb.PbList<HelloReply> createRepeated() => $pb.PbList<HelloReply>();
   @$core.pragma('dart2js:noInline')
-  static HelloReply getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<HelloReply>(create);
+  static HelloReply getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<HelloReply>(create);
   static HelloReply? _defaultInstance;
 
   @$pb.TagNumber(1)
@@ -136,5 +124,4 @@ class HelloReply extends $pb.GeneratedMessage {
 }
 
 const _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
-const _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

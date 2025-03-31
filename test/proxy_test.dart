@@ -63,11 +63,9 @@ void main() {
 
 class FakeEchoService extends EchoServiceBase {
   @override
-  Future<EchoResponse> echo(ServiceCall call, EchoRequest request) async =>
-      EchoResponse(message: 'blibliblabb');
+  Future<EchoResponse> echo(ServiceCall call, EchoRequest request) async => EchoResponse(message: 'blibliblabb');
 
   @override
-  Stream<ServerStreamingEchoResponse> serverStreamingEcho(
-          ServiceCall call, ServerStreamingEchoRequest request) =>
+  Stream<ServerStreamingEchoResponse> serverStreamingEcho(ServiceCall call, ServerStreamingEchoRequest request) =>
       throw UnimplementedError();
 }

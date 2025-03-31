@@ -34,8 +34,7 @@ class FakeConnection extends Http2ClientConnection {
 
   Object? connectionError;
 
-  FakeConnection(String host, this.transport, ChannelOptions options)
-      : super(host, 443, options);
+  FakeConnection(String host, this.transport, ChannelOptions options) : super(host, 443, options);
 
   @override
   Future<ClientTransportConnection> connectTransport() async {
@@ -90,8 +89,7 @@ class FakeChannel extends ClientChannel {
   @override
   FakeChannelOptions get options => super.options as FakeChannelOptions;
 
-  FakeChannel(String super.host, this.connection, FakeChannelOptions options)
-      : super(options: options);
+  FakeChannel(String super.host, this.connection, FakeChannelOptions options) : super(options: options);
 
   @override
   Future<Http2ClientConnection> getConnection() async => connection;
@@ -103,9 +101,7 @@ class FakeClientConnectorChannel extends ClientTransportConnectorChannel {
   @override
   FakeChannelOptions get options => super.options as FakeChannelOptions;
 
-  FakeClientConnectorChannel(
-      super.connector, this.connection, FakeChannelOptions options)
-      : super(options: options);
+  FakeClientConnectorChannel(super.connector, this.connection, FakeChannelOptions options) : super(options: options);
 
   @override
   Future<Http2ClientConnection> getConnection() async => connection;
@@ -121,34 +117,26 @@ class TestClient extends Client {
 
   final int Function(List<int> value) decode;
 
-  TestClient(super.channel,
-      {super.options, super.interceptors, this.decode = mockDecode}) {
+  TestClient(super.channel, {super.options, super.interceptors, this.decode = mockDecode}) {
     _$unary = ClientMethod<int, int>('/Test/Unary', mockEncode, decode);
-    _$clientStreaming =
-        ClientMethod<int, int>('/Test/ClientStreaming', mockEncode, decode);
-    _$serverStreaming =
-        ClientMethod<int, int>('/Test/ServerStreaming', mockEncode, decode);
-    _$bidirectional =
-        ClientMethod<int, int>('/Test/Bidirectional', mockEncode, decode);
+    _$clientStreaming = ClientMethod<int, int>('/Test/ClientStreaming', mockEncode, decode);
+    _$serverStreaming = ClientMethod<int, int>('/Test/ServerStreaming', mockEncode, decode);
+    _$bidirectional = ClientMethod<int, int>('/Test/Bidirectional', mockEncode, decode);
   }
 
   ResponseFuture<int> unary(int request, {CallOptions? options}) {
     return $createUnaryCall(_$unary, request, options: options);
   }
 
-  ResponseFuture<int> clientStreaming(Stream<int> request,
-      {CallOptions? options}) {
-    return $createStreamingCall(_$clientStreaming, request, options: options)
-        .single;
+  ResponseFuture<int> clientStreaming(Stream<int> request, {CallOptions? options}) {
+    return $createStreamingCall(_$clientStreaming, request, options: options).single;
   }
 
   ResponseStream<int> serverStreaming(int request, {CallOptions? options}) {
-    return $createStreamingCall(_$serverStreaming, Stream.value(request),
-        options: options);
+    return $createStreamingCall(_$serverStreaming, Stream.value(request), options: options);
   }
 
-  ResponseStream<int> bidirectional(Stream<int> request,
-      {CallOptions? options}) {
+  ResponseStream<int> bidirectional(Stream<int> request, {CallOptions? options}) {
     return $createStreamingCall(_$bidirectional, request, options: options);
   }
 }
@@ -226,8 +214,7 @@ abstract class _Harness {
     stream = MockClientTransportStream();
     fromClient = StreamController();
     toClient = StreamController();
-    when(transport.makeRequest(any, endStream: anyNamed('endStream')))
-        .thenReturn(stream);
+    when(transport.makeRequest(any, endStream: anyNamed('endStream'))).thenReturn(stream);
     when(transport.onActiveStateChanged = captureAny).thenReturn(null);
     when(transport.isOpen).thenReturn(true);
     when(stream.outgoingMessages).thenReturn(fromClient.sink);
@@ -270,8 +257,7 @@ abstract class _Harness {
   }
 
   void signalIdle() {
-    final ActiveStateHandler handler =
-        verify(transport.onActiveStateChanged = captureAny).captured.single;
+    final ActiveStateHandler handler = verify(transport.onActiveStateChanged = captureAny).captured.single;
     expect(handler, isNotNull);
     handler(false);
   }
@@ -290,8 +276,7 @@ abstract class _Harness {
       serverHandlers[serverHandlerIndex++](message);
     }
 
-    final clientSubscription = fromClient.stream.listen(
-        expectAsync1(handleServerMessage, count: serverHandlers.length),
+    final clientSubscription = fromClient.stream.listen(expectAsync1(handleServerMessage, count: serverHandlers.length),
         onError: expectAsync1((dynamic _) {}, count: 0),
         onDone: expectAsync0(doneHandler ?? () {}, count: expectDone ? 1 : 0));
 
@@ -300,15 +285,12 @@ abstract class _Harness {
       expect(result, expectedResult);
     }
 
-    final List<Header> capturedHeaders =
-        verify(transport.makeRequest(captureAny)).captured.single;
+    final List<Header> capturedHeaders = verify(transport.makeRequest(captureAny)).captured.single;
     validateRequestHeaders(
-        Map.fromEntries(capturedHeaders.map((header) =>
-            MapEntry(utf8.decode(header.name), utf8.decode(header.value)))),
+        Map.fromEntries(capturedHeaders.map((header) => MapEntry(utf8.decode(header.name), utf8.decode(header.value)))),
         path: expectedPath,
         authority: expectedAuthority,
-        timeout:
-            expectedTimeout == null ? null : toTimeoutString(expectedTimeout),
+        timeout: expectedTimeout == null ? null : toTimeoutString(expectedTimeout),
         customHeaders: expectedCustomHeaders);
 
     await clientSubscription.cancel();

@@ -22,8 +22,8 @@ const EchoRequest$json = {
 };
 
 /// Descriptor for `EchoRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List echoRequestDescriptor = $convert
-    .base64Decode('CgtFY2hvUmVxdWVzdBIYCgdtZXNzYWdlGAEgASgJUgdtZXNzYWdl');
+final $typed_data.Uint8List echoRequestDescriptor =
+    $convert.base64Decode('CgtFY2hvUmVxdWVzdBIYCgdtZXNzYWdlGAEgASgJUgdtZXNzYWdl');
 
 @$core.Deprecated('Use echoResponseDescriptor instead')
 const EchoResponse$json = {
@@ -34,8 +34,8 @@ const EchoResponse$json = {
 };
 
 /// Descriptor for `EchoResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List echoResponseDescriptor = $convert
-    .base64Decode('CgxFY2hvUmVzcG9uc2USGAoHbWVzc2FnZRgBIAEoCVIHbWVzc2FnZQ==');
+final $typed_data.Uint8List echoResponseDescriptor =
+    $convert.base64Decode('CgxFY2hvUmVzcG9uc2USGAoHbWVzc2FnZRgBIAEoCVIHbWVzc2FnZQ==');
 
 @$core.Deprecated('Use serverStreamingEchoRequestDescriptor instead')
 const ServerStreamingEchoRequest$json = {
@@ -49,8 +49,7 @@ const ServerStreamingEchoRequest$json = {
 
 /// Descriptor for `ServerStreamingEchoRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List serverStreamingEchoRequestDescriptor =
-    $convert.base64Decode(
-        'ChpTZXJ2ZXJTdHJlYW1pbmdFY2hvUmVxdWVzdBIYCgdtZXNzYWdlGAEgASgJUgdtZXNzYWdlEi'
+    $convert.base64Decode('ChpTZXJ2ZXJTdHJlYW1pbmdFY2hvUmVxdWVzdBIYCgdtZXNzYWdlGAEgASgJUgdtZXNzYWdlEi'
         'MKDW1lc3NhZ2VfY291bnQYAiABKAVSDG1lc3NhZ2VDb3VudBIpChBtZXNzYWdlX2ludGVydmFs'
         'GAMgASgFUg9tZXNzYWdlSW50ZXJ2YWw=');
 
@@ -64,6 +63,5 @@ const ServerStreamingEchoResponse$json = {
 
 /// Descriptor for `ServerStreamingEchoResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List serverStreamingEchoResponseDescriptor =
-    $convert.base64Decode(
-        'ChtTZXJ2ZXJTdHJlYW1pbmdFY2hvUmVzcG9uc2USGAoHbWVzc2FnZRgBIAEoCVIHbWVzc2FnZQ'
+    $convert.base64Decode('ChtTZXJ2ZXJTdHJlYW1pbmdFY2hvUmVzcG9uc2USGAoHbWVzc2FnZRgBIAEoCVIHbWVzc2FnZQ'
         '==');

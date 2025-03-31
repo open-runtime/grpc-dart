@@ -42,8 +42,7 @@ abstract class Response {
 }
 
 /// A gRPC response producing a single value.
-class ResponseFuture<R> extends DelegatingFuture<R>
-    with _ResponseMixin<dynamic, R> {
+class ResponseFuture<R> extends DelegatingFuture<R> with _ResponseMixin<dynamic, R> {
   @override
   final ClientCall<dynamic, R> _call;
 
@@ -59,10 +58,7 @@ class ResponseFuture<R> extends DelegatingFuture<R>
     return value;
   }
 
-  ResponseFuture(this._call)
-      : super(_call.response
-            .fold<R?>(null, _ensureOnlyOneResponse)
-            .then(_ensureOneResponse));
+  ResponseFuture(this._call) : super(_call.response.fold<R?>(null, _ensureOnlyOneResponse).then(_ensureOneResponse));
 }
 
 /// A gRPC response producing a stream of values.

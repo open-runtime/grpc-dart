@@ -42,8 +42,8 @@ abstract class ClientConnection {
   void dispatchCall(ClientCall call);
 
   /// Start a request for [path] with [metadata].
-  GrpcTransportStream makeRequest(String path, Duration? timeout,
-      Map<String, String> metadata, ErrorHandler onRequestFailure,
+  GrpcTransportStream makeRequest(
+      String path, Duration? timeout, Map<String, String> metadata, ErrorHandler onRequestFailure,
       {required CallOptions callOptions});
 
   /// Shuts down this connection.
