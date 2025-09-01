@@ -188,9 +188,9 @@ void main() {
 
         // The important thing is that the server didn't crash with "Cannot add event after closing"
         // Check that we don't have the bad state error
-        final hasBadStateError = harness.capturedErrors.any(
-            (e) => e.message?.contains('Cannot add event after closing') ?? false);
-        expect(hasBadStateError, isFalse, 
+        final hasBadStateError = harness.capturedErrors.any((e) =>
+            e.message?.contains('Cannot add event after closing') ?? false);
+        expect(hasBadStateError, isFalse,
             reason: 'Should not have "Cannot add event after closing" error');
       }
 
@@ -241,7 +241,7 @@ void main() {
     test('Reproduce exact "Cannot add event after closing" scenario', () async {
       // This test specifically tries to reproduce the exact error message from production
       final errorCompleter = Completer<String>();
-      
+
       // Create a fresh harness for this test
       final testHarness = RaceConditionHarness();
 
@@ -257,19 +257,19 @@ void main() {
         },
       );
 
-      final stream =
-          TestServerStream(testHarness.toServer.stream, testHarness.fromServer.sink);
+      final stream = TestServerStream(
+          testHarness.toServer.stream, testHarness.fromServer.sink);
       server.serveStream_(stream: stream);
 
       // Send request that will trigger serialization errors
-      harness.sendRequestHeader('/RaceCondition/StreamingMethod');
-      harness.sendData(1);
+      testHarness.sendRequestHeader('/RaceCondition/StreamingMethod');
+      testHarness.sendData(1);
 
       // Wait for responses to start
       await Future.delayed(Duration(milliseconds: 5));
 
       // Force close the stream while serialization error is happening
-      harness.toServer.close();
+      testHarness.toServer.close();
 
       // Check if we reproduced the error
       final result = await errorCompleter.future.timeout(
@@ -285,6 +285,9 @@ void main() {
         print('✓ Successfully reproduced the production error!');
         print('  This confirms the race condition exists.');
       }
+
+      // Clean up
+      testHarness.tearDown();
     });
   });
 }
