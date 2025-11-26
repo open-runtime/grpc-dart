@@ -24,7 +24,11 @@ const port = 0;
 
 void main() {
   test('Channel on non-web uses gRPC ClientChannel with correct params', () {
-    final channel = GrpcOrGrpcWebClientChannel.toSingleEndpoint(host: host, port: port, transportSecure: false);
+    final channel = GrpcOrGrpcWebClientChannel.toSingleEndpoint(
+      host: host,
+      port: port,
+      transportSecure: false,
+    );
     expect(channel.host, equals(host));
     expect(channel.port, equals(port));
     expect(channel.options.credentials.isSecure, isFalse);
@@ -32,7 +36,11 @@ void main() {
 
   test('Constructor grpc on non-web passes params correctly', () {
     final options = ChannelOptions(credentials: ChannelCredentials.insecure());
-    final channel = GrpcOrGrpcWebClientChannel.grpc(host, port: port, options: options);
+    final channel = GrpcOrGrpcWebClientChannel.grpc(
+      host,
+      port: port,
+      options: options,
+    );
     expect(channel.host, equals(host));
     expect(channel.port, equals(port));
     expect(channel.options, same(options));

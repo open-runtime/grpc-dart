@@ -25,7 +25,14 @@ import 'connection.dart';
 import 'method.dart';
 import 'transport/transport.dart';
 
-const _reservedHeaders = ['content-type', 'te', 'grpc-timeout', 'grpc-accept-encoding', 'grpc-encoding', 'user-agent'];
+const _reservedHeaders = [
+  'content-type',
+  'te',
+  'grpc-timeout',
+  'grpc-accept-encoding',
+  'grpc-encoding',
+  'user-agent',
+];
 
 /// Provides per-RPC metadata.
 ///
@@ -37,7 +44,8 @@ const _reservedHeaders = ['content-type', 'te', 'grpc-timeout', 'grpc-accept-enc
 /// by previous metadata providers) and the [uri] that is being called, and is
 /// expected to modify the map before returning or before completing the
 /// returned [Future].
-typedef MetadataProvider = FutureOr<void> Function(Map<String, String> metadata, String uri);
+typedef MetadataProvider =
+    FutureOr<void> Function(Map<String, String> metadata, String uri);
 
 /// Runtime options for an RPC.
 class CallOptions {
@@ -46,7 +54,12 @@ class CallOptions {
   final List<MetadataProvider> metadataProviders;
   final Codec? compression;
 
-  CallOptions._(this.metadata, this.timeout, this.metadataProviders, this.compression);
+  CallOptions._(
+    this.metadata,
+    this.timeout,
+    this.metadataProviders,
+    this.compression,
+  );
 
   /// Creates a [CallOptions] object.
   ///
@@ -60,10 +73,16 @@ class CallOptions {
     List<MetadataProvider>? providers,
     Codec? compression,
   }) {
-    return CallOptions._(Map.unmodifiable(metadata ?? {}), timeout, List.unmodifiable(providers ?? []), compression);
+    return CallOptions._(
+      Map.unmodifiable(metadata ?? {}),
+      timeout,
+      List.unmodifiable(providers ?? []),
+      compression,
+    );
   }
 
-  factory CallOptions.from(Iterable<CallOptions> options) => options.fold(CallOptions(), (p, o) => p.mergedWith(o));
+  factory CallOptions.from(Iterable<CallOptions> options) =>
+      options.fold(CallOptions(), (p, o) => p.mergedWith(o));
 
   CallOptions mergedWith(CallOptions? other) {
     if (other == null) return this;
@@ -74,7 +93,8 @@ class CallOptions {
 
     final mergedMetadata = Map.of(metadata)..addAll(other.metadata);
     final mergedTimeout = other.timeout ?? timeout;
-    final mergedProviders = List.of(metadataProviders)..addAll(other.metadataProviders);
+    final mergedProviders = List.of(metadataProviders)
+      ..addAll(other.metadataProviders);
     final mergedCompression = other.compression ?? compression;
     return CallOptions._(
       Map.unmodifiable(mergedMetadata),
@@ -140,7 +160,8 @@ class WebCallOptions extends CallOptions {
 
     final mergedMetadata = Map.of(metadata)..addAll(other.metadata);
     final mergedTimeout = other.timeout ?? timeout;
-    final mergedProviders = List.of(metadataProviders)..addAll(other.metadataProviders);
+    final mergedProviders = List.of(metadataProviders)
+      ..addAll(other.metadataProviders);
 
     if (other is! WebCallOptions) {
       return WebCallOptions._(
@@ -152,7 +173,8 @@ class WebCallOptions extends CallOptions {
       );
     }
 
-    final mergedBypassCorsPreflight = other.bypassCorsPreflight ?? bypassCorsPreflight;
+    final mergedBypassCorsPreflight =
+        other.bypassCorsPreflight ?? bypassCorsPreflight;
     final mergedWithCredentials = other.withCredentials ?? withCredentials;
     return WebCallOptions._(
       Map.unmodifiable(mergedMetadata),
@@ -187,10 +209,18 @@ class ClientCall<Q, R> implements Response {
   final TimelineTask? _requestTimeline;
   TimelineTask? _responseTimeline;
 
-  ClientCall(this._method, this._requests, this.options, [this._requestTimeline]) {
+  ClientCall(
+    this._method,
+    this._requests,
+    this.options, [
+    this._requestTimeline,
+  ]) {
     _requestTimeline?.start(
       'gRPC Request: ${_method.path}',
-      arguments: {'method': _method.path, 'timeout': options.timeout?.toString()},
+      arguments: {
+        'method': _method.path,
+        'timeout': options.timeout?.toString(),
+      },
     );
     _responses.onListen = _onResponseListen;
     if (options.timeout != null) {
@@ -203,7 +233,9 @@ class ClientCall<Q, R> implements Response {
   }
 
   void _terminateWithError(Object e) {
-    final error = e is GrpcError ? e : GrpcError.unavailable('Error making call: $e');
+    final error = e is GrpcError
+        ? e
+        : GrpcError.unavailable('Error making call: $e');
     _finishTimelineWithError(error, _requestTimeline);
     _responses.addErrorIfNotClosed(error);
     _safeTerminate();
@@ -213,7 +245,8 @@ class ClientCall<Q, R> implements Response {
     final sanitizedMetadata = <String, String>{};
     metadata.forEach((String key, String value) {
       final lowerCaseKey = key.trim().toLowerCase();
-      if (!lowerCaseKey.startsWith(':') && !_reservedHeaders.contains(lowerCaseKey)) {
+      if (!lowerCaseKey.startsWith(':') &&
+          !_reservedHeaders.contains(lowerCaseKey)) {
         sanitizedMetadata[lowerCaseKey] = value.trim();
       }
     });
@@ -223,7 +256,9 @@ class ClientCall<Q, R> implements Response {
   // TODO(sigurdm): Find out why we do this.
   static String audiencePath(ClientMethod method) {
     final lastSlashPos = method.path.lastIndexOf('/');
-    return lastSlashPos == -1 ? method.path : method.path.substring(0, lastSlashPos);
+    return lastSlashPos == -1
+        ? method.path
+        : method.path.substring(0, lastSlashPos);
   }
 
   void onConnectionReady(ClientConnection connection) {
@@ -234,25 +269,41 @@ class ClientCall<Q, R> implements Response {
     } else {
       final metadata = Map<String, String>.of(options.metadata);
       Future.forEach(
-        options.metadataProviders,
-        (MetadataProvider provider) =>
-            provider(metadata, '${connection.scheme}://${connection.authority}${audiencePath(_method)}'),
-      ).then((_) => _sendRequest(connection, _sanitizeMetadata(metadata))).catchError(_terminateWithError);
+            options.metadataProviders,
+            (MetadataProvider provider) => provider(
+              metadata,
+              '${connection.scheme}://${connection.authority}${audiencePath(_method)}',
+            ),
+          )
+          .then((_) => _sendRequest(connection, _sanitizeMetadata(metadata)))
+          .catchError(_terminateWithError);
     }
   }
 
   void _sendRequest(ClientConnection connection, Map<String, String> metadata) {
     late final GrpcTransportStream stream;
     try {
-      stream = connection.makeRequest(_method.path, options.timeout, metadata, _onRequestError, callOptions: options);
+      stream = connection.makeRequest(
+        _method.path,
+        options.timeout,
+        metadata,
+        _onRequestError,
+        callOptions: options,
+      );
     } catch (e) {
       _terminateWithError(e);
       return;
     }
-    _requestTimeline?.instant('Request sent', arguments: {'metadata': metadata});
+    _requestTimeline?.instant(
+      'Request sent',
+      arguments: {'metadata': metadata},
+    );
     _requestSubscription = _requests
         .map((data) {
-          _requestTimeline?.instant('Data sent', arguments: {'data': data.toString()});
+          _requestTimeline?.instant(
+            'Data sent',
+            arguments: {'data': data.toString()},
+          );
           _requestTimeline?.finish();
           return _method.requestSerializer(data);
         })
@@ -283,7 +334,9 @@ class ClientCall<Q, R> implements Response {
   /// Subscribe to incoming response messages, once [_stream] is available, and
   /// the caller has subscribed to the [_responses] stream.
   void _onResponseListen() {
-    if (_stream != null && _responses.hasListener && _responseSubscription == null) {
+    if (_stream != null &&
+        _responses.hasListener &&
+        _responseSubscription == null) {
       // ignore: cancel_subscriptions
       final subscription = _stream!.incomingMessages.listen(
         _onResponseData,
@@ -335,7 +388,10 @@ class ClientCall<Q, R> implements Response {
       }
       try {
         final decodedData = _method.responseDeserializer(data.data);
-        _responseTimeline?.instant('Data received', arguments: {'data': decodedData.toString()});
+        _responseTimeline?.instant(
+          'Data received',
+          arguments: {'data': decodedData.toString()},
+        );
         _responses.add(decodedData);
         _hasReceivedResponses = true;
       } catch (e, s) {
@@ -345,10 +401,16 @@ class ClientCall<Q, R> implements Response {
       if (!_headers.isCompleted) {
         _headerMetadata = data.metadata;
         if (_requestTimeline != null) {
-          _responseTimeline = TimelineTask(parent: _requestTimeline, filterKey: clientTimelineFilterKey);
+          _responseTimeline = TimelineTask(
+            parent: _requestTimeline,
+            filterKey: clientTimelineFilterKey,
+          );
         }
         _responseTimeline?.start('gRPC Response');
-        _responseTimeline?.instant('Metadata received', arguments: {'headers': _headerMetadata.toString()});
+        _responseTimeline?.instant(
+          'Metadata received',
+          arguments: {'headers': _headerMetadata.toString()},
+        );
         _headers.complete(_headerMetadata);
         return;
       }
@@ -357,7 +419,10 @@ class ClientCall<Q, R> implements Response {
         return;
       }
       final metadata = data.metadata;
-      _responseTimeline?.instant('Metadata received', arguments: {'trailers': metadata.toString()});
+      _responseTimeline?.instant(
+        'Metadata received',
+        arguments: {'trailers': metadata.toString()},
+      );
       _trailers.complete(metadata);
 
       /// Process status error if necessary

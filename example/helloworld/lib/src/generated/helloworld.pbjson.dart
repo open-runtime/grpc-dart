@@ -35,5 +35,5 @@ const HelloReply$json = {
 };
 
 /// Descriptor for `HelloReply`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List helloReplyDescriptor =
-    $convert.base64Decode('CgpIZWxsb1JlcGx5EhgKB21lc3NhZ2UYASABKAlSB21lc3NhZ2U=');
+final $typed_data.Uint8List helloReplyDescriptor = $convert
+    .base64Decode('CgpIZWxsb1JlcGx5EhgKB21lc3NhZ2UYASABKAlSB21lc3NhZ2U=');

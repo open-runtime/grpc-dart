@@ -14,4 +14,5 @@
 // limitations under the License.
 
 export 'codec/codec_all.dart';
-export 'codec/codec_io.dart' if (dart.library.js_interop) 'codec/codec_web.dart'; // package:web implementation
+export 'codec/codec_io.dart'
+    if (dart.library.js_interop) 'codec/codec_web.dart'; // package:web implementation

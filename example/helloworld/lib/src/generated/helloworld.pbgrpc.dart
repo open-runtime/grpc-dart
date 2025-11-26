@@ -44,7 +44,9 @@ class GreeterClient extends $grpc.Client {
   // method descriptors
 
   static final _$sayHello = $grpc.ClientMethod<$0.HelloRequest, $0.HelloReply>(
-      '/helloworld.Greeter/SayHello', ($0.HelloRequest value) => value.writeToBuffer(), $0.HelloReply.fromBuffer);
+      '/helloworld.Greeter/SayHello',
+      ($0.HelloRequest value) => value.writeToBuffer(),
+      $0.HelloReply.fromBuffer);
 }
 
 @$pb.GrpcServiceName('helloworld.Greeter')
@@ -61,9 +63,11 @@ abstract class GreeterServiceBase extends $grpc.Service {
         ($0.HelloReply value) => value.writeToBuffer()));
   }
 
-  $async.Future<$0.HelloReply> sayHello_Pre($grpc.ServiceCall $call, $async.Future<$0.HelloRequest> $request) async {
+  $async.Future<$0.HelloReply> sayHello_Pre(
+      $grpc.ServiceCall $call, $async.Future<$0.HelloRequest> $request) async {
     return sayHello($call, await $request);
   }
 
-  $async.Future<$0.HelloReply> sayHello($grpc.ServiceCall call, $0.HelloRequest request);
+  $async.Future<$0.HelloReply> sayHello(
+      $grpc.ServiceCall call, $0.HelloRequest request);
 }

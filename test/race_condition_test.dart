@@ -140,97 +140,112 @@ void main() {
       harness.tearDown();
     });
 
-    test('Should handle serialization error without crashing when stream closes concurrently', () async {
-      // Set up response listener
-      final responseCompleter = Completer<void>();
-      var responseCount = 0;
+    test(
+      'Should handle serialization error without crashing when stream closes concurrently',
+      () async {
+        // Set up response listener
+        final responseCompleter = Completer<void>();
+        var responseCount = 0;
 
-      harness.fromServer.stream.listen(
-        (message) {
-          responseCount++;
-          print('Received response message #$responseCount: ${message.runtimeType}');
-        },
-        onError: (error) {
-          print('Response stream error: $error');
-        },
-        onDone: () {
-          print('Response stream closed');
-          responseCompleter.complete();
-        },
-      );
-
-      // Send request
-      harness.sendRequestHeader('/RaceCondition/StreamingMethod');
-      harness.sendData(1);
-
-      // Wait for some responses to be processed
-      await Future.delayed(Duration(milliseconds: 10));
-
-      // Now close the client stream while the server is still sending responses
-      // This simulates a client disconnect/timeout happening during response serialization
-      harness.closeClientStream();
-
-      // Wait for everything to complete
-      await responseCompleter.future.timeout(
-        Duration(seconds: 2),
-        onTimeout: () {
-          print('Test timed out waiting for response stream to close');
-        },
-      );
-
-      // Check if we captured any errors
-      if (harness.capturedErrors.isNotEmpty) {
-        print('Captured errors: ${harness.capturedErrors.map((e) => e.message)}');
-
-        // The important thing is that the server didn't crash with "Cannot add event after closing"
-        // Check that we don't have the bad state error
-        final hasBadStateError = harness.capturedErrors.any(
-          (e) => e.message?.contains('Cannot add event after closing') ?? false,
+        harness.fromServer.stream.listen(
+          (message) {
+            responseCount++;
+            print(
+              'Received response message #$responseCount: ${message.runtimeType}',
+            );
+          },
+          onError: (error) {
+            print('Response stream error: $error');
+          },
+          onDone: () {
+            print('Response stream closed');
+            responseCompleter.complete();
+          },
         );
-        expect(hasBadStateError, isFalse, reason: 'Should not have "Cannot add event after closing" error');
-      }
 
-      // The test passes if we reach here without an unhandled exception
-      print('Test completed successfully without server crash');
-    });
+        // Send request
+        harness.sendRequestHeader('/RaceCondition/StreamingMethod');
+        harness.sendData(1);
 
-    test('Stress test - multiple concurrent disconnections during serialization errors', () async {
-      // This test increases the likelihood of hitting the race condition
-      final futures = <Future>[];
+        // Wait for some responses to be processed
+        await Future.delayed(Duration(milliseconds: 10));
 
-      for (var i = 0; i < 10; i++) {
-        futures.add(() async {
-          final harness = RaceConditionHarness();
-          harness.setUp();
+        // Now close the client stream while the server is still sending responses
+        // This simulates a client disconnect/timeout happening during response serialization
+        harness.closeClientStream();
 
-          try {
-            // Send request
-            harness.sendRequestHeader('/RaceCondition/StreamingMethod');
-            harness.sendData(1);
+        // Wait for everything to complete
+        await responseCompleter.future.timeout(
+          Duration(seconds: 2),
+          onTimeout: () {
+            print('Test timed out waiting for response stream to close');
+          },
+        );
 
-            // Random delay before disconnect
-            await Future.delayed(Duration(milliseconds: i % 5));
+        // Check if we captured any errors
+        if (harness.capturedErrors.isNotEmpty) {
+          print(
+            'Captured errors: ${harness.capturedErrors.map((e) => e.message)}',
+          );
 
-            // Randomly choose how to disconnect
-            if (i % 2 == 0) {
-              harness.closeClientStream();
-            } else {
-              harness.simulateClientDisconnect();
+          // The important thing is that the server didn't crash with "Cannot add event after closing"
+          // Check that we don't have the bad state error
+          final hasBadStateError = harness.capturedErrors.any(
+            (e) =>
+                e.message?.contains('Cannot add event after closing') ?? false,
+          );
+          expect(
+            hasBadStateError,
+            isFalse,
+            reason: 'Should not have "Cannot add event after closing" error',
+          );
+        }
+
+        // The test passes if we reach here without an unhandled exception
+        print('Test completed successfully without server crash');
+      },
+    );
+
+    test(
+      'Stress test - multiple concurrent disconnections during serialization errors',
+      () async {
+        // This test increases the likelihood of hitting the race condition
+        final futures = <Future>[];
+
+        for (var i = 0; i < 10; i++) {
+          futures.add(() async {
+            final harness = RaceConditionHarness();
+            harness.setUp();
+
+            try {
+              // Send request
+              harness.sendRequestHeader('/RaceCondition/StreamingMethod');
+              harness.sendData(1);
+
+              // Random delay before disconnect
+              await Future.delayed(Duration(milliseconds: i % 5));
+
+              // Randomly choose how to disconnect
+              if (i % 2 == 0) {
+                harness.closeClientStream();
+              } else {
+                harness.simulateClientDisconnect();
+              }
+
+              // Wait a bit for any errors to manifest
+              await Future.delayed(Duration(milliseconds: 10));
+            } finally {
+              harness.tearDown();
             }
+          }());
+        }
 
-            // Wait a bit for any errors to manifest
-            await Future.delayed(Duration(milliseconds: 10));
-          } finally {
-            harness.tearDown();
-          }
-        }());
-      }
+        await Future.wait(futures);
 
-      await Future.wait(futures);
-
-      // The test passes if none of the iterations caused an unhandled exception
-      print('Stress test completed without crashes');
-    });
+        // The test passes if none of the iterations caused an unhandled exception
+        print('Stress test completed without crashes');
+      },
+    );
 
     test('Reproduce exact "Cannot add event after closing" scenario', () async {
       // This test specifically tries to reproduce the exact error message from production
@@ -244,13 +259,17 @@ void main() {
         services: [testHarness.service],
         errorHandler: (error, stackTrace) {
           print('Error handler called with: ${error.message}');
-          if (error.message?.contains('Cannot add event after closing') ?? false) {
+          if (error.message?.contains('Cannot add event after closing') ??
+              false) {
             errorCompleter.complete('REPRODUCED: ${error.message}');
           }
         },
       );
 
-      final stream = TestServerStream(testHarness.toServer.stream, testHarness.fromServer.sink);
+      final stream = TestServerStream(
+        testHarness.toServer.stream,
+        testHarness.fromServer.sink,
+      );
       server.serveStream_(stream: stream);
 
       // Send request that will trigger serialization errors

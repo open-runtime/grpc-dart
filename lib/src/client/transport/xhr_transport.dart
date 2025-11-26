@@ -46,12 +46,19 @@ class XhrTransportStream implements GrpcTransportStream {
   @override
   StreamSink<List<int>> get outgoingMessages => _outgoingMessages.sink;
 
-  XhrTransportStream(this._request, {required ErrorHandler onError, required onDone})
-    : _onError = onError,
-      _onDone = onDone {
+  XhrTransportStream(
+    this._request, {
+    required ErrorHandler onError,
+    required onDone,
+  }) : _onError = onError,
+       _onDone = onDone {
     _outgoingMessages.stream
         .map(frame)
-        .listen((data) => _request.send(Uint8List.fromList(data).toJS), cancelOnError: true, onError: _onError);
+        .listen(
+          (data) => _request.send(Uint8List.fromList(data).toJS),
+          cancelOnError: true,
+          onError: _onError,
+        );
 
     _request.onReadyStateChange.listen((_) {
       if (_incomingProcessor.isClosed) {
@@ -72,7 +79,10 @@ class XhrTransportStream implements GrpcTransportStream {
       if (_incomingProcessor.isClosed) {
         return;
       }
-      _onError(GrpcError.unavailable('XhrConnection connection-error'), StackTrace.current);
+      _onError(
+        GrpcError.unavailable('XhrConnection connection-error'),
+        StackTrace.current,
+      );
       terminate();
     });
 
@@ -81,7 +91,9 @@ class XhrTransportStream implements GrpcTransportStream {
         return;
       }
       final responseText = _request.responseText;
-      final bytes = Uint8List.fromList(responseText.substring(_requestBytesRead).codeUnits).buffer;
+      final bytes = Uint8List.fromList(
+        responseText.substring(_requestBytesRead).codeUnits,
+      ).buffer;
       _requestBytesRead = responseText.length;
       _incomingProcessor.add(bytes);
     });
@@ -89,12 +101,20 @@ class XhrTransportStream implements GrpcTransportStream {
     _incomingProcessor.stream
         .transform(GrpcWebDecoder())
         .transform(grpcDecompressor())
-        .listen(_incomingMessages.add, onError: _onError, onDone: _incomingMessages.close);
+        .listen(
+          _incomingMessages.add,
+          onError: _onError,
+          onDone: _incomingMessages.close,
+        );
   }
 
   bool _validateResponseState() {
     try {
-      validateHttpStatusAndContentType(_request.status, _request.responseHeaders, rawResponse: _request.responseText);
+      validateHttpStatusAndContentType(
+        _request.status,
+        _request.responseHeaders,
+        rawResponse: _request.responseText,
+      );
       return true;
     } catch (e, st) {
       _onError(e, st);
@@ -116,7 +136,11 @@ class XhrTransportStream implements GrpcTransportStream {
     }
     if (_request.status != 200) {
       _onError(
-        GrpcError.unavailable('Request failed with status: ${_request.status}', null, _request.responseText),
+        GrpcError.unavailable(
+          'Request failed with status: ${_request.status}',
+          null,
+          _request.responseText,
+        ),
         StackTrace.current,
       );
       return;
@@ -209,7 +233,13 @@ class XMLHttpRequestImpl implements IXMLHttpRequest {
   }
 
   @override
-  void open(String method, String url, [bool async = true, String? username, String? password]) {
+  void open(
+    String method,
+    String url, [
+    bool async = true,
+    String? username,
+    String? password,
+  ]) {
     _xhr.open(method, url, async, username, password);
   }
 
@@ -247,7 +277,10 @@ class XhrClientConnection implements ClientConnection {
   @override
   String get scheme => uri.scheme;
 
-  void _initializeRequest(IXMLHttpRequest request, Map<String, String> metadata) {
+  void _initializeRequest(
+    IXMLHttpRequest request,
+    Map<String, String> metadata,
+  ) {
     metadata.forEach(request.setRequestHeader);
     // Overriding the mimetype allows us to stream and parse the data
     request.overrideMimeType('text/plain; charset=x-user-defined');
@@ -273,7 +306,8 @@ class XhrClientConnection implements ClientConnection {
     }
 
     var requestUri = uri.resolve(path);
-    if (callOptions is WebCallOptions && callOptions.bypassCorsPreflight == true) {
+    if (callOptions is WebCallOptions &&
+        callOptions.bypassCorsPreflight == true) {
       requestUri = cors.moveHttpHeadersToQueryParam(metadata, requestUri);
     }
 
@@ -285,7 +319,11 @@ class XhrClientConnection implements ClientConnection {
     // Must set headers after calling open().
     _initializeRequest(request, metadata);
 
-    final transportStream = _createXhrTransportStream(request, onError, _removeStream);
+    final transportStream = _createXhrTransportStream(
+      request,
+      onError,
+      _removeStream,
+    );
     _requests.add(transportStream);
     return transportStream;
   }

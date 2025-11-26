@@ -24,13 +24,23 @@ const port = 0;
 
 void main() {
   test('Channel on web uses GrpcWebClientChannel with correct URI', () {
-    final channel = GrpcOrGrpcWebClientChannel.toSingleEndpoint(host: host, port: port, transportSecure: true);
+    final channel = GrpcOrGrpcWebClientChannel.toSingleEndpoint(
+      host: host,
+      port: port,
+      transportSecure: true,
+    );
     expect(channel is GrpcWebClientChannel, isTrue);
     final webChannel = channel as GrpcWebClientChannel;
-    expect(webChannel.uri, equals(Uri(host: host, port: port, scheme: 'https')));
+    expect(
+      webChannel.uri,
+      equals(Uri(host: host, port: port, scheme: 'https')),
+    );
   });
 
   test('Constructor grpc on web throws UnsupportedError', () {
-    expect(() => GrpcOrGrpcWebClientChannel.grpc(host, port: port), throwsUnsupportedError);
+    expect(
+      () => GrpcOrGrpcWebClientChannel.grpc(host, port: port),
+      throwsUnsupportedError,
+    );
   });
 }

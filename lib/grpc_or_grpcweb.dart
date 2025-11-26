@@ -50,16 +50,22 @@ class GrpcOrGrpcWebClientChannel extends GrpcOrGrpcWebClientChannelInternal {
     required super.grpcWebTransportSecure,
   }) : super(grpcHost: host, grpcWebHost: host);
 
-  GrpcOrGrpcWebClientChannel.toSingleEndpoint({required String host, required int port, required bool transportSecure})
-    : super(
-        grpcHost: host,
-        grpcPort: port,
-        grpcTransportSecure: transportSecure,
-        grpcWebHost: host,
-        grpcWebPort: port,
-        grpcWebTransportSecure: transportSecure,
-      );
+  GrpcOrGrpcWebClientChannel.toSingleEndpoint({
+    required String host,
+    required int port,
+    required bool transportSecure,
+  }) : super(
+         grpcHost: host,
+         grpcPort: port,
+         grpcTransportSecure: transportSecure,
+         grpcWebHost: host,
+         grpcWebPort: port,
+         grpcWebTransportSecure: transportSecure,
+       );
 
-  GrpcOrGrpcWebClientChannel.grpc(super.host, {super.port = 443, super.options = const ChannelOptions()})
-    : super.grpc();
+  GrpcOrGrpcWebClientChannel.grpc(
+    super.host, {
+    super.port = 443,
+    super.options = const ChannelOptions(),
+  }) : super.grpc();
 }

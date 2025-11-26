@@ -1,3 +1,18 @@
+# =============================================================================
+# Release Please Workflow for open-runtime/grpc-dart Fork
+# =============================================================================
+# Automates releases using Conventional Commits:
+#   - feat: → Minor version bump
+#   - fix:  → Patch version bump
+#   - feat!/fix!/BREAKING CHANGE: → Major version bump
+#
+# Flow:
+#   1. Creates/updates a Release PR when conventional commits land
+#   2. Claude enhances the PR (via enhance-release-pr.yml)
+#   3. When merged: Creates tag and GitHub Release
+#   4. Dart packages can consume via tag_pattern: "^v"
+# =============================================================================
+
 name: Release Please
 
 on:
@@ -48,6 +63,139 @@ jobs:
           echo "🏷️ Tag: ${{ steps.release.outputs.tag_name }}"
           echo "🔗 https://github.com/${{ github.repository }}/releases/tag/${{ steps.release.outputs.tag_name }}"
 
+  # =============================================================================
+  # Fallback: Handle Untagged Merged Release PRs
+  # =============================================================================
+  # If Release Please aborts due to "untagged merged release PRs", this job
+  # will find those PRs, create the missing tags, and create GitHub releases.
+  # This handles edge cases like when Claude changes the version in a Release PR.
+  # =============================================================================
+  handle-untagged-releases:
+    name: 🔧 Handle Untagged Releases (Fallback)
+    needs: release-please
+    # Run if Release Please didn't create a release (might have aborted)
+    if: ${{ needs.release-please.outputs.releases_created != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Find and process untagged merged release PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔍 Checking for untagged merged release PRs..."
+          
+          # Find merged PRs with autorelease: pending label
+          PENDING_PRS=$(gh pr list --repo ${{ github.repository }} \
+            --state merged \
+            --label "autorelease: pending" \
+            --json number,title,mergeCommit \
+            --jq '.[] | select(.title | test("^chore: release "))')
+          
+          if [ -z "$PENDING_PRS" ]; then
+            echo "✅ No untagged merged release PRs found"
+            exit 0
+          fi
+          
+          echo "📋 Found untagged release PRs:"
+          echo "$PENDING_PRS"
+          
+          # Process each pending PR
+          echo "$PENDING_PRS" | jq -c '.' | while read -r pr; do
+            PR_NUM=$(echo "$pr" | jq -r '.number')
+            PR_TITLE=$(echo "$pr" | jq -r '.title')
+            MERGE_SHA=$(echo "$pr" | jq -r '.mergeCommit.oid')
+            
+            # Extract version from title "chore: release X.Y.Z"
+            VERSION=$(echo "$PR_TITLE" | grep -oP '\d+\.\d+\.\d+')
+            
+            if [ -z "$VERSION" ]; then
+              echo "⚠️ Could not extract version from PR #$PR_NUM title: $PR_TITLE"
+              continue
+            fi
+            
+            TAG_NAME="v$VERSION"
+            echo "📦 Processing PR #$PR_NUM: $PR_TITLE"
+            echo "   Version: $VERSION"
+            echo "   SHA: $MERGE_SHA"
+            echo "   Tag: $TAG_NAME"
+            
+            # Check if tag already exists
+            if gh api repos/${{ github.repository }}/git/refs/tags/$TAG_NAME 2>/dev/null; then
+              echo "✅ Tag $TAG_NAME already exists"
+            else
+              echo "🏷️ Creating tag $TAG_NAME at $MERGE_SHA"
+              gh api repos/${{ github.repository }}/git/refs \
+                -X POST \
+                -f ref="refs/tags/$TAG_NAME" \
+                -f sha="$MERGE_SHA"
+            fi
+            
+            # Check if release already exists
+            if gh release view $TAG_NAME --repo ${{ github.repository }} 2>/dev/null; then
+              echo "✅ Release $TAG_NAME already exists"
+            else
+              echo "🎉 Creating GitHub Release $TAG_NAME"
+              
+              # Extract changelog for this version
+              CHANGELOG=$(awk -v ver="$VERSION" '
+                /^## \[/ {
+                  if (found) exit
+                  if ($0 ~ "## \\[" ver "\\]") found=1
+                }
+                found { print }
+              ' CHANGELOG.md | tail -n +2)
+              
+              if [ -z "$CHANGELOG" ]; then
+                CHANGELOG="Release v$VERSION - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details."
+              fi
+              
+              # Create the release
+              gh release create $TAG_NAME \
+                --repo ${{ github.repository }} \
+                --title "v$VERSION" \
+                --notes "## 📦 Installation
+
+**Dart 3.9+ (recommended):**
+\`\`\`yaml
+dependencies:
+  grpc:
+    git:
+      url: https://github.com/open-runtime/grpc-dart
+      tag_pattern: \"^v\"
+    version: ^$VERSION
+\`\`\`
+
+**Direct tag reference:**
+\`\`\`yaml
+dependencies:
+  grpc:
+    git:
+      url: https://github.com/open-runtime/grpc-dart
+      ref: v$VERSION
+\`\`\`
+
+---
+
+$CHANGELOG"
+            fi
+            
+            # Update label to autorelease: tagged
+            echo "🏷️ Updating PR #$PR_NUM label to autorelease: tagged"
+            gh pr edit $PR_NUM \
+              --repo ${{ github.repository }} \
+              --remove-label "autorelease: pending" \
+              --add-label "autorelease: tagged" || true
+            
+            echo "✅ Processed PR #$PR_NUM"
+          done
+
+  # =============================================================================
+  # Verify Release
+  # =============================================================================
   verify-release:
     name: ✅ Verify Release
     needs: release-please
@@ -100,16 +248,6 @@ jobs:
           echo "    version: ^${{ needs.release-please.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Direct tag reference:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`yaml" >> $GITHUB_STEP_SUMMARY
-          echo "dependencies:" >> $GITHUB_STEP_SUMMARY
-          echo "  grpc:" >> $GITHUB_STEP_SUMMARY
-          echo "    git:" >> $GITHUB_STEP_SUMMARY
-          echo "      url: https://github.com/open-runtime/grpc-dart" >> $GITHUB_STEP_SUMMARY
-          echo "      ref: v${{ needs.release-please.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
           echo "- [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/v${{ needs.release-please.outputs.version }})" >> $GITHUB_STEP_SUMMARY
-          echo "- [Changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)" >> $GITHUB_STEP_SUMMARY
-
+          echo "- [Changelog](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md)" >> $GITHUB_STEP_SUMMARY

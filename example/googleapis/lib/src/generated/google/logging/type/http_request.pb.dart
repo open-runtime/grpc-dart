@@ -50,7 +50,8 @@ class HttpRequest extends $pb.GeneratedMessage {
     if (remoteIp != null) result.remoteIp = remoteIp;
     if (referer != null) result.referer = referer;
     if (cacheHit != null) result.cacheHit = cacheHit;
-    if (cacheValidatedWithOriginServer != null) result.cacheValidatedWithOriginServer = cacheValidatedWithOriginServer;
+    if (cacheValidatedWithOriginServer != null)
+      result.cacheValidatedWithOriginServer = cacheValidatedWithOriginServer;
     if (cacheLookup != null) result.cacheLookup = cacheLookup;
     if (cacheFillBytes != null) result.cacheFillBytes = cacheFillBytes;
     if (serverIp != null) result.serverIp = serverIp;
@@ -64,11 +65,15 @@ class HttpRequest extends $pb.GeneratedMessage {
   factory HttpRequest.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory HttpRequest.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory HttpRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'HttpRequest',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.type'), createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'HttpRequest',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.type'),
+      createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'requestMethod')
     ..aOS(2, _omitFieldNames ? '' : 'requestUrl')
     ..aInt64(3, _omitFieldNames ? '' : 'requestSize')
@@ -82,7 +87,8 @@ class HttpRequest extends $pb.GeneratedMessage {
     ..aOB(11, _omitFieldNames ? '' : 'cacheLookup')
     ..aInt64(12, _omitFieldNames ? '' : 'cacheFillBytes')
     ..aOS(13, _omitFieldNames ? '' : 'serverIp')
-    ..aOM<$0.Duration>(14, _omitFieldNames ? '' : 'latency', subBuilder: $0.Duration.create)
+    ..aOM<$0.Duration>(14, _omitFieldNames ? '' : 'latency',
+        subBuilder: $0.Duration.create)
     ..aOS(15, _omitFieldNames ? '' : 'protocol')
     ..hasRequiredFields = false;
 
@@ -90,7 +96,8 @@ class HttpRequest extends $pb.GeneratedMessage {
   HttpRequest clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   HttpRequest copyWith(void Function(HttpRequest) updates) =>
-      super.copyWith((message) => updates(message as HttpRequest)) as HttpRequest;
+      super.copyWith((message) => updates(message as HttpRequest))
+          as HttpRequest;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -100,7 +107,8 @@ class HttpRequest extends $pb.GeneratedMessage {
   @$core.override
   HttpRequest createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static HttpRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<HttpRequest>(create);
+  static HttpRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<HttpRequest>(create);
   static HttpRequest? _defaultInstance;
 
   /// The request method. Examples: `"GET"`, `"HEAD"`, `"PUT"`, `"POST"`.
@@ -274,5 +282,7 @@ class HttpRequest extends $pb.GeneratedMessage {
   void clearProtocol() => $_clearField(15);
 }
 
-const $core.bool _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
-const $core.bool _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');
+const $core.bool _omitFieldNames =
+    $core.bool.fromEnvironment('protobuf.omit_field_names');
+const $core.bool _omitMessageNames =
+    $core.bool.fromEnvironment('protobuf.omit_message_names');
