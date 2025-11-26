@@ -1,6 +1,20 @@
 [![Dart](https://github.com/grpc/grpc-dart/actions/workflows/dart.yml/badge.svg)](https://github.com/grpc/grpc-dart/actions/workflows/dart.yml)
 [![pub package](https://img.shields.io/pub/v/grpc.svg)](https://pub.dev/packages/grpc)
 
+# open-runtime/grpc-dart Fork
+
+This is the **open-runtime fork** of the official [grpc/grpc-dart](https://github.com/grpc/grpc-dart) package, maintained with critical production fixes and enhancements.
+
+**Key Features:**
+- Race condition fixes for production stability
+- Null connection exception handling
+- ServerInterceptor support for advanced security patterns
+- Based on upstream 5.0.0 with fork-specific improvements
+
+**Why this fork?** See [WHY_USE_OPEN_RUNTIME_FORK.md](WHY_USE_OPEN_RUNTIME_FORK.md) for detailed justification.
+
+---
+
 The [Dart](https://www.dart.dev/) implementation of
 [gRPC](https://grpc.io/): A high performance, open source, general RPC framework that puts mobile and HTTP/2 first.
 
