@@ -31,41 +31,32 @@ import 'package:protobuf/protobuf.dart' as $pb;
 /// original severity level in the log entry payload if you wish.
 class LogSeverity extends $pb.ProtobufEnum {
   /// (0) The log entry has no assigned severity level.
-  static const LogSeverity DEFAULT =
-      LogSeverity._(0, _omitEnumNames ? '' : 'DEFAULT');
+  static const LogSeverity DEFAULT = LogSeverity._(0, _omitEnumNames ? '' : 'DEFAULT');
 
   /// (100) Debug or trace information.
-  static const LogSeverity DEBUG =
-      LogSeverity._(100, _omitEnumNames ? '' : 'DEBUG');
+  static const LogSeverity DEBUG = LogSeverity._(100, _omitEnumNames ? '' : 'DEBUG');
 
   /// (200) Routine information, such as ongoing status or performance.
-  static const LogSeverity INFO =
-      LogSeverity._(200, _omitEnumNames ? '' : 'INFO');
+  static const LogSeverity INFO = LogSeverity._(200, _omitEnumNames ? '' : 'INFO');
 
   /// (300) Normal but significant events, such as start up, shut down, or
   /// a configuration change.
-  static const LogSeverity NOTICE =
-      LogSeverity._(300, _omitEnumNames ? '' : 'NOTICE');
+  static const LogSeverity NOTICE = LogSeverity._(300, _omitEnumNames ? '' : 'NOTICE');
 
   /// (400) Warning events might cause problems.
-  static const LogSeverity WARNING =
-      LogSeverity._(400, _omitEnumNames ? '' : 'WARNING');
+  static const LogSeverity WARNING = LogSeverity._(400, _omitEnumNames ? '' : 'WARNING');
 
   /// (500) Error events are likely to cause problems.
-  static const LogSeverity ERROR =
-      LogSeverity._(500, _omitEnumNames ? '' : 'ERROR');
+  static const LogSeverity ERROR = LogSeverity._(500, _omitEnumNames ? '' : 'ERROR');
 
   /// (600) Critical events cause more severe problems or outages.
-  static const LogSeverity CRITICAL =
-      LogSeverity._(600, _omitEnumNames ? '' : 'CRITICAL');
+  static const LogSeverity CRITICAL = LogSeverity._(600, _omitEnumNames ? '' : 'CRITICAL');
 
   /// (700) A person must take an action immediately.
-  static const LogSeverity ALERT =
-      LogSeverity._(700, _omitEnumNames ? '' : 'ALERT');
+  static const LogSeverity ALERT = LogSeverity._(700, _omitEnumNames ? '' : 'ALERT');
 
   /// (800) One or more systems are unusable.
-  static const LogSeverity EMERGENCY =
-      LogSeverity._(800, _omitEnumNames ? '' : 'EMERGENCY');
+  static const LogSeverity EMERGENCY = LogSeverity._(800, _omitEnumNames ? '' : 'EMERGENCY');
 
   static const $core.List<LogSeverity> values = <LogSeverity>[
     DEFAULT,
@@ -79,12 +70,10 @@ class LogSeverity extends $pb.ProtobufEnum {
     EMERGENCY,
   ];
 
-  static final $core.Map<$core.int, LogSeverity> _byValue =
-      $pb.ProtobufEnum.initByValue(values);
+  static final $core.Map<$core.int, LogSeverity> _byValue = $pb.ProtobufEnum.initByValue(values);
   static LogSeverity? valueOf($core.int value) => _byValue[value];
 
   const LogSeverity._(super.value, super.name);
 }
 
-const $core.bool _omitEnumNames =
-    $core.bool.fromEnvironment('protobuf.omit_enum_names');
+const $core.bool _omitEnumNames = $core.bool.fromEnvironment('protobuf.omit_enum_names');

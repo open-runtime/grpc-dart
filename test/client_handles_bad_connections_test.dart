@@ -37,11 +37,7 @@ class TestClient extends grpc.Client {
   TestClient(super.channel);
 
   grpc.ResponseStream<int> stream(int request, {grpc.CallOptions? options}) {
-    return $createStreamingCall(
-      _$stream,
-      Stream.value(request),
-      options: options,
-    );
+    return $createStreamingCall(_$stream, Stream.value(request), options: options);
   }
 }
 
@@ -84,9 +80,7 @@ class FixedConnectionClientChannel extends ClientChannelBase {
 }
 
 Future<void> main() async {
-  testTcpAndUds('client reconnects after the connection gets old', (
-    address,
-  ) async {
+  testTcpAndUds('client reconnects after the connection gets old', (address) async {
     // client reconnect after a short delay.
     final server = grpc.Server.create(services: [TestService()]);
     await server.serve(address: address, port: 0);
@@ -108,21 +102,14 @@ Future<void> main() async {
     expect(await testClient.stream(1).toList(), [1, 2, 3]);
     await Future.delayed(Duration(milliseconds: 200));
     expect(await testClient.stream(1).toList(), [1, 2, 3]);
-    expect(
-      channel.states.where((x) => x == grpc.ConnectionState.ready).length,
-      2,
-    );
+    expect(channel.states.where((x) => x == grpc.ConnectionState.ready).length, 2);
     server.shutdown();
   });
 
   testTcpAndUds('client reconnects when stream limit is used', (address) async {
     // client reconnect after setting stream limit.
     final server = grpc.Server.create(services: [TestService()]);
-    await server.serve(
-      address: address,
-      port: 0,
-      http2ServerSettings: ServerSettings(concurrentStreamLimit: 2),
-    );
+    await server.serve(address: address, port: 0, http2ServerSettings: ServerSettings(concurrentStreamLimit: 2));
 
     final channel = FixedConnectionClientChannel(
       Http2ClientConnection(

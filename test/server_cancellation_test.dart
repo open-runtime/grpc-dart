@@ -23,14 +23,10 @@ import 'src/generated/echo.pbgrpc.dart';
 
 class EchoService extends EchoServiceBase {
   @override
-  Future<EchoResponse> echo(ServiceCall call, EchoRequest request) =>
-      throw UnimplementedError();
+  Future<EchoResponse> echo(ServiceCall call, EchoRequest request) => throw UnimplementedError();
 
   @override
-  Stream<ServerStreamingEchoResponse> serverStreamingEcho(
-    ServiceCall call,
-    ServerStreamingEchoRequest request,
-  ) async* {
+  Stream<ServerStreamingEchoResponse> serverStreamingEcho(ServiceCall call, ServerStreamingEchoRequest request) async* {
     for (var i = 0; i < request.messageCount; i++) {
       yield ServerStreamingEchoResponse(message: '$i');
       await Future.delayed(Duration(milliseconds: request.messageInterval));
@@ -42,8 +38,7 @@ void main() {
   late Server server;
   late ClientChannel channel;
 
-  int numberHandlers() =>
-      server.handlers.entries.firstOrNull?.value.length ?? 0;
+  int numberHandlers() => server.handlers.entries.firstOrNull?.value.length ?? 0;
 
   setUp(() async {
     server = Server.create(services: [EchoService()]);
@@ -61,16 +56,9 @@ void main() {
   });
 
   test('Handlers get removed from map after stream is done.', () async {
-    final request = ServerStreamingEchoRequest(
-      messageCount: 5,
-      messageInterval: 5,
-    );
-    final stream1 = EchoServiceClient(
-      channel,
-    ).serverStreamingEcho(request).asBroadcastStream();
-    final stream2 = EchoServiceClient(
-      channel,
-    ).serverStreamingEcho(request).asBroadcastStream();
+    final request = ServerStreamingEchoRequest(messageCount: 5, messageInterval: 5);
+    final stream1 = EchoServiceClient(channel).serverStreamingEcho(request).asBroadcastStream();
+    final stream2 = EchoServiceClient(channel).serverStreamingEcho(request).asBroadcastStream();
 
     expect(numberHandlers(), 0);
 

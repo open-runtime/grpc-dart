@@ -33,12 +33,8 @@ class Http2TransportStream extends GrpcTransportStream {
   @override
   StreamSink<List<int>> get outgoingMessages => _outgoingMessages.sink;
 
-  Http2TransportStream(
-    this._transportStream,
-    this._onError,
-    CodecRegistry? codecRegistry,
-    Codec? compression,
-  ) : incomingMessages = _transportStream.incomingMessages
+  Http2TransportStream(this._transportStream, this._onError, CodecRegistry? codecRegistry, Codec? compression)
+    : incomingMessages = _transportStream.incomingMessages
           .transform(GrpcHttpDecoder(forResponse: true))
           .transform(grpcDecompressor(codecRegistry: codecRegistry)) {
     _outgoingMessages.stream

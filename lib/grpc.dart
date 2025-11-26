@@ -29,8 +29,7 @@ export 'src/client/proxy.dart' show Proxy;
 export 'src/client/transport/http2_credentials.dart'
     show BadCertificateHandler, allowBadCertificates, ChannelCredentials;
 export 'src/server/call.dart' show ServiceCall;
-export 'src/server/interceptor.dart'
-    show Interceptor, ServerInterceptor, ServerStreamingInvoker;
+export 'src/server/interceptor.dart' show Interceptor, ServerInterceptor, ServerStreamingInvoker;
 export 'src/server/server.dart'
     show ServerCredentials, ServerLocalCredentials, ServerTlsCredentials, ConnectionServer, Server;
 export 'src/server/server_keepalive.dart' show ServerKeepAliveOptions;
