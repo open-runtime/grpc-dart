@@ -15,6 +15,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show stderr;
 
 import 'package:http2/transport.dart';
 
@@ -326,6 +327,7 @@ class ServerHandler extends ServiceCall {
         } catch (e) {
           // Stream was closed between check and add - ignore this error
           // The handler has already been notified or terminated
+          stderr.writeln('[gRPC] Stream closed during error handling in _onResponse: $e');
         }
       }
       _sendError(grpcError, trace);
@@ -408,6 +410,7 @@ class ServerHandler extends ServiceCall {
     } catch (e) {
       // Stream is already closed - this can happen during concurrent termination
       // The client is gone, so we can't send the trailers anyway
+      stderr.writeln('[gRPC] Stream closed during sendTrailers: $e');
     }
 
     // We're done!
@@ -445,6 +448,7 @@ class ServerHandler extends ServiceCall {
           _requests!.addError(error);
         } catch (e) {
           // Stream was closed - ignore this error
+          stderr.writeln('[gRPC] Stream closed in _onDoneExpected: $e');
         }
       }
     }
