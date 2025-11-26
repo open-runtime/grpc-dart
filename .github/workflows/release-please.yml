@@ -153,11 +153,9 @@ jobs:
                 CHANGELOG="Release v$VERSION - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details."
               fi
               
-              # Create the release
-              gh release create $TAG_NAME \
-                --repo ${{ github.repository }} \
-                --title "v$VERSION" \
-                --notes "## 📦 Installation
+              # Create release notes file
+              cat > /tmp/release_notes.md << EOF
+## 📦 Installation
 
 **Dart 3.9+ (recommended):**
 \`\`\`yaml
@@ -165,7 +163,7 @@ dependencies:
   grpc:
     git:
       url: https://github.com/open-runtime/grpc-dart
-      tag_pattern: \"^v\"
+      tag_pattern: "^v"
     version: ^$VERSION
 \`\`\`
 
@@ -180,7 +178,14 @@ dependencies:
 
 ---
 
-$CHANGELOG"
+$CHANGELOG
+EOF
+              
+              # Create the release
+              gh release create $TAG_NAME \
+                --repo ${{ github.repository }} \
+                --title "v$VERSION" \
+                --notes-file /tmp/release_notes.md
             fi
             
             # Update label to autorelease: tagged
