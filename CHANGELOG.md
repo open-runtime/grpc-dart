@@ -4,6 +4,9 @@
 
 ## [5.1.0](https://github.com/open-runtime/grpc-dart/compare/v5.0.0...v5.1.0) (2025-11-26)
 
+### 🚀 Release Highlights
+
+This release enhances the open-runtime fork with automated release management through Release Please and Claude Code Action integration. It also improves observability of race condition fixes with platform-specific stderr logging, making it easier to diagnose and prevent production issues. The fork continues to maintain critical stability fixes from upstream 5.0.0 while adding developer-friendly automation for future releases.
 
 ### ✨ Features
 
