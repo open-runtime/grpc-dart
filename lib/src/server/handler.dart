@@ -15,13 +15,13 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show stderr;
 
 import 'package:http2/transport.dart';
 
 import '../shared/codec.dart';
 import '../shared/codec_registry.dart';
 import '../shared/io_bits/io_bits.dart' show InternetAddress, X509Certificate;
+import '../shared/logging/logging.dart' show logGrpcError;
 import '../shared/message.dart';
 import '../shared/status.dart';
 import '../shared/streams.dart';
@@ -335,7 +335,7 @@ class ServerHandler extends ServiceCall {
         } catch (e) {
           // Stream was closed between check and add - ignore this error
           // The handler has already been notified or terminated
-          stderr.writeln(
+          logGrpcError(
             '[gRPC] Stream closed during error handling in _onResponse: $e',
           );
         }
@@ -433,7 +433,7 @@ class ServerHandler extends ServiceCall {
     } catch (e) {
       // Stream is already closed - this can happen during concurrent termination
       // The client is gone, so we can't send the trailers anyway
-      stderr.writeln('[gRPC] Stream closed during sendTrailers: $e');
+      logGrpcError('[gRPC] Stream closed during sendTrailers: $e');
     }
 
     // We're done!
@@ -471,7 +471,7 @@ class ServerHandler extends ServiceCall {
           _requests!.addError(error);
         } catch (e) {
           // Stream was closed - ignore this error
-          stderr.writeln('[gRPC] Stream closed in _onDoneExpected: $e');
+          logGrpcError('[gRPC] Stream closed in _onDoneExpected: $e');
         }
       }
     }
