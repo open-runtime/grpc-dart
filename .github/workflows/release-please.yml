@@ -21,6 +21,11 @@ on:
       - main
       - aot_monorepo_compat
 
+# Only one Release Please run per branch at a time
+concurrency:
+  group: release-please-${{ github.ref_name }}
+  cancel-in-progress: false  # Don't cancel - Release Please should complete
+
 permissions:
   contents: write
   pull-requests: write

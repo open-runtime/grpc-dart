@@ -8,6 +8,11 @@ on:
     branches: [main, aot_monorepo_compat]
   workflow_dispatch:
 
+# Cancel in-progress runs when new commits are pushed
+concurrency:
+  group: dart-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Check code formatting and static analysis on a single OS (linux)
   # against Dart dev.
