@@ -2,6 +2,23 @@
 
 - Upgrading protos with new `googleapis` and `protobuf` versions.
 
+## [5.1.1](https://github.com/open-runtime/grpc-dart/compare/v5.1.0...v5.1.1) (2025-11-26)
+
+### 🚀 Release Highlights
+
+This maintenance release improves the reliability of our automated release system with better YAML handling and comprehensive embedded CI instructions. The fork's critical race condition and null connection fixes remain fully intact, ensuring continued production stability for high-concurrency gRPC servers in the AOT monorepo.
+
+### 🐛 Bug Fixes
+
+* Format all Dart files and add fallback release handler ([b201913](https://github.com/open-runtime/grpc-dart/commit/b201913e9dfeb7f8e73b6747096ebada1f79cc4b))
+* Replace heredoc with echo statements for YAML compatibility ([289c7e4](https://github.com/open-runtime/grpc-dart/commit/289c7e4b2c9dc0d1e16cf009d23e4f34eab50b3e))
+* Use heredoc and notes-file for release creation ([b03923e](https://github.com/open-runtime/grpc-dart/commit/b03923e8c929b7f04f3bc6b7f0ff3a80181acb7e))
+
+
+### 📚 Documentation
+
+* Embed comprehensive Claude CI instructions in workflow ([58057a1](https://github.com/open-runtime/grpc-dart/commit/58057a1a344e2a57265bad7c8743c19136082810))
+
 ## [5.1.0](https://github.com/open-runtime/grpc-dart/compare/v5.0.0...v5.1.0) (2025-11-26)
 
 ### 🚀 Release Highlights
