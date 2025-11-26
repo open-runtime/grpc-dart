@@ -128,7 +128,9 @@ void main() {
     }
 
     await harness.runTest(
-      clientCall: harness.client.bidirectional(Stream.fromIterable(requests)).toList(),
+      clientCall: harness.client
+          .bidirectional(Stream.fromIterable(requests))
+          .toList(),
       expectedResult: responses,
       expectedPath: '/Test/Bidirectional',
       serverHandlers: [handleRequest, handleRequest, handleRequest],
@@ -159,7 +161,9 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.unimplemented('More than one response received'),
+      expectedException: GrpcError.unimplemented(
+        'More than one response received',
+      ),
       serverHandlers: [handleRequest],
     );
   });
@@ -198,7 +202,9 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.unimplemented('Received data before headers'),
+      expectedException: GrpcError.unimplemented(
+        'Received data before headers',
+      ),
       serverHandlers: [handleRequest],
     );
   });
@@ -213,7 +219,9 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.unimplemented('Received data after trailers'),
+      expectedException: GrpcError.unimplemented(
+        'Received data after trailers',
+      ),
       serverHandlers: [handleRequest],
     );
   });
@@ -251,7 +259,10 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.custom(customStatusCode, customStatusMessage),
+      expectedException: GrpcError.custom(
+        customStatusCode,
+        customStatusMessage,
+      ),
       serverHandlers: [handleRequest],
     );
   });
@@ -351,16 +362,24 @@ void main() {
 
   test('Connection errors are reported', () async {
     final connectionStates = <ConnectionState>[];
-    final expectedException = GrpcError.unavailable('Error connecting: Connection error');
+    final expectedException = GrpcError.unavailable(
+      'Error connecting: Connection error',
+    );
     harness.connection!.connectionError = 'Connection error';
     harness.channel.onConnectionStateChanged.listen(
       (state) {
         connectionStates.add(state);
       },
       onDone: () async {
-        await harness.expectThrows(harness.client.unary(dummyValue), expectedException);
+        await harness.expectThrows(
+          harness.client.unary(dummyValue),
+          expectedException,
+        );
 
-        expect(connectionStates, [ConnectionState.connecting, ConnectionState.idle]);
+        expect(connectionStates, [
+          ConnectionState.connecting,
+          ConnectionState.idle,
+        ]);
       },
     );
   });
@@ -374,9 +393,16 @@ void main() {
         if (state == ConnectionState.idle) done.complete();
       },
       onDone: () async {
-        expect(connectionStates, [ConnectionState.connecting, ConnectionState.ready]);
+        expect(connectionStates, [
+          ConnectionState.connecting,
+          ConnectionState.ready,
+        ]);
         await done.future;
-        expect(connectionStates, [ConnectionState.connecting, ConnectionState.ready, ConnectionState.idle]);
+        expect(connectionStates, [
+          ConnectionState.connecting,
+          ConnectionState.ready,
+          ConnectionState.idle,
+        ]);
       },
     );
 
@@ -404,10 +430,24 @@ void main() {
 
   test('authority is computed correctly', () {
     final emptyOptions = ChannelOptions();
-    expect(Http2ClientConnection('localhost', 8080, emptyOptions).authority, 'localhost:8080');
-    expect(Http2ClientConnection('localhost', 443, emptyOptions).authority, 'localhost');
-    final channelOptions = ChannelOptions(credentials: ChannelCredentials.insecure(authority: 'myauthority.com'));
-    expect(Http2ClientConnection('localhost', 8080, channelOptions).authority, 'myauthority.com');
-    expect(Http2ClientConnection('localhost', 443, channelOptions).authority, 'myauthority.com');
+    expect(
+      Http2ClientConnection('localhost', 8080, emptyOptions).authority,
+      'localhost:8080',
+    );
+    expect(
+      Http2ClientConnection('localhost', 443, emptyOptions).authority,
+      'localhost',
+    );
+    final channelOptions = ChannelOptions(
+      credentials: ChannelCredentials.insecure(authority: 'myauthority.com'),
+    );
+    expect(
+      Http2ClientConnection('localhost', 8080, channelOptions).authority,
+      'myauthority.com',
+    );
+    expect(
+      Http2ClientConnection('localhost', 443, channelOptions).authority,
+      'myauthority.com',
+    );
   });
 }

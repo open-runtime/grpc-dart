@@ -34,7 +34,10 @@ void main() {
   });
 
   test('WebCallOptions mergeWith CallOptions returns WebCallOptions', () {
-    final options1 = WebCallOptions(bypassCorsPreflight: true, withCredentials: true);
+    final options1 = WebCallOptions(
+      bypassCorsPreflight: true,
+      withCredentials: true,
+    );
     final metadata = {'test': '42'};
     final options2 = CallOptions(metadata: metadata);
     final mergedOptions1 = options1.mergedWith(options2) as WebCallOptions;
@@ -52,13 +55,21 @@ void main() {
   test('Cancelling a call correctly complete headers future', () async {
     final clientCall = harness.client.unary(dummyValue);
 
-    Future.delayed(Duration(milliseconds: cancelDurationMillis)).then((_) => clientCall.cancel());
+    Future.delayed(
+      Duration(milliseconds: cancelDurationMillis),
+    ).then((_) => clientCall.cancel());
 
     expect(await clientCall.headers, isEmpty);
 
     await expectLater(
       clientCall,
-      throwsA(isA<GrpcError>().having((e) => e.codeName, 'Test codename', contains('CANCELLED'))),
+      throwsA(
+        isA<GrpcError>().having(
+          (e) => e.codeName,
+          'Test codename',
+          contains('CANCELLED'),
+        ),
+      ),
     );
   });
 
@@ -73,7 +84,13 @@ void main() {
 
     await expectLater(
       clientCall,
-      throwsA(isA<GrpcError>().having((e) => e.codeName, 'Test codename', contains('CANCELLED'))),
+      throwsA(
+        isA<GrpcError>().having(
+          (e) => e.codeName,
+          'Test codename',
+          contains('CANCELLED'),
+        ),
+      ),
     );
   });
 }

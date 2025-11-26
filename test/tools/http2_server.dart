@@ -30,7 +30,9 @@ void handleConnection(Socket client) {
     stream.incomingMessages.listen((event) {
       if (event is HeadersStreamMessage) {
         print(event.headers);
-        final headersStreamMessage = HeadersStreamMessage([Header(utf8.encode('SomeName'), utf8.encode('SomeValue'))]);
+        final headersStreamMessage = HeadersStreamMessage([
+          Header(utf8.encode('SomeName'), utf8.encode('SomeValue')),
+        ]);
         print('send $headersStreamMessage');
         stream.outgoingMessages.add(headersStreamMessage);
       }

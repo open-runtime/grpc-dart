@@ -32,20 +32,22 @@ class RaceConditionService extends Service {
   bool shouldFailSerialization = false;
 
   RaceConditionService() {
-    $addMethod(ServiceMethod<int, int>(
-      'StreamingMethod',
-      streamingMethod,
-      false, // not streaming request
-      true, // streaming response
-      mockDecode,
-      (int value) {
-        // Conditionally fail serialization to trigger the error path
-        if (shouldFailSerialization && value > 2) {
-          throw Exception('Simulated serialization error!');
-        }
-        return mockEncode(value);
-      },
-    ));
+    $addMethod(
+      ServiceMethod<int, int>(
+        'StreamingMethod',
+        streamingMethod,
+        false, // not streaming request
+        true, // streaming response
+        mockDecode,
+        (int value) {
+          // Conditionally fail serialization to trigger the error path
+          if (shouldFailSerialization && value > 2) {
+            throw Exception('Simulated serialization error!');
+          }
+          return mockEncode(value);
+        },
+      ),
+    );
   }
 
   Stream<int> streamingMethod(ServiceCall call, Future<int> request) async* {
@@ -99,13 +101,14 @@ class RaceConditionHarness {
 
   void sendRequestHeader(String path) {
     final headers = Http2ClientConnection.createCallHeaders(
-        true,
-        'test',
-        path,
-        Duration(seconds: 1), // Add a timeout
-        null,
-        null,
-        userAgent: 'dart-grpc/test');
+      true,
+      'test',
+      path,
+      Duration(seconds: 1), // Add a timeout
+      null,
+      null,
+      userAgent: 'dart-grpc/test',
+    );
     toServer.add(HeadersStreamMessage(headers));
   }
 
@@ -138,102 +141,111 @@ void main() {
     });
 
     test(
-        'Should handle serialization error without crashing when stream closes concurrently',
-        () async {
-      // Set up response listener
-      final responseCompleter = Completer<void>();
-      var responseCount = 0;
+      'Should handle serialization error without crashing when stream closes concurrently',
+      () async {
+        // Set up response listener
+        final responseCompleter = Completer<void>();
+        var responseCount = 0;
 
-      harness.fromServer.stream.listen(
-        (message) {
-          responseCount++;
+        harness.fromServer.stream.listen(
+          (message) {
+            responseCount++;
+            print(
+              'Received response message #$responseCount: ${message.runtimeType}',
+            );
+          },
+          onError: (error) {
+            print('Response stream error: $error');
+          },
+          onDone: () {
+            print('Response stream closed');
+            responseCompleter.complete();
+          },
+        );
+
+        // Send request
+        harness.sendRequestHeader('/RaceCondition/StreamingMethod');
+        harness.sendData(1);
+
+        // Wait for some responses to be processed
+        await Future.delayed(Duration(milliseconds: 10));
+
+        // Now close the client stream while the server is still sending responses
+        // This simulates a client disconnect/timeout happening during response serialization
+        harness.closeClientStream();
+
+        // Wait for everything to complete
+        await responseCompleter.future.timeout(
+          Duration(seconds: 2),
+          onTimeout: () {
+            print('Test timed out waiting for response stream to close');
+          },
+        );
+
+        // Check if we captured any errors
+        if (harness.capturedErrors.isNotEmpty) {
           print(
-              'Received response message #$responseCount: ${message.runtimeType}');
-        },
-        onError: (error) {
-          print('Response stream error: $error');
-        },
-        onDone: () {
-          print('Response stream closed');
-          responseCompleter.complete();
-        },
-      );
+            'Captured errors: ${harness.capturedErrors.map((e) => e.message)}',
+          );
 
-      // Send request
-      harness.sendRequestHeader('/RaceCondition/StreamingMethod');
-      harness.sendData(1);
+          // The important thing is that the server didn't crash with "Cannot add event after closing"
+          // Check that we don't have the bad state error
+          final hasBadStateError = harness.capturedErrors.any(
+            (e) =>
+                e.message?.contains('Cannot add event after closing') ?? false,
+          );
+          expect(
+            hasBadStateError,
+            isFalse,
+            reason: 'Should not have "Cannot add event after closing" error',
+          );
+        }
 
-      // Wait for some responses to be processed
-      await Future.delayed(Duration(milliseconds: 10));
-
-      // Now close the client stream while the server is still sending responses
-      // This simulates a client disconnect/timeout happening during response serialization
-      harness.closeClientStream();
-
-      // Wait for everything to complete
-      await responseCompleter.future.timeout(
-        Duration(seconds: 2),
-        onTimeout: () {
-          print('Test timed out waiting for response stream to close');
-        },
-      );
-
-      // Check if we captured any errors
-      if (harness.capturedErrors.isNotEmpty) {
-        print(
-            'Captured errors: ${harness.capturedErrors.map((e) => e.message)}');
-
-        // The important thing is that the server didn't crash with "Cannot add event after closing"
-        // Check that we don't have the bad state error
-        final hasBadStateError = harness.capturedErrors.any((e) =>
-            e.message?.contains('Cannot add event after closing') ?? false);
-        expect(hasBadStateError, isFalse,
-            reason: 'Should not have "Cannot add event after closing" error');
-      }
-
-      // The test passes if we reach here without an unhandled exception
-      print('Test completed successfully without server crash');
-    });
+        // The test passes if we reach here without an unhandled exception
+        print('Test completed successfully without server crash');
+      },
+    );
 
     test(
-        'Stress test - multiple concurrent disconnections during serialization errors',
-        () async {
-      // This test increases the likelihood of hitting the race condition
-      final futures = <Future>[];
+      'Stress test - multiple concurrent disconnections during serialization errors',
+      () async {
+        // This test increases the likelihood of hitting the race condition
+        final futures = <Future>[];
 
-      for (var i = 0; i < 10; i++) {
-        futures.add(() async {
-          final harness = RaceConditionHarness();
-          harness.setUp();
+        for (var i = 0; i < 10; i++) {
+          futures.add(() async {
+            final harness = RaceConditionHarness();
+            harness.setUp();
 
-          try {
-            // Send request
-            harness.sendRequestHeader('/RaceCondition/StreamingMethod');
-            harness.sendData(1);
+            try {
+              // Send request
+              harness.sendRequestHeader('/RaceCondition/StreamingMethod');
+              harness.sendData(1);
 
-            // Random delay before disconnect
-            await Future.delayed(Duration(milliseconds: i % 5));
+              // Random delay before disconnect
+              await Future.delayed(Duration(milliseconds: i % 5));
 
-            // Randomly choose how to disconnect
-            if (i % 2 == 0) {
-              harness.closeClientStream();
-            } else {
-              harness.simulateClientDisconnect();
+              // Randomly choose how to disconnect
+              if (i % 2 == 0) {
+                harness.closeClientStream();
+              } else {
+                harness.simulateClientDisconnect();
+              }
+
+              // Wait a bit for any errors to manifest
+              await Future.delayed(Duration(milliseconds: 10));
+            } finally {
+              harness.tearDown();
             }
+          }());
+        }
 
-            // Wait a bit for any errors to manifest
-            await Future.delayed(Duration(milliseconds: 10));
-          } finally {
-            harness.tearDown();
-          }
-        }());
-      }
+        await Future.wait(futures);
 
-      await Future.wait(futures);
-
-      // The test passes if none of the iterations caused an unhandled exception
-      print('Stress test completed without crashes');
-    });
+        // The test passes if none of the iterations caused an unhandled exception
+        print('Stress test completed without crashes');
+      },
+    );
 
     test('Reproduce exact "Cannot add event after closing" scenario', () async {
       // This test specifically tries to reproduce the exact error message from production
@@ -255,7 +267,9 @@ void main() {
       );
 
       final stream = TestServerStream(
-          testHarness.toServer.stream, testHarness.fromServer.sink);
+        testHarness.toServer.stream,
+        testHarness.fromServer.sink,
+      );
       server.serveStream_(stream: stream);
 
       // Send request that will trigger serialization errors

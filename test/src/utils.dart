@@ -85,7 +85,10 @@ void validateResponseTrailers(
   });
 }
 
-GrpcMetadata validateMetadataMessage(StreamMessage message, {bool endStream = false}) {
+GrpcMetadata validateMetadataMessage(
+  StreamMessage message, {
+  bool endStream = false,
+}) {
   expect(message, TypeMatcher<HeadersStreamMessage>());
   expect(message.endStream, endStream);
 
@@ -120,6 +123,10 @@ void Function(StreamMessage message) errorTrailerValidator(
     if (validateHeader) {
       validateResponseHeaders(trailer.metadata, allowTrailers: true);
     }
-    validateResponseTrailers(trailer.metadata, status: status, message: statusMessage);
+    validateResponseTrailers(
+      trailer.metadata,
+      status: status,
+      message: statusMessage,
+    );
   };
 }

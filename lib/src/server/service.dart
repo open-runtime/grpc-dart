@@ -41,26 +41,37 @@ class ServiceMethod<Q, R> {
   );
 
   StreamController<Q> createRequestStream(StreamSubscription incoming) =>
-      StreamController<Q>(onListen: incoming.resume, onPause: incoming.pause, onResume: incoming.resume);
+      StreamController<Q>(
+        onListen: incoming.resume,
+        onPause: incoming.pause,
+        onResume: incoming.resume,
+      );
 
   Q deserialize(List<int> data) => requestDeserializer(data);
 
   List<int> serialize(dynamic response) => responseSerializer(response as R);
 
-  ServerStreamingInvoker<Q, R> _createCall() => ((ServiceCall call, ServiceMethod<Q, R> method, Stream<Q> requests) {
-    if (streamingResponse) {
-      if (streamingRequest) {
-        return handler(call, requests);
-      } else {
-        return handler(call, _toSingleFuture(requests));
-      }
-    } else {
-      final response = streamingRequest ? handler(call, requests) : handler(call, _toSingleFuture(requests));
-      return response.asStream();
-    }
-  });
+  ServerStreamingInvoker<Q, R> _createCall() =>
+      ((ServiceCall call, ServiceMethod<Q, R> method, Stream<Q> requests) {
+        if (streamingResponse) {
+          if (streamingRequest) {
+            return handler(call, requests);
+          } else {
+            return handler(call, _toSingleFuture(requests));
+          }
+        } else {
+          final response = streamingRequest
+              ? handler(call, requests)
+              : handler(call, _toSingleFuture(requests));
+          return response.asStream();
+        }
+      });
 
-  Stream<R> handle(ServiceCall call, Stream<Q> requests, List<ServerInterceptor> interceptors) {
+  Stream<R> handle(
+    ServiceCall call,
+    Stream<Q> requests,
+    List<ServerInterceptor> interceptors,
+  ) {
     var invoker = _createCall();
 
     for (final interceptor in interceptors.reversed) {
@@ -68,7 +79,8 @@ class ServiceMethod<Q, R> {
       // invoker is actually reassigned in the same scope as the above function,
       // reassigning invoker in delegate is required to avoid an infinite
       // recursion
-      invoker = (call, method, requests) => interceptor.intercept<Q, R>(call, method, requests, delegate);
+      invoker = (call, method, requests) =>
+          interceptor.intercept<Q, R>(call, method, requests, delegate);
     }
 
     return invoker(call, this, requests);
@@ -87,7 +99,9 @@ class ServiceMethod<Q, R> {
       return value;
     }
 
-    final future = stream.fold<Q?>(null, ensureOnlyOneRequest).then(ensureOneRequest);
+    final future = stream
+        .fold<Q?>(null, ensureOnlyOneRequest)
+        .then(ensureOneRequest);
     // Make sure errors on the future aren't unhandled, but return the original
     // future so the request handler can also get the error.
     _awaitAndCatch(future);

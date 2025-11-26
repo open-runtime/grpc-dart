@@ -130,7 +130,12 @@ class ServerHandler extends ServiceCall {
     _incomingSubscription = _stream.incomingMessages
         .transform(GrpcHttpDecoder())
         .transform(grpcDecompressor(codecRegistry: _codecRegistry))
-        .listen(_onDataIdle, onError: _onError, onDone: _onDoneError, cancelOnError: true);
+        .listen(
+          _onDataIdle,
+          onError: _onError,
+          onDone: _onDoneError,
+          cancelOnError: true,
+        );
     _stream.outgoingMessages.done.then((_) {
       cancel();
     });
@@ -166,7 +171,8 @@ class ServerHandler extends ServiceCall {
     final serviceName = pathSegments[1];
     final methodName = pathSegments[2];
     if (_codecRegistry != null) {
-      final acceptedEncodings = clientMetadata!['grpc-accept-encoding']?.split(',') ?? [];
+      final acceptedEncodings =
+          clientMetadata!['grpc-accept-encoding']?.split(',') ?? [];
       _callEncodingCodec = acceptedEncodings
           .map(_codecRegistry.lookup)
           .firstWhere((c) => c != null, orElse: () => null);
@@ -295,7 +301,9 @@ class ServerHandler extends ServiceCall {
     try {
       request = _descriptor.deserialize(data.data);
     } catch (error, trace) {
-      final grpcError = GrpcError.internal('Error deserializing request: $error');
+      final grpcError = GrpcError.internal(
+        'Error deserializing request: $error',
+      );
       _sendError(grpcError, trace);
       _requests!
         ..addError(grpcError, trace)
@@ -327,7 +335,9 @@ class ServerHandler extends ServiceCall {
         } catch (e) {
           // Stream was closed between check and add - ignore this error
           // The handler has already been notified or terminated
-          stderr.writeln('[gRPC] Stream closed during error handling in _onResponse: $e');
+          stderr.writeln(
+            '[gRPC] Stream closed during error handling in _onResponse: $e',
+          );
         }
       }
       _sendError(grpcError, trace);
@@ -359,20 +369,28 @@ class ServerHandler extends ServiceCall {
     final outgoingHeadersMap = <String, String>{
       ':status': '200',
       'content-type': 'application/grpc',
-      if (_callEncodingCodec != null) 'grpc-encoding': _callEncodingCodec!.encodingName,
+      if (_callEncodingCodec != null)
+        'grpc-encoding': _callEncodingCodec!.encodingName,
     };
 
     outgoingHeadersMap.addAll(_customHeaders!);
     _customHeaders = null;
 
     final outgoingHeaders = <Header>[];
-    outgoingHeadersMap.forEach((key, value) => outgoingHeaders.add(Header(ascii.encode(key), utf8.encode(value))));
+    outgoingHeadersMap.forEach(
+      (key, value) =>
+          outgoingHeaders.add(Header(ascii.encode(key), utf8.encode(value))),
+    );
     _stream.sendHeaders(outgoingHeaders);
     _headersSent = true;
   }
 
   @override
-  void sendTrailers({int? status = 0, String? message, Map<String, String>? errorTrailers}) {
+  void sendTrailers({
+    int? status = 0,
+    String? message,
+    Map<String, String>? errorTrailers,
+  }) {
     _timeoutTimer?.cancel();
 
     final outgoingTrailersMap = <String, String>{};
@@ -395,14 +413,19 @@ class ServerHandler extends ServiceCall {
     _customTrailers = null;
     outgoingTrailersMap['grpc-status'] = status.toString();
     if (message != null) {
-      outgoingTrailersMap['grpc-message'] = Uri.encodeFull(message).replaceAll('%20', ' ');
+      outgoingTrailersMap['grpc-message'] = Uri.encodeFull(
+        message,
+      ).replaceAll('%20', ' ');
     }
     if (errorTrailers != null) {
       outgoingTrailersMap.addAll(errorTrailers);
     }
 
     final outgoingTrailers = <Header>[];
-    outgoingTrailersMap.forEach((key, value) => outgoingTrailers.add(Header(ascii.encode(key), utf8.encode(value))));
+    outgoingTrailersMap.forEach(
+      (key, value) =>
+          outgoingTrailers.add(Header(ascii.encode(key), utf8.encode(value))),
+    );
 
     // Safely send headers - the stream might already be closed
     try {
@@ -471,7 +494,11 @@ class ServerHandler extends ServiceCall {
   void _sendError(GrpcError error, [StackTrace? trace]) {
     _errorHandler?.call(error, trace);
 
-    sendTrailers(status: error.code, message: error.message, errorTrailers: error.trailers);
+    sendTrailers(
+      status: error.code,
+      message: error.message,
+      errorTrailers: error.trailers,
+    );
   }
 
   void cancel() {

@@ -41,7 +41,8 @@ class QueryParameter implements Comparable<QueryParameter> {
   ///
   /// This is not the default constructor since the single-value case is the
   /// most common.
-  QueryParameter.multi(this.key, List<String> values) : values = values..sort() {
+  QueryParameter.multi(this.key, List<String> values)
+    : values = values..sort() {
     ArgumentError.checkNotNull(key);
     if (key.trim().isEmpty) {
       throw ArgumentError(key);
