@@ -70,7 +70,7 @@ jobs:
         if: steps.version.outputs.skip != 'true' && steps.check.outputs.already_enhanced != 'true'
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_GLOBAL_CLOUD_RUNTIME }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
