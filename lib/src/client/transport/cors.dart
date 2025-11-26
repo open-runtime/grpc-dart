@@ -1,4 +1,5 @@
-// Copyright 2018 Google Inc. All Rights Reserved.
+// Copyright (c) 2018, the gRPC project authors. Please see the AUTHORS file
+// for details. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,7 +39,10 @@ Uri moveHttpHeadersToQueryParam(Map<String, String> metadata, Uri requestUri) {
 
   final paramValue = _generateHttpHeadersOverwriteParam(metadata);
   metadata.clear();
-  return requestUri.replace(queryParameters: Map.of(requestUri.queryParameters)..[_httpHeadersParamName] = paramValue);
+  return requestUri.replace(
+    queryParameters: Map.of(requestUri.queryParameters)
+      ..[_httpHeadersParamName] = paramValue,
+  );
 }
 
 /// Generates the URL parameter value with custom headers encoded as

@@ -70,7 +70,12 @@ class _GrpcWebConversionSink implements ChunkedConversionSink<ByteBuffer> {
     final headerRemaining = _dataHeader.lengthInBytes - _dataOffset;
     final chunkRemaining = chunkLength - _chunkOffset;
     final toCopy = min(headerRemaining, chunkRemaining);
-    _dataHeader.setRange(_dataOffset, _dataOffset + toCopy, chunkData, _chunkOffset);
+    _dataHeader.setRange(
+      _dataOffset,
+      _dataOffset + toCopy,
+      chunkData,
+      _chunkOffset,
+    );
     _dataOffset += toCopy;
     _chunkOffset += toCopy;
     if (_dataOffset == _dataHeader.lengthInBytes) {
@@ -90,7 +95,12 @@ class _GrpcWebConversionSink implements ChunkedConversionSink<ByteBuffer> {
     if (dataRemaining > 0) {
       final chunkRemaining = chunkData.length - _chunkOffset;
       final toCopy = min(dataRemaining, chunkRemaining);
-      _data!.setRange(_dataOffset, _dataOffset + toCopy, chunkData, _chunkOffset);
+      _data!.setRange(
+        _dataOffset,
+        _dataOffset + toCopy,
+        chunkData,
+        _chunkOffset,
+      );
       _dataOffset += toCopy;
       _chunkOffset += toCopy;
     }

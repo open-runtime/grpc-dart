@@ -61,8 +61,8 @@ final class Idle extends KeepAliveState {
   final Stopwatch timeSinceFrame;
 
   Idle([this.pingTimer, Stopwatch? stopwatch])
-      : timeSinceFrame = stopwatch ?? clock.stopwatch()
-          ..start();
+    : timeSinceFrame = stopwatch ?? clock.stopwatch()
+        ..start();
 
   @override
   KeepAliveState? onEvent(KeepAliveEvent event, ClientKeepAlive manager) {
@@ -71,7 +71,12 @@ final class Idle extends KeepAliveState {
         // When the transport goes active, we do not reset the nextKeepaliveTime.
         // This allows us to quickly check whether the connection is still
         // working.
-        final timer = pingTimer ?? Timer(manager._pingInterval - timeSinceFrame.elapsed, manager.sendPing);
+        final timer =
+            pingTimer ??
+            Timer(
+              manager._pingInterval - timeSinceFrame.elapsed,
+              manager.sendPing,
+            );
         return PingScheduled(timer, timeSinceFrame);
       default:
         return null;
@@ -89,8 +94,8 @@ final class PingScheduled extends KeepAliveState {
   final Stopwatch timeSinceFrame;
 
   PingScheduled(this.pingTimer, [Stopwatch? stopwatch])
-      : timeSinceFrame = stopwatch ?? clock.stopwatch()
-          ..start();
+    : timeSinceFrame = stopwatch ?? clock.stopwatch()
+        ..start();
 
   @override
   KeepAliveState? onEvent(KeepAliveEvent event, ClientKeepAlive manager) {
@@ -160,7 +165,9 @@ final class ShutdownScheduled extends KeepAliveState {
         // idle, schedule a new keep-alive ping.
         shutdownTimer.cancel();
         // schedule a new ping
-        return isIdle ? Idle() : PingScheduled(Timer(manager._pingInterval, manager.sendPing));
+        return isIdle
+            ? Idle()
+            : PingScheduled(Timer(manager._pingInterval, manager.sendPing));
       case KeepAliveEvent.onTransportIdle:
         return ShutdownScheduled(shutdownTimer, true);
       case KeepAliveEvent.onTransportActive:
@@ -179,7 +186,8 @@ final class Disconnected extends KeepAliveState {
   void disconnect() {}
 
   @override
-  KeepAliveState? onEvent(KeepAliveEvent event, ClientKeepAlive manager) => null;
+  KeepAliveState? onEvent(KeepAliveEvent event, ClientKeepAlive manager) =>
+      null;
 }
 
 enum KeepAliveEvent {

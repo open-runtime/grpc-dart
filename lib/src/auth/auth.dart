@@ -30,7 +30,10 @@ abstract class BaseAuthenticator {
   var _lastUriSet = false;
 
   Future<void> authenticate(Map<String, String> metadata, String uri) async {
-    if (_accessToken == null || _accessToken!.hasExpired || !_lastUriSet || uri != _lastUri) {
+    if (_accessToken == null ||
+        _accessToken!.hasExpired ||
+        !_lastUriSet ||
+        uri != _lastUri) {
       await obtainAccessCredentials(uri);
       _lastUri = uri;
       _lastUriSet = true;
@@ -45,8 +48,9 @@ abstract class BaseAuthenticator {
     }
   }
 
-  bool get _tokenExpiresSoon =>
-      _accessToken!.expiry.subtract(_tokenExpirationThreshold).isBefore(DateTime.now().toUtc());
+  bool get _tokenExpiresSoon => _accessToken!.expiry
+      .subtract(_tokenExpirationThreshold)
+      .isBefore(DateTime.now().toUtc());
 
   CallOptions get toCallOptions => CallOptions(providers: [authenticate]);
 
@@ -69,7 +73,10 @@ abstract class HttpBasedAuthenticator extends BaseAuthenticator {
     return _call!;
   }
 
-  Future<auth.AccessCredentials> obtainCredentialsWithClient(http.Client client, String uri);
+  Future<auth.AccessCredentials> obtainCredentialsWithClient(
+    http.Client client,
+    String uri,
+  );
 }
 
 class JwtServiceAccountAuthenticator extends BaseAuthenticator {
@@ -77,13 +84,18 @@ class JwtServiceAccountAuthenticator extends BaseAuthenticator {
   String? _projectId;
   String? _keyId;
 
-  JwtServiceAccountAuthenticator.fromJson(Map<String, dynamic> serviceAccountJson)
-      : _serviceAccountCredentials = auth.ServiceAccountCredentials.fromJson(serviceAccountJson),
-        _projectId = serviceAccountJson['project_id'],
-        _keyId = serviceAccountJson['private_key_id'];
+  JwtServiceAccountAuthenticator.fromJson(
+    Map<String, dynamic> serviceAccountJson,
+  ) : _serviceAccountCredentials = auth.ServiceAccountCredentials.fromJson(
+        serviceAccountJson,
+      ),
+      _projectId = serviceAccountJson['project_id'],
+      _keyId = serviceAccountJson['private_key_id'];
 
   factory JwtServiceAccountAuthenticator(String serviceAccountJsonString) =>
-      JwtServiceAccountAuthenticator.fromJson(jsonDecode(serviceAccountJsonString));
+      JwtServiceAccountAuthenticator.fromJson(
+        jsonDecode(serviceAccountJsonString),
+      );
 
   String? get projectId => _projectId;
 
@@ -94,11 +106,17 @@ class JwtServiceAccountAuthenticator extends BaseAuthenticator {
 }
 
 // TODO(jakobr): Expose in googleapis_auth.
-auth.AccessToken _jwtTokenFor(auth.ServiceAccountCredentials credentials, String? keyId, String uri,
-    {String? user, List<String>? scopes}) {
+auth.AccessToken _jwtTokenFor(
+  auth.ServiceAccountCredentials credentials,
+  String? keyId,
+  String uri, {
+  String? user,
+  List<String>? scopes,
+}) {
   // Subtracting 20 seconds from current timestamp to allow for clock skew among
   // servers.
-  final timestamp = (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000) - 20;
+  final timestamp =
+      (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000) - 20;
   final expiry = timestamp + 3600;
 
   final header = <String, String>{'alg': 'RS256', 'typ': 'JWT'};
@@ -111,7 +129,7 @@ auth.AccessToken _jwtTokenFor(auth.ServiceAccountCredentials credentials, String
     'aud': uri,
     'exp': expiry,
     'iat': timestamp,
-    'sub': user ?? credentials.email
+    'sub': user ?? credentials.email,
   };
   if (scopes != null) {
     claims['scope'] = scopes.join(' ');
@@ -125,12 +143,27 @@ auth.AccessToken _jwtTokenFor(auth.ServiceAccountCredentials credentials, String
   final key = credentials.privateRSAKey;
   // We convert to our internal version of RSAPrivateKey. See rsa.dart for more
   // explanation.
-  final signer = RS256Signer(RSAPrivateKey(key.n, key.e, key.d, key.p, key.q, key.dmp1, key.dmq1, key.coeff));
+  final signer = RS256Signer(
+    RSAPrivateKey(
+      key.n,
+      key.e,
+      key.d,
+      key.p,
+      key.q,
+      key.dmp1,
+      key.dmq1,
+      key.coeff,
+    ),
+  );
   final signature = signer.sign(ascii.encode(data));
 
   final jwt = '$data.${_base64url(signature)}';
 
-  return auth.AccessToken('Bearer', jwt, DateTime.fromMillisecondsSinceEpoch(expiry * 1000, isUtc: true));
+  return auth.AccessToken(
+    'Bearer',
+    jwt,
+    DateTime.fromMillisecondsSinceEpoch(expiry * 1000, isUtc: true),
+  );
 }
 
 String _base64url(List<int> bytes) {

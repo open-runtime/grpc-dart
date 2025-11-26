@@ -55,16 +55,19 @@ void main() {
     // in one go).
     final sw = Stopwatch()..start();
     final timings = await service
-        .serverStreamingEcho(ServerStreamingEchoRequest()
-          ..message = testMessage
-          ..messageCount = 20
-          ..messageInterval = 100)
+        .serverStreamingEcho(
+          ServerStreamingEchoRequest()
+            ..message = testMessage
+            ..messageCount = 20
+            ..messageInterval = 100,
+        )
         .map((response) {
-      expect(response.message, equals(testMessage));
-      final timing = sw.elapsedMilliseconds;
-      sw.reset();
-      return timing;
-    }).toList();
+          expect(response.message, equals(testMessage));
+          final timing = sw.elapsedMilliseconds;
+          sw.reset();
+          return timing;
+        })
+        .toList();
     final maxDelay = timings.reduce(math.max);
     expect(maxDelay, lessThan(500));
   });
@@ -84,26 +87,36 @@ void main() {
     var terminated = false;
 
     service
-        .serverStreamingEcho(ServerStreamingEchoRequest()
-          ..message = testMessage
-          ..messageCount = 20
-          ..messageInterval = 100)
-        .listen((response) {
-      expect(response.message, equals(testMessage));
-    }, onError: (e) {
-      expect(terminated, isTrue);
-    });
+        .serverStreamingEcho(
+          ServerStreamingEchoRequest()
+            ..message = testMessage
+            ..messageCount = 20
+            ..messageInterval = 100,
+        )
+        .listen(
+          (response) {
+            expect(response.message, equals(testMessage));
+          },
+          onError: (e) {
+            expect(terminated, isTrue);
+          },
+        );
 
     service
-        .serverStreamingEcho(ServerStreamingEchoRequest()
-          ..message = testMessage
-          ..messageCount = 20
-          ..messageInterval = 100)
-        .listen((response) {
-      expect(response.message, equals(testMessage));
-    }, onError: (e) {
-      expect(terminated, isTrue);
-    });
+        .serverStreamingEcho(
+          ServerStreamingEchoRequest()
+            ..message = testMessage
+            ..messageCount = 20
+            ..messageInterval = 100,
+        )
+        .listen(
+          (response) {
+            expect(response.message, equals(testMessage));
+          },
+          onError: (e) {
+            expect(terminated, isTrue);
+          },
+        );
 
     await Future.delayed(Duration(milliseconds: 500));
     terminated = true;
@@ -118,13 +131,15 @@ void main() {
     const testMessage = 'hello from gRPC-web';
 
     final stream = service
-        .serverStreamingEcho(ServerStreamingEchoRequest()
-          ..message = testMessage
-          ..messageCount = 20
-          ..messageInterval = 100)
+        .serverStreamingEcho(
+          ServerStreamingEchoRequest()
+            ..message = testMessage
+            ..messageCount = 20
+            ..messageInterval = 100,
+        )
         .listen((response) {
-      expect(response.message, equals(testMessage));
-    });
+          expect(response.message, equals(testMessage));
+        });
 
     await Future.delayed(Duration(milliseconds: 500));
     await stream.cancel();
@@ -133,9 +148,15 @@ void main() {
   });
 
   final invalidResponseTests = {
-    'cors': GrpcError.unknown('HTTP request completed without a status (potential CORS issue)'),
-    'status-503': GrpcError.unavailable('HTTP connection completed with 503 instead of 200'),
-    'bad-content-type': GrpcError.unknown('unsupported content-type (text/html)'),
+    'cors': GrpcError.unknown(
+      'HTTP request completed without a status (potential CORS issue)',
+    ),
+    'status-503': GrpcError.unavailable(
+      'HTTP connection completed with 503 instead of 200',
+    ),
+    'bad-content-type': GrpcError.unknown(
+      'unsupported content-type (text/html)',
+    ),
   };
 
   for (var entry in invalidResponseTests.entries) {
@@ -147,8 +168,14 @@ void main() {
     // See [startHttpServer] in [grpc_web_server.dart] for the server part.
     test('invalid response: ${entry.key}', () async {
       final channel = GrpcWebClientChannel.xhr(server.httpUri);
-      final service = EchoServiceClient(channel, options: WebCallOptions(bypassCorsPreflight: true));
-      expect(() => service.echo(EchoRequest()..message = 'test:${entry.key}'), throwsA(entry.value));
+      final service = EchoServiceClient(
+        channel,
+        options: WebCallOptions(bypassCorsPreflight: true),
+      );
+      expect(
+        () => service.echo(EchoRequest()..message = 'test:${entry.key}'),
+        throwsA(entry.value),
+      );
     });
   }
 }
@@ -176,22 +203,28 @@ class GrpcWebServer {
   static Future<GrpcWebServer> start() async {
     // Spawn the server code on the server side, it will send us back port
     // number we should be talking to.
-    final serverChannel = spawnHybridUri('grpc_web_server.dart', stayAlive: true);
+    final serverChannel = spawnHybridUri(
+      'grpc_web_server.dart',
+      stayAlive: true,
+    );
     final portCompleter = Completer<Map>();
     final exitCompleter = Completer<void>();
-    serverChannel.stream.listen((event) {
-      if (!portCompleter.isCompleted) {
-        portCompleter.complete(event);
-      } else if (event == 'EXITED') {
-        exitCompleter.complete();
-      }
-    }, onError: (e) {
-      if (!portCompleter.isCompleted) {
-        portCompleter.completeError(e);
-      } else if (!exitCompleter.isCompleted) {
-        exitCompleter.completeError(e);
-      }
-    });
+    serverChannel.stream.listen(
+      (event) {
+        if (!portCompleter.isCompleted) {
+          portCompleter.complete(event);
+        } else if (event == 'EXITED') {
+          exitCompleter.complete();
+        }
+      },
+      onError: (e) {
+        if (!portCompleter.isCompleted) {
+          portCompleter.completeError(e);
+        } else if (!exitCompleter.isCompleted) {
+          exitCompleter.completeError(e);
+        }
+      },
+    );
 
     final ports = await portCompleter.future;
 
@@ -201,7 +234,11 @@ class GrpcWebServer {
     // Note: we would like to test https as well, but we can't easily do it
     // because browsers like chrome don't trust self-signed certificates by
     // default.
-    return GrpcWebServer(serverChannel, exitCompleter.future, Uri.parse('http://localhost:$grpcPort'),
-        Uri.parse('http://localhost:$httpPort'));
+    return GrpcWebServer(
+      serverChannel,
+      exitCompleter.future,
+      Uri.parse('http://localhost:$grpcPort'),
+      Uri.parse('http://localhost:$httpPort'),
+    );
   }
 }

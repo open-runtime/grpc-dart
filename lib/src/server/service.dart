@@ -17,6 +17,7 @@ import 'dart:async';
 
 import '../shared/status.dart';
 import 'call.dart';
+import 'interceptor.dart';
 
 /// Definition of a gRPC service method.
 class ServiceMethod<Q, R> {
@@ -30,27 +31,59 @@ class ServiceMethod<Q, R> {
 
   final Function handler;
 
-  ServiceMethod(this.name, this.handler, this.streamingRequest, this.streamingResponse, this.requestDeserializer,
-      this.responseSerializer);
+  ServiceMethod(
+    this.name,
+    this.handler,
+    this.streamingRequest,
+    this.streamingResponse,
+    this.requestDeserializer,
+    this.responseSerializer,
+  );
 
   StreamController<Q> createRequestStream(StreamSubscription incoming) =>
-      StreamController<Q>(onListen: incoming.resume, onPause: incoming.pause, onResume: incoming.resume);
+      StreamController<Q>(
+        onListen: incoming.resume,
+        onPause: incoming.pause,
+        onResume: incoming.resume,
+      );
 
   Q deserialize(List<int> data) => requestDeserializer(data);
 
   List<int> serialize(dynamic response) => responseSerializer(response as R);
 
-  Stream<R> handle(ServiceCall call, Stream<Q> requests) {
-    if (streamingResponse) {
-      if (streamingRequest) {
-        return handler(call, requests);
-      } else {
-        return handler(call, _toSingleFuture(requests));
-      }
-    } else {
-      final response = streamingRequest ? handler(call, requests) : handler(call, _toSingleFuture(requests));
-      return response.asStream();
+  ServerStreamingInvoker<Q, R> _createCall() =>
+      ((ServiceCall call, ServiceMethod<Q, R> method, Stream<Q> requests) {
+        if (streamingResponse) {
+          if (streamingRequest) {
+            return handler(call, requests);
+          } else {
+            return handler(call, _toSingleFuture(requests));
+          }
+        } else {
+          final response = streamingRequest
+              ? handler(call, requests)
+              : handler(call, _toSingleFuture(requests));
+          return response.asStream();
+        }
+      });
+
+  Stream<R> handle(
+    ServiceCall call,
+    Stream<Q> requests,
+    List<ServerInterceptor> interceptors,
+  ) {
+    var invoker = _createCall();
+
+    for (final interceptor in interceptors.reversed) {
+      final delegate = invoker;
+      // invoker is actually reassigned in the same scope as the above function,
+      // reassigning invoker in delegate is required to avoid an infinite
+      // recursion
+      invoker = (call, method, requests) =>
+          interceptor.intercept<Q, R>(call, method, requests, delegate);
     }
+
+    return invoker(call, this, requests);
   }
 
   Future<Q> _toSingleFuture(Stream<Q> stream) {
@@ -66,7 +99,9 @@ class ServiceMethod<Q, R> {
       return value;
     }
 
-    final future = stream.fold<Q?>(null, ensureOnlyOneRequest).then(ensureOneRequest);
+    final future = stream
+        .fold<Q?>(null, ensureOnlyOneRequest)
+        .then(ensureOneRequest);
     // Make sure errors on the future aren't unhandled, but return the original
     // future so the request handler can also get the error.
     _awaitAndCatch(future);

@@ -38,7 +38,11 @@ abstract class ClientChannel {
   Future<void> terminate();
 
   /// Initiates a new RPC on this connection.
-  ClientCall<Q, R> createCall<Q, R>(ClientMethod<Q, R> method, Stream<Q> requests, CallOptions options);
+  ClientCall<Q, R> createCall<Q, R>(
+    ClientMethod<Q, R> method,
+    Stream<Q> requests,
+    CallOptions options,
+  );
 
   /// Stream of connection state changes
   ///
@@ -53,10 +57,12 @@ abstract class ClientChannelBase implements ClientChannel {
   late ClientConnection _connection;
   var _connected = false;
   bool _isShutdown = false;
-  final StreamController<ConnectionState> _connectionStateStreamController = StreamController.broadcast();
+  final StreamController<ConnectionState> _connectionStateStreamController =
+      StreamController.broadcast();
   final void Function()? _channelShutdownHandler;
 
-  ClientChannelBase({void Function()? channelShutdownHandler}) : _channelShutdownHandler = channelShutdownHandler;
+  ClientChannelBase({void Function()? channelShutdownHandler})
+    : _channelShutdownHandler = channelShutdownHandler;
 
   @override
   Future<void> shutdown() async {
@@ -100,9 +106,19 @@ abstract class ClientChannelBase implements ClientChannel {
   }
 
   @override
-  ClientCall<Q, R> createCall<Q, R>(ClientMethod<Q, R> method, Stream<Q> requests, CallOptions options) {
+  ClientCall<Q, R> createCall<Q, R>(
+    ClientMethod<Q, R> method,
+    Stream<Q> requests,
+    CallOptions options,
+  ) {
     final call = ClientCall(
-        method, requests, options, isTimelineLoggingEnabled ? TimelineTask(filterKey: clientTimelineFilterKey) : null);
+      method,
+      requests,
+      options,
+      isTimelineLoggingEnabled
+          ? TimelineTask(filterKey: clientTimelineFilterKey)
+          : null,
+    );
     getConnection().then((connection) {
       if (call.isCancelled) return;
       connection.dispatchCall(call);
@@ -111,5 +127,6 @@ abstract class ClientChannelBase implements ClientChannel {
   }
 
   @override
-  Stream<ConnectionState> get onConnectionStateChanged => _connectionStateStreamController.stream;
+  Stream<ConnectionState> get onConnectionStateChanged =>
+      _connectionStateStreamController.stream;
 }

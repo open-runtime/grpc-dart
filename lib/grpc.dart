@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export 'package:grpc/src/generated/google/rpc/error_details.pb.dart';
-
 export 'src/auth/auth.dart' show BaseAuthenticator;
 export 'src/auth/auth_io.dart'
     show applicationDefaultCredentialsAuthenticator, ComputeEngineAuthenticator, ServiceAccountAuthenticator;
@@ -31,7 +29,8 @@ export 'src/client/proxy.dart' show Proxy;
 export 'src/client/transport/http2_credentials.dart'
     show BadCertificateHandler, allowBadCertificates, ChannelCredentials;
 export 'src/server/call.dart' show ServiceCall;
-export 'src/server/interceptor.dart' show Interceptor;
+export 'src/server/interceptor.dart'
+    show Interceptor, ServerInterceptor, ServerStreamingInvoker;
 export 'src/server/server.dart'
     show ServerCredentials, ServerLocalCredentials, ServerTlsCredentials, ConnectionServer, Server;
 export 'src/server/server_keepalive.dart' show ServerKeepAliveOptions;

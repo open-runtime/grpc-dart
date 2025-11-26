@@ -14,7 +14,9 @@
 // limitations under the License.
 
 @TestOn('vm')
-@Skip('Run only as `dart run --enable-vm-service --timeline-streams=Dart test/timeline_test.dart`')
+@Skip(
+  'Run only as `dart run --enable-vm-service --timeline-streams=Dart test/timeline_test.dart`',
+)
 library;
 
 import 'dart:async';
@@ -31,11 +33,19 @@ import 'package:vm_service/vm_service_io.dart';
 const String path = '/test.TestService/stream';
 
 class TestClient extends Client {
-  static final _$stream = ClientMethod<int, int>(path, (int value) => [value], (List<int> value) => value[0]);
+  static final _$stream = ClientMethod<int, int>(
+    path,
+    (int value) => [value],
+    (List<int> value) => value[0],
+  );
 
   TestClient(super.channel);
   ResponseStream<int> stream(int request, {CallOptions? options}) {
-    return $createStreamingCall(_$stream, Stream.fromIterable([request]), options: options);
+    return $createStreamingCall(
+      _$stream,
+      Stream.fromIterable([request]),
+      options: options,
+    );
   }
 }
 
@@ -45,7 +55,15 @@ class TestService extends Service {
 
   TestService() {
     $addMethod(
-        ServiceMethod<int, int>('stream', stream, false, true, (List<int> value) => value[0], (int value) => [value]));
+      ServiceMethod<int, int>(
+        'stream',
+        stream,
+        false,
+        true,
+        (List<int> value) => value[0],
+        (int value) => [value],
+      ),
+    );
   }
 
   Stream<int> stream(ServiceCall call, Future request) async* {
@@ -72,11 +90,13 @@ Future<VmService> testee() async {
   final vmService = await vmServiceConnectUri(uri.toString());
   final server = Server.create(services: [TestService()]);
   await server.serve(address: 'localhost', port: 0);
-  final channel = FixedConnectionClientChannel(Http2ClientConnection(
-    'localhost',
-    server.port!,
-    ChannelOptions(credentials: ChannelCredentials.insecure()),
-  ));
+  final channel = FixedConnectionClientChannel(
+    Http2ClientConnection(
+      'localhost',
+      server.port!,
+      ChannelOptions(credentials: ChannelCredentials.insecure()),
+    ),
+  );
   final testClient = TestClient(channel);
   await testClient.stream(1).toList();
   await server.shutdown();
@@ -138,8 +158,10 @@ void main(List<String> args) {
   test('Test gRPC timeline logging', () async {
     final vmService = await testee();
     final timeline = await vmService.getVMTimeline();
-    final events =
-        timeline.traceEvents!.map((e) => e.json!).where((e) => e['args']['filterKey'] == 'grpc/client').toList();
+    final events = timeline.traceEvents!
+        .map((e) => e.json!)
+        .where((e) => e['args']['filterKey'] == 'grpc/client')
+        .toList();
     checkStartEvent(events);
     checkSendEvent(events);
     checkWriteEvent(events);
