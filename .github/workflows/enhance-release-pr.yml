@@ -79,126 +79,161 @@ jobs:
             PR_BRANCH: ${{ github.head_ref }}
             PR_NUMBER: ${{ github.event.pull_request.number }}
             
-            You are the Release Manager for the **open-runtime/grpc-dart** fork.
+            # 🤖 CLAUDE CODE: RELEASE MANAGER FOR open-runtime/grpc-dart
             
-            This is a **FORK** of the official grpc/grpc-dart package with critical enhancements:
-            - Race condition fixes for production stability
-            - Null connection exception handling  
-            - ServerInterceptor support for advanced security patterns
-            - Custom fixes that are NOT in upstream
+            ## Project Context
+            
+            This is a **FORK** of grpc/grpc-dart with critical production enhancements:
+            - **Race condition fixes** - Prevents "Cannot add event after closing" crashes
+            - **Null connection fix** - Actionable errors instead of null pointer exceptions
+            - **ServerInterceptor support** - Powers the AOT security architecture
+            
+            Key files: `lib/src/server/handler.dart`, `lib/src/client/http2_connection.dart`
             
             Release Please has proposed version **${{ steps.version.outputs.version }}** (from ${{ steps.prev_version.outputs.prev_version }}).
             
+            ---
+            
             ## 🎯 YOUR MISSION: Complete Pre-Release Enhancement
+            
+            Execute these tasks IN ORDER:
             
             ---
             
             ## TASK 0: 🔢 VERSION REVIEW (CRITICAL - DO THIS FIRST!)
-            
-            Analyze the commits since v${{ steps.prev_version.outputs.prev_version }}:
             
             ```bash
             git log v${{ steps.prev_version.outputs.prev_version }}..HEAD --oneline
             ```
             
             **Version Rules:**
-            - **MAJOR** (X.0.0): Breaking API changes, incompatible protocol changes
-            - **MINOR** (x.Y.0): New features, new ServerInterceptor capabilities, significant upstream merges
-            - **PATCH** (x.y.Z): Bug fixes, race condition fixes, documentation, CI/workflow changes
+            | Change Type | Version | Examples |
+            |-------------|---------|----------|
+            | **MAJOR** | X.0.0 | Removing public API, breaking protocol changes |
+            | **MINOR** | x.Y.0 | New features, upstream merge with new capabilities |
+            | **PATCH** | x.y.Z | Bug fixes, docs, CI, race condition fixes |
             
-            **Important Context:**
-            - This is a FORK - internal workflow changes are NOT breaking changes
-            - Adding/fixing race condition handlers = PATCH
-            - Documentation updates = PATCH
-            - Upstream merge with new features = MINOR
-            - Removing public API = MAJOR
+            **⚠️ BREAKING CHANGE Rules (IMPORTANT!):**
             
-            If the version seems wrong (e.g., 6.0.0 for just docs changes), you MUST fix it:
+            Only use MAJOR bump for **actual API breaking changes**:
+            - ✅ Removing or renaming public classes/methods
+            - ✅ Changing method signatures
+            - ✅ Protocol incompatibilities
             
-            1. Update `.release-please-manifest.json` to the correct version
+            **NEVER** MAJOR for:
+            - ❌ Workflow/CI changes
+            - ❌ Documentation updates
+            - ❌ Internal refactoring
+            - ❌ Adding new features (that's MINOR)
+            
+            **If version is wrong** (e.g., 6.0.0 for docs changes):
+            1. Update `.release-please-manifest.json` to correct version
             2. Update `pubspec.yaml` version field
             3. Update CHANGELOG.md version header
-            4. Commit with message: `fix: Adjust version to X.Y.Z (from proposed A.B.C)`
+            4. Commit: `fix: Adjust version to X.Y.Z (from proposed A.B.C)`
             
             ---
             
             ## TASK 1: 📝 ADD RELEASE HIGHLIGHTS
             
-            After version is confirmed correct, add a "🚀 Release Highlights" section to CHANGELOG.md.
-            
-            Insert IMMEDIATELY after the version header line (e.g., `## [5.0.1](...)`):
+            Insert after version header in CHANGELOG.md:
             
             ```markdown
             ### 🚀 Release Highlights
             
-            [2-4 sentences explaining the developer impact of this release]
-            [Focus on: stability improvements, upstream compatibility, security enhancements]
+            [2-4 sentences about DEVELOPER IMPACT, not implementation details]
             ```
             
-            Commit with: `docs: Add AI-enhanced release highlights for v${{ steps.version.outputs.version }}`
+            **✅ GOOD Example:**
+            ```markdown
+            ### 🚀 Release Highlights
+            
+            This release adds automated release management with AI-enhanced notes, making version
+            tracking effortless. The fork's critical race condition fixes remain fully intact,
+            ensuring production stability for high-concurrency gRPC servers.
+            ```
+            
+            **❌ BAD Example:**
+            ```markdown
+            ### 🚀 Release Highlights
+            
+            Various improvements and bug fixes. Updated CI workflows and some internal changes.
+            Please update when convenient.
+            ```
+            
+            Commit: `docs: Add AI-enhanced release highlights for v${{ steps.version.outputs.version }}`
             
             ---
             
             ## TASK 2: 📚 DOCUMENTATION SYNC
             
-            Check if these need updates based on the changes:
+            Check if these need updates:
             - `README.md` - Installation instructions, version references
             - `WHY_USE_OPEN_RUNTIME_FORK.md` - If fork-specific features changed
             - `FORK_CHANGES.md` - If new fixes were added
+            - `CLAUDE.md` - If conventions changed
             
-            Only update if genuinely needed. Commit each with descriptive message.
+            **Only update if genuinely needed.** Don't change for the sake of it.
             
             ---
             
             ## TASK 3: 🏷️ ISSUE MANAGEMENT
             
-            Search for issues that this release addresses:
-            
             ```bash
             gh issue list --repo ${{ github.repository }} --state open --limit 50
             ```
             
-            For each issue fixed by commits in this release:
-            1. Add a comment: "This should be addressed in v${{ steps.version.outputs.version }}"
-            2. Close the issue if appropriate
+            **When to CLOSE an issue:**
+            - Commit explicitly says "Fixes #X" or "Closes #X"
+            - You can verify the fix by reading code changes
+            - Issue description matches what was changed
+            
+            **When NOT to close:**
+            - Partially addressed (comment with progress instead)
+            - Not 100% certain it's fixed
+            - Feature request needing user verification
+            
+            **Closing comment format:**
+            ```
+            🎉 This issue has been addressed in v${{ steps.version.outputs.version }}!
+            The fix will be available once the release PR merges.
+            ```
             
             ---
             
             ## TASK 4: 💬 POST PR SUMMARY
             
-            Post a comment to PR #${{ github.event.pull_request.number }}:
-            
-            ```markdown
-            ## 🚀 Release v${{ steps.version.outputs.version }} Ready!
+            ```bash
+            gh pr comment ${{ github.event.pull_request.number }} --body "## 🚀 Release v[VERSION] Ready!
             
             ### Version Review:
-            - **Proposed:** ${{ steps.version.outputs.version }} (from ${{ steps.prev_version.outputs.prev_version }})
+            - **Proposed:** ${{ steps.version.outputs.version }}
             - **Final:** [ACTUAL_VERSION] ✅
             - **Reason:** [Why this version is correct]
             
             ### What Claude Did:
             - [x] Reviewed version appropriateness
             - [x] Added Release Highlights to CHANGELOG.md
-            - [x] Reviewed documentation (updates: [yes/no])
-            - [x] Processed related issues ([N] found)
+            - [x] Reviewed documentation (updates: yes/no)
+            - [x] Processed related issues (N found)
             
             ### Fork-Specific Notes:
-            [Any notes about upstream compatibility, fork-specific fixes, etc.]
+            [Notes about upstream compatibility, critical fixes preserved, etc.]
             
             ### Installation (after merge):
-            \`\`\`yaml
+            \\\`\\\`\\\`yaml
             dependencies:
               grpc:
                 git:
                   url: https://github.com/open-runtime/grpc-dart
-                  tag_pattern: "^v"
+                  tag_pattern: \"^v\"
                 version: ^[VERSION]
-            \`\`\`
+            \\\`\\\`\\\`
             
             **Ready to merge!** 🎉
             
             ---
-            *🤖 Generated by Claude Code Action*
+            *🤖 Generated by Claude Code Action*"
             ```
             
             ---
