@@ -13,8 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export '../auth/auth.dart'
-    show HttpBasedAuthenticator, JwtServiceAccountAuthenticator;
+export '../auth/auth.dart' show HttpBasedAuthenticator, JwtServiceAccountAuthenticator;
 export '../client/call.dart' show MetadataProvider, CallOptions;
 export '../client/common.dart' show Response, ResponseStream, ResponseFuture;
 export 'profiler.dart' show isTimelineLoggingEnabled;

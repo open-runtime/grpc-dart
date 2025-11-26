@@ -21,8 +21,7 @@ import '../../shared/security.dart';
 /// returns `true`, the bad certificate is allowed, and the TLS handshake can
 /// continue. If the handler returns `false`, the TLS handshake fails, and the
 /// connection is aborted.
-typedef BadCertificateHandler =
-    bool Function(X509Certificate certificate, String host);
+typedef BadCertificateHandler = bool Function(X509Certificate certificate, String host);
 
 /// Bad certificate handler that disables all certificate checks.
 /// DO NOT USE IN PRODUCTION!
@@ -47,8 +46,7 @@ class ChannelCredentials {
   );
 
   /// Disable TLS. RPCs are sent in clear text.
-  const ChannelCredentials.insecure({String? authority})
-    : this._(false, null, null, authority, null);
+  const ChannelCredentials.insecure({String? authority}) : this._(false, null, null, authority, null);
 
   /// Enable TLS and optionally specify the [certificates] to trust. If
   /// [certificates] is not provided, the default trust store is used.
@@ -62,10 +60,8 @@ class ChannelCredentials {
   SecurityContext? get securityContext {
     if (!isSecure) return null;
     if (_certificateBytes != null) {
-      return createSecurityContext(false)..setTrustedCertificatesBytes(
-        _certificateBytes,
-        password: _certificatePassword,
-      );
+      return createSecurityContext(false)
+        ..setTrustedCertificatesBytes(_certificateBytes, password: _certificatePassword);
     }
     final context = SecurityContext(withTrustedRoots: true);
     context.setAlpnProtocols(supportedAlpnProtocols, false);

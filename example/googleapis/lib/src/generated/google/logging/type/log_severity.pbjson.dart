@@ -31,7 +31,7 @@ const LogSeverity$json = {
 };
 
 /// Descriptor for `LogSeverity`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List logSeverityDescriptor = $convert.base64Decode(
-    'CgtMb2dTZXZlcml0eRILCgdERUZBVUxUEAASCQoFREVCVUcQZBIJCgRJTkZPEMgBEgsKBk5PVE'
-    'lDRRCsAhIMCgdXQVJOSU5HEJADEgoKBUVSUk9SEPQDEg0KCENSSVRJQ0FMENgEEgoKBUFMRVJU'
-    'ELwFEg4KCUVNRVJHRU5DWRCgBg==');
+final $typed_data.Uint8List logSeverityDescriptor =
+    $convert.base64Decode('CgtMb2dTZXZlcml0eRILCgdERUZBVUxUEAASCQoFREVCVUcQZBIJCgRJTkZPEMgBEgsKBk5PVE'
+        'lDRRCsAhIMCgdXQVJOSU5HEJADEgoKBUVSUk9SEPQDEg0KCENSSVRJQ0FMENgEEgoKBUFMRVJU'
+        'ELwFEg4KCUVNRVJHRU5DWRCgBg==');

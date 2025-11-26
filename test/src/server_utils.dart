@@ -28,34 +28,15 @@ class TestService extends Service {
   String get $name => 'Test';
 
   Future<int> Function(ServiceCall call, Future<int> request)? unaryHandler;
-  Future<int> Function(ServiceCall call, Stream<int> request)?
-  clientStreamingHandler;
-  Stream<int> Function(ServiceCall call, Future<int> request)?
-  serverStreamingHandler;
-  Stream<int> Function(ServiceCall call, Stream<int> request)?
-  bidirectionalHandler;
+  Future<int> Function(ServiceCall call, Stream<int> request)? clientStreamingHandler;
+  Stream<int> Function(ServiceCall call, Future<int> request)? serverStreamingHandler;
+  Stream<int> Function(ServiceCall call, Stream<int> request)? bidirectionalHandler;
 
   TestService() {
     $addMethod(ServerHarness.createMethod('Unary', _unary, false, false));
-    $addMethod(
-      ServerHarness.createMethod(
-        'ClientStreaming',
-        _clientStreaming,
-        true,
-        false,
-      ),
-    );
-    $addMethod(
-      ServerHarness.createMethod(
-        'ServerStreaming',
-        _serverStreaming,
-        false,
-        true,
-      ),
-    );
-    $addMethod(
-      ServerHarness.createMethod('Bidirectional', _bidirectional, true, true),
-    );
+    $addMethod(ServerHarness.createMethod('ClientStreaming', _clientStreaming, true, false));
+    $addMethod(ServerHarness.createMethod('ServerStreaming', _serverStreaming, false, true));
+    $addMethod(ServerHarness.createMethod('Bidirectional', _bidirectional, true, true));
     $addMethod(
       ServiceMethod<int, int>(
         'RequestError',
@@ -67,14 +48,7 @@ class TestService extends Service {
       ),
     );
     $addMethod(
-      ServiceMethod<int, int>(
-        'ResponseError',
-        _bidirectional,
-        true,
-        true,
-        mockDecode,
-        (int value) => throw 'Failed',
-      ),
+      ServiceMethod<int, int>('ResponseError', _bidirectional, true, true, mockDecode, (int value) => throw 'Failed'),
     );
   }
 
@@ -119,17 +93,9 @@ class TestInterceptor {
   }
 }
 
-typedef TestServerInterceptorOnStart =
-    Function(ServiceCall call, ServiceMethod method, Stream requests);
-typedef TestServerInterceptorOnData =
-    Function(
-      ServiceCall call,
-      ServiceMethod method,
-      Stream requests,
-      dynamic data,
-    );
-typedef TestServerInterceptorOnFinish =
-    Function(ServiceCall call, ServiceMethod method, Stream requests);
+typedef TestServerInterceptorOnStart = Function(ServiceCall call, ServiceMethod method, Stream requests);
+typedef TestServerInterceptorOnData = Function(ServiceCall call, ServiceMethod method, Stream requests, dynamic data);
+typedef TestServerInterceptorOnFinish = Function(ServiceCall call, ServiceMethod method, Stream requests);
 
 class TestServerInterceptor extends ServerInterceptor {
   TestServerInterceptorOnStart? onStart;
@@ -147,12 +113,7 @@ class TestServerInterceptor extends ServerInterceptor {
   ) async* {
     await onStart?.call(call, method, requests);
 
-    await for (final chunk in super.intercept(
-      call,
-      method,
-      requests,
-      invoker,
-    )) {
+    await for (final chunk in super.intercept(call, method, requests, invoker)) {
       await onData?.call(call, method, requests, chunk);
       yield chunk;
     }
@@ -201,8 +162,7 @@ class TestServerStream extends ServerTransportStream {
   bool get canPush => true;
 
   @override
-  ServerTransportStream push(List<Header> requestHeaders) =>
-      throw 'unimplemented';
+  ServerTransportStream push(List<Header> requestHeaders) => throw 'unimplemented';
 }
 
 class ServerHarness extends _Harness {
@@ -219,21 +179,13 @@ class ServerHarness extends _Harness {
     bool clientStreaming,
     bool serverStreaming,
   ) {
-    return ServiceMethod<int, int>(
-      name,
-      methodHandler,
-      clientStreaming,
-      serverStreaming,
-      mockDecode,
-      mockEncode,
-    );
+    return ServiceMethod<int, int>(name, methodHandler, clientStreaming, serverStreaming, mockDecode, mockEncode);
   }
 }
 
 class ConnectionServerHarness extends _Harness {
   @override
-  ConnectionServer createServer() =>
-      ConnectionServer(<Service>[service], <Interceptor>[interceptor.call]);
+  ConnectionServer createServer() => ConnectionServer(<Service>[service], <Interceptor>[interceptor.call]);
 
   static ServiceMethod<int, int> createMethod(
     String name,
@@ -241,14 +193,7 @@ class ConnectionServerHarness extends _Harness {
     bool clientStreaming,
     bool serverStreaming,
   ) {
-    return ServiceMethod<int, int>(
-      name,
-      methodHandler,
-      clientStreaming,
-      serverStreaming,
-      mockDecode,
-      mockEncode,
-    );
+    return ServiceMethod<int, int>(name, methodHandler, clientStreaming, serverStreaming, mockDecode, mockEncode);
   }
 }
 
@@ -295,18 +240,10 @@ abstract class _Harness {
   }
 
   void expectTrailingErrorResponse(int status, String message) {
-    setupTest([
-      headerValidator(),
-      errorTrailerValidator(status, message, validateHeader: false),
-    ]);
+    setupTest([headerValidator(), errorTrailerValidator(status, message, validateHeader: false)]);
   }
 
-  void sendRequestHeader(
-    String path, {
-    String authority = 'test',
-    Map<String, String>? metadata,
-    Duration? timeout,
-  }) {
+  void sendRequestHeader(String path, {String authority = 'test', Map<String, String>? metadata, Duration? timeout}) {
     final headers = Http2ClientConnection.createCallHeaders(
       true,
       authority,

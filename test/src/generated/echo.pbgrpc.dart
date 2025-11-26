@@ -43,22 +43,18 @@ class EchoServiceClient extends $grpc.Client {
     $0.ServerStreamingEchoRequest request, {
     $grpc.CallOptions? options,
   }) {
-    return $createStreamingCall(
-        _$serverStreamingEcho, $async.Stream.fromIterable([request]),
-        options: options);
+    return $createStreamingCall(_$serverStreamingEcho, $async.Stream.fromIterable([request]), options: options);
   }
 
   // method descriptors
 
-  static final _$echo = $grpc.ClientMethod<$0.EchoRequest, $0.EchoResponse>(
-      '/grpc.gateway.testing.EchoService/Echo',
-      ($0.EchoRequest value) => value.writeToBuffer(),
-      $0.EchoResponse.fromBuffer);
-  static final _$serverStreamingEcho = $grpc.ClientMethod<
-          $0.ServerStreamingEchoRequest, $0.ServerStreamingEchoResponse>(
-      '/grpc.gateway.testing.EchoService/ServerStreamingEcho',
-      ($0.ServerStreamingEchoRequest value) => value.writeToBuffer(),
-      $0.ServerStreamingEchoResponse.fromBuffer);
+  static final _$echo = $grpc.ClientMethod<$0.EchoRequest, $0.EchoResponse>('/grpc.gateway.testing.EchoService/Echo',
+      ($0.EchoRequest value) => value.writeToBuffer(), $0.EchoResponse.fromBuffer);
+  static final _$serverStreamingEcho =
+      $grpc.ClientMethod<$0.ServerStreamingEchoRequest, $0.ServerStreamingEchoResponse>(
+          '/grpc.gateway.testing.EchoService/ServerStreamingEcho',
+          ($0.ServerStreamingEchoRequest value) => value.writeToBuffer(),
+          $0.ServerStreamingEchoResponse.fromBuffer);
 }
 
 @$pb.GrpcServiceName('grpc.gateway.testing.EchoService')
@@ -73,28 +69,23 @@ abstract class EchoServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $0.EchoRequest.fromBuffer(value),
         ($0.EchoResponse value) => value.writeToBuffer()));
-    $addMethod($grpc.ServiceMethod<$0.ServerStreamingEchoRequest,
-            $0.ServerStreamingEchoResponse>(
+    $addMethod($grpc.ServiceMethod<$0.ServerStreamingEchoRequest, $0.ServerStreamingEchoResponse>(
         'ServerStreamingEcho',
         serverStreamingEcho_Pre,
         false,
         true,
-        ($core.List<$core.int> value) =>
-            $0.ServerStreamingEchoRequest.fromBuffer(value),
+        ($core.List<$core.int> value) => $0.ServerStreamingEchoRequest.fromBuffer(value),
         ($0.ServerStreamingEchoResponse value) => value.writeToBuffer()));
   }
 
-  $async.Future<$0.EchoResponse> echo_Pre(
-      $grpc.ServiceCall $call, $async.Future<$0.EchoRequest> $request) async {
+  $async.Future<$0.EchoResponse> echo_Pre($grpc.ServiceCall $call, $async.Future<$0.EchoRequest> $request) async {
     return echo($call, await $request);
   }
 
-  $async.Future<$0.EchoResponse> echo(
-      $grpc.ServiceCall call, $0.EchoRequest request);
+  $async.Future<$0.EchoResponse> echo($grpc.ServiceCall call, $0.EchoRequest request);
 
   $async.Stream<$0.ServerStreamingEchoResponse> serverStreamingEcho_Pre(
-      $grpc.ServiceCall $call,
-      $async.Future<$0.ServerStreamingEchoRequest> $request) async* {
+      $grpc.ServiceCall $call, $async.Future<$0.ServerStreamingEchoRequest> $request) async* {
     yield* serverStreamingEcho($call, await $request);
   }
 

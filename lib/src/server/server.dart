@@ -57,12 +57,7 @@ class ServerTlsCredentials extends ServerCredentials {
   ///
   /// If the [certificate] or [privateKey] is encrypted, the password must also
   /// be provided.
-  ServerTlsCredentials({
-    this.certificate,
-    this.certificatePassword,
-    this.privateKey,
-    this.privateKeyPassword,
-  });
+  ServerTlsCredentials({this.certificate, this.certificatePassword, this.privateKey, this.privateKeyPassword});
 
   @override
   SecurityContext get securityContext {
@@ -71,10 +66,7 @@ class ServerTlsCredentials extends ServerCredentials {
       context.usePrivateKeyBytes(privateKey!, password: privateKeyPassword);
     }
     if (certificate != null) {
-      context.useCertificateChainBytes(
-        certificate!,
-        password: certificatePassword,
-      );
+      context.useCertificateChainBytes(certificate!, password: certificatePassword);
     }
     return context;
   }
@@ -131,8 +123,7 @@ class ConnectionServer {
     final onDataReceivedController = StreamController<void>();
     ServerKeepAlive(
       options: _keepAliveOptions,
-      tooManyBadPings: () async =>
-          await connection.terminate(ErrorCode.ENHANCE_YOUR_CALM),
+      tooManyBadPings: () async => await connection.terminate(ErrorCode.ENHANCE_YOUR_CALM),
       pingNotifier: connection.onPingReceived,
       dataNotifier: onDataReceivedController.stream,
     ).handle();
@@ -199,13 +190,7 @@ class Server extends ConnectionServer {
 
   /// Create a server for the given [services].
   @Deprecated('use Server.create() instead')
-  Server(
-    super.services, [
-    super.interceptors,
-    super.codecRegistry,
-    super.errorHandler,
-    super.keepAlive,
-  ]);
+  Server(super.services, [super.interceptors, super.codecRegistry, super.errorHandler, super.keepAlive]);
 
   /// Create a server for the given [services].
   Server.create({
@@ -215,14 +200,7 @@ class Server extends ConnectionServer {
     List<ServerInterceptor> serverInterceptors = const <ServerInterceptor>[],
     CodecRegistry? codecRegistry,
     GrpcErrorHandler? errorHandler,
-  }) : super(
-         services,
-         interceptors,
-         serverInterceptors,
-         codecRegistry,
-         errorHandler,
-         keepAliveOptions,
-       );
+  }) : super(services, interceptors, serverInterceptors, codecRegistry, errorHandler, keepAliveOptions);
 
   /// The port that the server is listening on, or `null` if the server is not
   /// active.
@@ -293,10 +271,7 @@ class Server extends ConnectionServer {
           clientCertificate = socket.peerCertificate;
         }
 
-        final connection = ServerTransportConnection.viaSocket(
-          socket,
-          settings: http2ServerSettings,
-        );
+        final connection = ServerTransportConnection.viaSocket(socket, settings: http2ServerSettings);
 
         serveConnection(
           connection: connection,
@@ -335,9 +310,7 @@ class Server extends ConnectionServer {
     )..handle();
   }
 
-  @Deprecated(
-    'This is internal functionality, and will be removed in next major version.',
-  )
+  @Deprecated('This is internal functionality, and will be removed in next major version.')
   void serveStream(ServerTransportStream stream) {
     serveStream_(stream: stream);
   }

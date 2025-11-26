@@ -34,10 +34,7 @@ class EchoService extends EchoServiceBase {
   }
 
   @override
-  Stream<ServerStreamingEchoResponse> serverStreamingEcho(
-    ServiceCall call,
-    ServerStreamingEchoRequest request,
-  ) {
+  Stream<ServerStreamingEchoResponse> serverStreamingEcho(ServiceCall call, ServerStreamingEchoRequest request) {
     // TODO: implement serverStreamingEcho
     throw UnimplementedError();
   }
@@ -51,8 +48,7 @@ Future<void> main() async {
     final server = await _setUpServer(true);
 
     // Client
-    final channelContext =
-        SecurityContextChannelCredentials.baseSecurityContext();
+    final channelContext = SecurityContextChannelCredentials.baseSecurityContext();
     channelContext.useCertificateChain('test/data/localhost.crt');
     channelContext.usePrivateKey('test/data/localhost.key');
     final channelCredentials = SecurityContextChannelCredentials(
@@ -81,8 +77,7 @@ Future<void> main() async {
     final server = await _setUpServer();
 
     // Client
-    final channelContext =
-        SecurityContextChannelCredentials.baseSecurityContext();
+    final channelContext = SecurityContextChannelCredentials.baseSecurityContext();
     channelContext.useCertificateChain('test/data/localhost.crt');
     channelContext.usePrivateKey('test/data/localhost.key');
     final channelCredentials = SecurityContextChannelCredentials(
@@ -113,9 +108,7 @@ Future<Server> _setUpServer([bool requireClientCertificate = false]) async {
   serverContext.useCertificateChain('test/data/localhost.crt');
   serverContext.usePrivateKey('test/data/localhost.key');
   serverContext.setTrustedCertificates('test/data/localhost.crt');
-  final ServerCredentials serverCredentials = SecurityContextServerCredentials(
-    serverContext,
-  );
+  final ServerCredentials serverCredentials = SecurityContextServerCredentials(serverContext);
   await server.serve(
     address: address,
     port: 0,
@@ -128,12 +121,9 @@ Future<Server> _setUpServer([bool requireClientCertificate = false]) async {
 class SecurityContextChannelCredentials extends ChannelCredentials {
   final SecurityContext _securityContext;
 
-  SecurityContextChannelCredentials(
-    SecurityContext securityContext, {
-    super.authority,
-    super.onBadCertificate,
-  }) : _securityContext = securityContext,
-       super.secure();
+  SecurityContextChannelCredentials(SecurityContext securityContext, {super.authority, super.onBadCertificate})
+    : _securityContext = securityContext,
+      super.secure();
 
   @override
   SecurityContext get securityContext => _securityContext;
@@ -146,9 +136,7 @@ class SecurityContextChannelCredentials extends ChannelCredentials {
 class SecurityContextServerCredentials extends ServerTlsCredentials {
   final SecurityContext _securityContext;
 
-  SecurityContextServerCredentials(SecurityContext securityContext)
-    : _securityContext = securityContext,
-      super();
+  SecurityContextServerCredentials(SecurityContext securityContext) : _securityContext = securityContext, super();
 
   @override
   SecurityContext get securityContext => _securityContext;

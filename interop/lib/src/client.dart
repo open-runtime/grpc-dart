@@ -54,8 +54,7 @@ class Tester {
     required this.serviceAccountKeyFile,
   });
 
-  String get serviceAccountJson =>
-      _serviceAccountJson ??= _readServiceAccountJson();
+  String get serviceAccountJson => _serviceAccountJson ??= _readServiceAccountJson();
 
   String _readServiceAccountJson() {
     if (serviceAccountKeyFile?.isEmpty ?? true) {
@@ -75,10 +74,7 @@ class Tester {
       if (useTestCA) {
         trustedRoot = File('ca.pem').readAsBytesSync();
       }
-      credentials = ChannelCredentials.secure(
-        certificates: trustedRoot,
-        authority: serverHostOverride,
-      );
+      credentials = ChannelCredentials.secure(certificates: trustedRoot, authority: serverHostOverride);
     } else {
       credentials = const ChannelCredentials.insecure();
     }
@@ -440,17 +436,13 @@ class Tester {
     final expectedResponses = [31415, 9, 2653, 58979];
 
     final request = StreamingOutputCallRequest()
-      ..responseParameters.addAll(
-        expectedResponses.map((size) => ResponseParameters()..size = size),
-      );
+      ..responseParameters.addAll(expectedResponses.map((size) => ResponseParameters()..size = size));
 
     final responses = await client.streamingOutputCall(request).toList();
     if (responses.length != 4) {
       throw 'Incorrect number of responses (${responses.length}).';
     }
-    final responseLengths = responses
-        .map((response) => response.payload.body.length)
-        .toList();
+    final responseLengths = responses.map((response) => response.payload.body.length).toList();
 
     if (!ListEquality().equals(responseLengths, expectedResponses)) {
       throw 'Incorrect response lengths received (${responseLengths.join(', ')} != ${expectedResponses.join(', ')})';
@@ -554,9 +546,7 @@ class Tester {
       final payload = Payload()..body = Uint8List(requestSizes[index]);
       final request = StreamingOutputCallRequest()
         ..payload = payload
-        ..responseParameters.add(
-          ResponseParameters()..size = expectedResponses[index],
-        );
+        ..responseParameters.add(ResponseParameters()..size = expectedResponses[index]);
       return request;
     }
 
@@ -635,16 +625,9 @@ class Tester {
   ///   zero and comparing the entire response message against a golden response
   Future<void> computeEngineCreds() async {
     final credentials = ComputeEngineAuthenticator();
-    final clientWithCredentials = TestServiceClient(
-      channel,
-      options: credentials.toCallOptions,
-    );
+    final clientWithCredentials = TestServiceClient(channel, options: credentials.toCallOptions);
 
-    final response = await _sendSimpleRequestForAuth(
-      clientWithCredentials,
-      fillUsername: true,
-      fillOauthScope: true,
-    );
+    final response = await _sendSimpleRequestForAuth(clientWithCredentials, fillUsername: true, fillOauthScope: true);
 
     final user = response.username;
     final oauth = response.oauthScope;
@@ -730,15 +713,9 @@ class Tester {
   ///   zero and comparing the entire response message against a golden response
   Future<void> jwtTokenCreds() async {
     final credentials = JwtServiceAccountAuthenticator(serviceAccountJson);
-    final clientWithCredentials = TestServiceClient(
-      channel,
-      options: credentials.toCallOptions,
-    );
+    final clientWithCredentials = TestServiceClient(channel, options: credentials.toCallOptions);
 
-    final response = await _sendSimpleRequestForAuth(
-      clientWithCredentials,
-      fillUsername: true,
-    );
+    final response = await _sendSimpleRequestForAuth(clientWithCredentials, fillUsername: true);
     final username = response.username;
     if (username.isEmpty) {
       throw 'Username not received.';
@@ -788,19 +765,10 @@ class Tester {
   ///   check against the json key file or GCE default service account email.
   /// * received SimpleResponse.oauth_scope is in `--oauth_scope`
   Future<void> oauth2AuthToken() async {
-    final credentials = ServiceAccountAuthenticator(serviceAccountJson, [
-      oauthScope!,
-    ]);
-    final clientWithCredentials = TestServiceClient(
-      channel,
-      options: credentials.toCallOptions,
-    );
+    final credentials = ServiceAccountAuthenticator(serviceAccountJson, [oauthScope!]);
+    final clientWithCredentials = TestServiceClient(channel, options: credentials.toCallOptions);
 
-    final response = await _sendSimpleRequestForAuth(
-      clientWithCredentials,
-      fillUsername: true,
-      fillOauthScope: true,
-    );
+    final response = await _sendSimpleRequestForAuth(clientWithCredentials, fillUsername: true, fillOauthScope: true);
 
     final user = response.username;
     final oauth = response.oauthScope;
@@ -850,9 +818,7 @@ class Tester {
   ///   file used by the auth library. The client can optionally check the
   ///   username matches the email address in the key file.
   Future<void> perRpcCreds() async {
-    final credentials = ServiceAccountAuthenticator(serviceAccountJson, [
-      oauthScope!,
-    ]);
+    final credentials = ServiceAccountAuthenticator(serviceAccountJson, [oauthScope!]);
 
     final response = await _sendSimpleRequestForAuth(
       client,
@@ -948,12 +914,7 @@ class Tester {
       }
     }
 
-    final options = CallOptions(
-      metadata: {
-        _headerEchoKey: _headerEchoData,
-        _trailerEchoKey: _trailerEchoData,
-      },
-    );
+    final options = CallOptions(metadata: {_headerEchoKey: _headerEchoData, _trailerEchoKey: _trailerEchoData});
     final unaryCall = client.unaryCall(
       SimpleRequest()
         ..responseSize = 314159
@@ -1144,9 +1105,7 @@ class Tester {
         if (e is! GrpcError) {
           completer.completeError('Unexpected error: $e.');
         } else if (e.code != StatusCode.cancelled) {
-          completer.completeError(
-            'Unexpected status code ${e.code}: ${e.message}.',
-          );
+          completer.completeError('Unexpected status code ${e.code}: ${e.message}.');
         } else {
           completer.complete(true);
         }
@@ -1183,14 +1142,8 @@ class Tester {
   /// * Call completed with status DEADLINE_EXCEEDED.
   Future<void> timeoutOnSleepingServer() async {
     final requests = StreamController<StreamingOutputCallRequest>();
-    final call = client.fullDuplexCall(
-      requests.stream,
-      options: CallOptions(timeout: Duration(milliseconds: 1)),
-    );
-    requests.add(
-      StreamingOutputCallRequest()
-        ..payload = (Payload()..body = Uint8List(27182)),
-    );
+    final call = client.fullDuplexCall(requests.stream, options: CallOptions(timeout: Duration(milliseconds: 1)));
+    requests.add(StreamingOutputCallRequest()..payload = (Payload()..body = Uint8List(27182)));
     try {
       await for (final _ in call) {
         throw 'Unexpected response received.';

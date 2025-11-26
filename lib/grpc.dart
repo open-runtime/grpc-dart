@@ -15,48 +15,29 @@
 
 export 'src/auth/auth.dart' show BaseAuthenticator;
 export 'src/auth/auth_io.dart'
-    show
-        applicationDefaultCredentialsAuthenticator,
-        ComputeEngineAuthenticator,
-        ServiceAccountAuthenticator;
+    show applicationDefaultCredentialsAuthenticator, ComputeEngineAuthenticator, ServiceAccountAuthenticator;
 export 'src/client/call.dart' show ClientCall;
 export 'src/client/client.dart' show Client;
 export 'src/client/client_keepalive.dart' show ClientKeepAliveOptions;
-export 'src/client/client_transport_connector.dart'
-    show ClientTransportConnector;
+export 'src/client/client_transport_connector.dart' show ClientTransportConnector;
 export 'src/client/connection.dart' show ConnectionState;
-export 'src/client/http2_channel.dart'
-    show ClientChannel, ClientTransportConnectorChannel;
-export 'src/client/interceptor.dart'
-    show ClientInterceptor, ClientUnaryInvoker, ClientStreamingInvoker;
+export 'src/client/http2_channel.dart' show ClientChannel, ClientTransportConnectorChannel;
+export 'src/client/interceptor.dart' show ClientInterceptor, ClientUnaryInvoker, ClientStreamingInvoker;
 export 'src/client/method.dart' show ClientMethod;
-export 'src/client/options.dart'
-    show
-        defaultIdleTimeout,
-        BackoffStrategy,
-        defaultBackoffStrategy,
-        ChannelOptions;
+export 'src/client/options.dart' show defaultIdleTimeout, BackoffStrategy, defaultBackoffStrategy, ChannelOptions;
 export 'src/client/proxy.dart' show Proxy;
 export 'src/client/transport/http2_credentials.dart'
     show BadCertificateHandler, allowBadCertificates, ChannelCredentials;
 export 'src/server/call.dart' show ServiceCall;
-export 'src/server/interceptor.dart'
-    show Interceptor, ServerInterceptor, ServerStreamingInvoker;
+export 'src/server/interceptor.dart' show Interceptor, ServerInterceptor, ServerStreamingInvoker;
 export 'src/server/server.dart'
-    show
-        ServerCredentials,
-        ServerLocalCredentials,
-        ServerTlsCredentials,
-        ConnectionServer,
-        Server;
+    show ServerCredentials, ServerLocalCredentials, ServerTlsCredentials, ConnectionServer, Server;
 export 'src/server/server_keepalive.dart' show ServerKeepAliveOptions;
 export 'src/server/service.dart' show ServiceMethod, Service;
 export 'src/shared/api.dart';
 export 'src/shared/codec.dart' show Codec, IdentityCodec, GzipCodec;
 export 'src/shared/codec_registry.dart';
-export 'src/shared/message.dart'
-    show GrpcMessage, GrpcMetadata, GrpcData, grpcDecompressor;
-export 'src/shared/security.dart'
-    show supportedAlpnProtocols, createSecurityContext;
+export 'src/shared/message.dart' show GrpcMessage, GrpcMetadata, GrpcData, grpcDecompressor;
+export 'src/shared/security.dart' show supportedAlpnProtocols, createSecurityContext;
 export 'src/shared/streams.dart' show GrpcHttpEncoder, GrpcHttpDecoder;
 export 'src/shared/timeout.dart' show toTimeoutString, fromTimeoutString;

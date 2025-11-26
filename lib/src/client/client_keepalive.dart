@@ -71,12 +71,7 @@ final class Idle extends KeepAliveState {
         // When the transport goes active, we do not reset the nextKeepaliveTime.
         // This allows us to quickly check whether the connection is still
         // working.
-        final timer =
-            pingTimer ??
-            Timer(
-              manager._pingInterval - timeSinceFrame.elapsed,
-              manager.sendPing,
-            );
+        final timer = pingTimer ?? Timer(manager._pingInterval - timeSinceFrame.elapsed, manager.sendPing);
         return PingScheduled(timer, timeSinceFrame);
       default:
         return null;
@@ -136,10 +131,7 @@ final class PingDelayed extends KeepAliveState {
       case KeepAliveEvent.onTransportIdle:
         return Idle(pingTimer, timeSinceFrame);
       case KeepAliveEvent.sendPing:
-        final pingTimer = Timer(
-          manager._pingInterval - timeSinceFrame.elapsed,
-          manager.sendPing,
-        );
+        final pingTimer = Timer(manager._pingInterval - timeSinceFrame.elapsed, manager.sendPing);
         return PingScheduled(pingTimer, timeSinceFrame);
       default:
         return null;
@@ -165,9 +157,7 @@ final class ShutdownScheduled extends KeepAliveState {
         // idle, schedule a new keep-alive ping.
         shutdownTimer.cancel();
         // schedule a new ping
-        return isIdle
-            ? Idle()
-            : PingScheduled(Timer(manager._pingInterval, manager.sendPing));
+        return isIdle ? Idle() : PingScheduled(Timer(manager._pingInterval, manager.sendPing));
       case KeepAliveEvent.onTransportIdle:
         return ShutdownScheduled(shutdownTimer, true);
       case KeepAliveEvent.onTransportActive:
@@ -186,16 +176,10 @@ final class Disconnected extends KeepAliveState {
   void disconnect() {}
 
   @override
-  KeepAliveState? onEvent(KeepAliveEvent event, ClientKeepAlive manager) =>
-      null;
+  KeepAliveState? onEvent(KeepAliveEvent event, ClientKeepAlive manager) => null;
 }
 
-enum KeepAliveEvent {
-  onTransportActive,
-  onFrameReceived,
-  onTransportIdle,
-  sendPing,
-}
+enum KeepAliveEvent { onTransportActive, onFrameReceived, onTransportIdle, sendPing }
 
 /// A keep alive "manager", deciding when to send pings or shutdown based on the
 /// [ClientKeepAliveOptions].
@@ -209,11 +193,8 @@ class ClientKeepAlive {
   final ClientKeepAliveOptions _options;
   Duration get _pingInterval => _options.pingInterval!;
 
-  ClientKeepAlive({
-    required ClientKeepAliveOptions options,
-    required this.ping,
-    required this.onPingTimeout,
-  }) : _options = options;
+  ClientKeepAlive({required ClientKeepAliveOptions options, required this.ping, required this.onPingTimeout})
+    : _options = options;
 
   void onTransportStarted() {
     if (_options.permitWithoutCalls) {
