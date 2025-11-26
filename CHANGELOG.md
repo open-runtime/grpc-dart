@@ -4,6 +4,9 @@
 
 ## [5.1.1](https://github.com/open-runtime/grpc-dart/compare/v5.1.0...v5.1.1) (2025-11-26)
 
+### 🚀 Release Highlights
+
+This maintenance release improves the reliability of our automated release system with better YAML handling and comprehensive embedded CI instructions. The fork's critical race condition and null connection fixes remain fully intact, ensuring continued production stability for high-concurrency gRPC servers in the AOT monorepo.
 
 ### 🐛 Bug Fixes
 
