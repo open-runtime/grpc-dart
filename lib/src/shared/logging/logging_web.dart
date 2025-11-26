@@ -18,4 +18,3 @@
 void logGrpcError(String message) {
   print(message);
 }
-

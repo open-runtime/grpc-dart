@@ -14,4 +14,3 @@
 // limitations under the License.
 
 export 'logging_io.dart' if (dart.library.js_interop) 'logging_web.dart';
-

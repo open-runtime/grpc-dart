@@ -20,4 +20,3 @@ import 'dart:io' show stderr;
 void logGrpcError(String message) {
   stderr.writeln(message);
 }
-
