@@ -5,7 +5,6 @@ on:
     types: [opened, synchronize, reopened]
     branches:
       - main
-      - aot_monorepo_compat
 
 # Cancel in-progress runs when a new commit is pushed to the same PR
 concurrency:

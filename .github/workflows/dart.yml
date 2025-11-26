@@ -1,11 +1,11 @@
 name: Dart
 
 on:
-  # Run CI on pushes to main/aot_monorepo_compat, and on PRs against them.
+  # Run CI on pushes to main and on PRs against main.
   push:
-    branches: [main, aot_monorepo_compat]
+    branches: [main]
   pull_request:
-    branches: [main, aot_monorepo_compat]
+    branches: [main]
   workflow_dispatch:
 
 # Cancel in-progress runs when new commits are pushed

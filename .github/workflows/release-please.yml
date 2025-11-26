@@ -19,7 +19,6 @@ on:
   push:
     branches:
       - main
-      - aot_monorepo_compat
 
 # Only one Release Please run per branch at a time
 concurrency:
