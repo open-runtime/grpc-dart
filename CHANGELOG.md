@@ -2,6 +2,37 @@
 
 - Upgrading protos with new `googleapis` and `protobuf` versions.
 
+## [5.1.0](https://github.com/open-runtime/grpc-dart/compare/v5.0.0...v5.1.0) (2025-11-26)
+
+
+### ✨ Features
+
+* Add Release Please + Claude Code Action for automated releases ([c75c76a](https://github.com/open-runtime/grpc-dart/commit/c75c76abb9bac1747ba0e53bf7398fe6cc8e5bfc))
+* fix hang that occurs when hot restarting ([#718](https://github.com/open-runtime/grpc-dart/issues/718)) ([b999b64](https://github.com/open-runtime/grpc-dart/commit/b999b64502508177811e7316580230b8afef780d))
+* **grpc:** Add stderr logging to race condition catch blocks per PR [#7](https://github.com/open-runtime/grpc-dart/issues/7) review ([a267004](https://github.com/open-runtime/grpc-dart/commit/a267004f67e09154090e31a8c98da54ab88e9197))
+* Initial testing & debugging of _UnixNamedLock ([a04061b](https://github.com/open-runtime/grpc-dart/commit/a04061bff1afc08045aaf6c45bd89a4f0e22246f))
+* support client interceptors ([#338](https://github.com/open-runtime/grpc-dart/issues/338)) ([9f83e12](https://github.com/open-runtime/grpc-dart/commit/9f83e124e98425152200042d97ebaaf1d22922f9))
+
+
+### 🐛 Bug Fixes
+
+* Configure Release Please to use target-branch dynamically ([9f517a9](https://github.com/open-runtime/grpc-dart/commit/9f517a9cdb4e0c73bb8f4f4606546beb17cca386))
+* fix headers not completing when call is terminated ([#728](https://github.com/open-runtime/grpc-dart/issues/728)) ([4f6fe9b](https://github.com/open-runtime/grpc-dart/commit/4f6fe9b1114aa5bd9d97e5d3b5ae2cb354804a1f)), closes [#727](https://github.com/open-runtime/grpc-dart/issues/727)
+* **grpc:** Add platform-specific logging for race condition fixes ([e313336](https://github.com/open-runtime/grpc-dart/commit/e3133369593c174a3f0cece93d4f15a03ba9c8a0))
+* **grpc:** Restore critical null connection fix and apply race condition fixes after upstream 5.0.0 merge ([dedce7a](https://github.com/open-runtime/grpc-dart/commit/dedce7a6441c8b155e0dd86daa62696c5277a9f8))
+* keep alive timeout finishes transport instead of connection shutdown ([#722](https://github.com/open-runtime/grpc-dart/issues/722)) ([071ebc5](https://github.com/open-runtime/grpc-dart/commit/071ebc5f31a18ab52e82c09558f3dcb85f41fdbd))
+* Migrate off legacy JS/HTML APIs ([#750](https://github.com/open-runtime/grpc-dart/issues/750)) ([8406614](https://github.com/open-runtime/grpc-dart/commit/840661415df7d335cee98a28514de0bc02f7667e))
+* update grpc_web_server.dart envoy config to support newer envoy version ([#760](https://github.com/open-runtime/grpc-dart/issues/760)) ([ebc838b](https://github.com/open-runtime/grpc-dart/commit/ebc838b66d5b02e8d46675bae06a75bbd153eb6c))
+* Updates the grpc-web example to avoid dart:html ([#748](https://github.com/open-runtime/grpc-dart/issues/748)) ([6dfb4b4](https://github.com/open-runtime/grpc-dart/commit/6dfb4b43f39649cb324d9f132fff9e65bc48ed2b))
+* Use ANTHROPIC_API_KEY instead of ANTHROPIC_API_KEY_GLOBAL_CLOUD_RUNTIME ([01c9086](https://github.com/open-runtime/grpc-dart/commit/01c90861d16ca65411d158d4852b317dcda195f2))
+* Use ANTHROPIC_API_KEY_GLOBAL_CLOUD_RUNTIME secret ([a7d7b3b](https://github.com/open-runtime/grpc-dart/commit/a7d7b3b9620463cbf75a3ad28b83386c60801409))
+* Use package:web to get HttpStatus ([#749](https://github.com/open-runtime/grpc-dart/issues/749)) ([5ba28e3](https://github.com/open-runtime/grpc-dart/commit/5ba28e3a1c2744415b0d696301eef5e59de534fb))
+
+
+### 📚 Documentation
+
+* **grpc:** Add comprehensive documentation explaining why we use the fork ([e8b6d52](https://github.com/open-runtime/grpc-dart/commit/e8b6d5258ed4a5fb68136980d56e77a2618f025a))
+
 ## 4.3.1
 
 - Downgrade `meta` dependency to `1.16.0`
