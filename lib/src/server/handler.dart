@@ -316,11 +316,17 @@ class ServerHandler extends ServiceCall {
       _stream.sendData(frame(bytes, _callEncodingCodec));
     } catch (error, trace) {
       final grpcError = GrpcError.internal('Error sending response: $error');
-      if (!_requests!.isClosed) {
-        // If we can, alert the handler that things are going wrong.
-        _requests!
-          ..addError(grpcError)
-          ..close();
+      // Safely attempt to notify the handler about the error
+      // Use try-catch to prevent "Cannot add event after closing" from crashing the server
+      if (_requests != null && !_requests!.isClosed) {
+        try {
+          _requests!
+            ..addError(grpcError)
+            ..close();
+        } catch (e) {
+          // Stream was closed between check and add - ignore this error
+          // The handler has already been notified or terminated
+        }
       }
       _sendError(grpcError, trace);
       _cancelResponseSubscription();
@@ -395,7 +401,15 @@ class ServerHandler extends ServiceCall {
 
     final outgoingTrailers = <Header>[];
     outgoingTrailersMap.forEach((key, value) => outgoingTrailers.add(Header(ascii.encode(key), utf8.encode(value))));
-    _stream.sendHeaders(outgoingTrailers, endStream: true);
+
+    // Safely send headers - the stream might already be closed
+    try {
+      _stream.sendHeaders(outgoingTrailers, endStream: true);
+    } catch (e) {
+      // Stream is already closed - this can happen during concurrent termination
+      // The client is gone, so we can't send the trailers anyway
+    }
+
     // We're done!
     _cancelResponseSubscription();
     _sinkIncoming();
@@ -425,7 +439,14 @@ class ServerHandler extends ServiceCall {
     if (!(_hasReceivedRequest || _descriptor.streamingRequest)) {
       final error = GrpcError.unimplemented('No request received');
       _sendError(error);
-      _requests!.addError(error);
+      // Safely add error to requests stream
+      if (_requests != null && !_requests!.isClosed) {
+        try {
+          _requests!.addError(error);
+        } catch (e) {
+          // Stream was closed - ignore this error
+        }
+      }
     }
     _onDone();
   }

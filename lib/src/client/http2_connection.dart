@@ -187,6 +187,10 @@ class Http2ClientConnection implements connection.ClientConnection {
       grpcAcceptEncodings:
           (callOptions?.metadata ?? const {})['grpc-accept-encoding'] ?? options.codecRegistry?.supportedEncodings,
     );
+    if (_transportConnection == null) {
+      _connect();
+      throw ArgumentError('Trying to make request on null connection');
+    }
     final stream = _transportConnection!.makeRequest(headers);
     return Http2TransportStream(stream, onRequestFailure, options.codecRegistry, compressionCodec);
   }
