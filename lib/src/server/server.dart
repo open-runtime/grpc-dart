@@ -200,12 +200,21 @@ class Server extends ConnectionServer {
   /// Create a server for the given [services].
   @Deprecated('use Server.create() instead')
   Server(
-    super.services, [
-    super.interceptors,
-    super.codecRegistry,
-    super.errorHandler,
-    super.keepAlive,
-  ]);
+    List<Service> services, [
+    List<Interceptor> interceptors = const <Interceptor>[],
+    CodecRegistry? codecRegistry,
+    GrpcErrorHandler? errorHandler,
+    ServerKeepAliveOptions keepAlive = const ServerKeepAliveOptions(),
+  ]) : super(
+         services,
+         interceptors,
+         const <
+           ServerInterceptor
+         >[], // Empty list for new serverInterceptors parameter
+         codecRegistry,
+         errorHandler,
+         keepAlive,
+       );
 
   /// Create a server for the given [services].
   Server.create({
