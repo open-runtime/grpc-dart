@@ -3,7 +3,7 @@
 **Repository**: https://github.com/open-runtime/grpc-dart
 **Branch**: `aot_monorepo_compat`
 **Upstream**: https://github.com/grpc/grpc-dart
-**Current Version**: 5.1.0 (fork enhancements on top of upstream 5.0.0)
+**Current Version**: 5.1.1 (fork enhancements on top of upstream 5.0.0)
 
 ---
 
