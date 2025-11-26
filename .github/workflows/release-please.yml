@@ -153,33 +153,33 @@ jobs:
                 CHANGELOG="Release v$VERSION - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details."
               fi
               
-              # Create release notes file
-              cat > /tmp/release_notes.md << EOF
-## 📦 Installation
-
-**Dart 3.9+ (recommended):**
-\`\`\`yaml
-dependencies:
-  grpc:
-    git:
-      url: https://github.com/open-runtime/grpc-dart
-      tag_pattern: "^v"
-    version: ^$VERSION
-\`\`\`
-
-**Direct tag reference:**
-\`\`\`yaml
-dependencies:
-  grpc:
-    git:
-      url: https://github.com/open-runtime/grpc-dart
-      ref: v$VERSION
-\`\`\`
-
----
-
-$CHANGELOG
-EOF
+              # Create release notes file using printf (heredocs break YAML indentation)
+              {
+                echo "## 📦 Installation"
+                echo ""
+                echo "**Dart 3.9+ (recommended):**"
+                echo "\`\`\`yaml"
+                echo "dependencies:"
+                echo "  grpc:"
+                echo "    git:"
+                echo "      url: https://github.com/open-runtime/grpc-dart"
+                echo "      tag_pattern: \"^v\""
+                echo "    version: ^$VERSION"
+                echo "\`\`\`"
+                echo ""
+                echo "**Direct tag reference:**"
+                echo "\`\`\`yaml"
+                echo "dependencies:"
+                echo "  grpc:"
+                echo "    git:"
+                echo "      url: https://github.com/open-runtime/grpc-dart"
+                echo "      ref: v$VERSION"
+                echo "\`\`\`"
+                echo ""
+                echo "---"
+                echo ""
+                echo "$CHANGELOG"
+              } > /tmp/release_notes.md
               
               # Create the release
               gh release create $TAG_NAME \
