@@ -1,7 +1,9 @@
 name: grpc
 version: 5.0.0
-description: Dart implementation of gRPC, a high performance, open-source universal RPC framework.
+description: Dart implementation of gRPC, a high performance, open-source universal RPC framework. This is the open-runtime fork with critical production fixes.
 repository: https://github.com/open-runtime/grpc-dart
+homepage: https://github.com/open-runtime/grpc-dart
+publish_to: none
 
 workspace:
   - example/googleapis

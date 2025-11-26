@@ -1,0 +1,114 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+      - aot_monorepo_compat
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  release-please:
+    name: 📦 Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+      minor: ${{ steps.release.outputs.minor }}
+      patch: ${{ steps.release.outputs.patch }}
+      sha: ${{ steps.release.outputs.sha }}
+      pr: ${{ steps.release.outputs.pr }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+    steps:
+      - name: 📥 Checkout source code
+        uses: actions/checkout@v4
+
+      - name: 🤖 Run Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: 📝 Log Release Info
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        run: |
+          echo "🎉 Release created!"
+          echo "📦 Version: ${{ steps.release.outputs.version }}"
+          echo "🏷️ Tag: ${{ steps.release.outputs.tag_name }}"
+          echo "🔗 https://github.com/${{ github.repository }}/releases/tag/${{ steps.release.outputs.tag_name }}"
+
+  verify-release:
+    name: ✅ Verify Release
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout source code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: 🎯 Install Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 📚 Get dependencies
+        run: dart pub get
+
+      - name: 🔍 Verify package
+        run: |
+          echo "📦 Verifying package version..."
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          EXPECTED="${{ needs.release-please.outputs.version }}"
+          if [ "$VERSION" != "$EXPECTED" ]; then
+            echo "❌ Version mismatch: pubspec.yaml has $VERSION, expected $EXPECTED"
+            exit 1
+          fi
+          echo "✅ Version verified: $VERSION"
+
+      - name: 🧹 Run analysis
+        run: dart analyze --fatal-infos .
+
+      - name: 🧪 Run tests
+        run: dart test --platform vm
+
+      - name: 📋 Release Summary
+        run: |
+          echo "## 🎉 Release v${{ needs.release-please.outputs.version }} Verified!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Installation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Dart 3.9+ with tag_pattern (recommended):**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`yaml" >> $GITHUB_STEP_SUMMARY
+          echo "dependencies:" >> $GITHUB_STEP_SUMMARY
+          echo "  grpc:" >> $GITHUB_STEP_SUMMARY
+          echo "    git:" >> $GITHUB_STEP_SUMMARY
+          echo "      url: https://github.com/open-runtime/grpc-dart" >> $GITHUB_STEP_SUMMARY
+          echo "      tag_pattern: \"^v\"" >> $GITHUB_STEP_SUMMARY
+          echo "    version: ^${{ needs.release-please.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Direct tag reference:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`yaml" >> $GITHUB_STEP_SUMMARY
+          echo "dependencies:" >> $GITHUB_STEP_SUMMARY
+          echo "  grpc:" >> $GITHUB_STEP_SUMMARY
+          echo "    git:" >> $GITHUB_STEP_SUMMARY
+          echo "      url: https://github.com/open-runtime/grpc-dart" >> $GITHUB_STEP_SUMMARY
+          echo "      ref: v${{ needs.release-please.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/v${{ needs.release-please.outputs.version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [Changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)" >> $GITHUB_STEP_SUMMARY
+

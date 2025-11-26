@@ -1,0 +1,231 @@
+name: Enhance Release PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - aot_monorepo_compat
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  enhance-release-pr:
+    name: 🤖 Claude AI Enhancement
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout PR Branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏷️ Extract Version from PR Title
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.event.pull_request.title }}" | grep -oP '\d+\.\d+\.\d+' || echo "")
+          if [ -z "$VERSION" ]; then
+            echo "⚠️ Could not extract version from PR title"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "📦 Detected version: $VERSION"
+          fi
+
+      - name: ⬅️ Get Previous Version
+        id: prev_version
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          PREV=$(cat .release-please-manifest.json | grep -oP '"\.: "\K[^"]+' || echo "0.0.0")
+          echo "prev_version=$PREV" >> $GITHUB_OUTPUT
+          echo "📦 Previous version: $PREV"
+
+      - name: ✅ Check if Already Enhanced
+        id: check
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          if grep -q "### 🚀 Release Highlights" CHANGELOG.md; then
+            VERSION_LINE=$(grep -n "## \[${{ steps.version.outputs.version }}\]" CHANGELOG.md | head -1 | cut -d: -f1 || echo "0")
+            HIGHLIGHTS_LINE=$(grep -n "### 🚀 Release Highlights" CHANGELOG.md | head -1 | cut -d: -f1 || echo "99999")
+            
+            if [ "$VERSION_LINE" != "0" ] && [ "$HIGHLIGHTS_LINE" -gt "$VERSION_LINE" ]; then
+              NEXT_VERSION=$(grep -n "## \[" CHANGELOG.md | grep -v "^$VERSION_LINE:" | head -1 | cut -d: -f1 || echo "99999")
+              if [ "$HIGHLIGHTS_LINE" -lt "${NEXT_VERSION:-99999}" ]; then
+                echo "✅ Already enhanced"
+                echo "already_enhanced=true" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+            fi
+          fi
+          echo "already_enhanced=false" >> $GITHUB_OUTPUT
+
+      - name: 🤖 Full Release Enhancement with Claude
+        if: steps.version.outputs.skip != 'true' && steps.check.outputs.already_enhanced != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_GLOBAL_CLOUD_RUNTIME }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PROPOSED_VERSION: ${{ steps.version.outputs.version }}
+            PREVIOUS_VERSION: ${{ steps.prev_version.outputs.prev_version }}
+            PR_BRANCH: ${{ github.head_ref }}
+            PR_NUMBER: ${{ github.event.pull_request.number }}
+            
+            You are the Release Manager for the **open-runtime/grpc-dart** fork.
+            
+            This is a **FORK** of the official grpc/grpc-dart package with critical enhancements:
+            - Race condition fixes for production stability
+            - Null connection exception handling  
+            - ServerInterceptor support for advanced security patterns
+            - Custom fixes that are NOT in upstream
+            
+            Release Please has proposed version **${{ steps.version.outputs.version }}** (from ${{ steps.prev_version.outputs.prev_version }}).
+            
+            ## 🎯 YOUR MISSION: Complete Pre-Release Enhancement
+            
+            ---
+            
+            ## TASK 0: 🔢 VERSION REVIEW (CRITICAL - DO THIS FIRST!)
+            
+            Analyze the commits since v${{ steps.prev_version.outputs.prev_version }}:
+            
+            ```bash
+            git log v${{ steps.prev_version.outputs.prev_version }}..HEAD --oneline
+            ```
+            
+            **Version Rules:**
+            - **MAJOR** (X.0.0): Breaking API changes, incompatible protocol changes
+            - **MINOR** (x.Y.0): New features, new ServerInterceptor capabilities, significant upstream merges
+            - **PATCH** (x.y.Z): Bug fixes, race condition fixes, documentation, CI/workflow changes
+            
+            **Important Context:**
+            - This is a FORK - internal workflow changes are NOT breaking changes
+            - Adding/fixing race condition handlers = PATCH
+            - Documentation updates = PATCH
+            - Upstream merge with new features = MINOR
+            - Removing public API = MAJOR
+            
+            If the version seems wrong (e.g., 6.0.0 for just docs changes), you MUST fix it:
+            
+            1. Update `.release-please-manifest.json` to the correct version
+            2. Update `pubspec.yaml` version field
+            3. Update CHANGELOG.md version header
+            4. Commit with message: `fix: Adjust version to X.Y.Z (from proposed A.B.C)`
+            
+            ---
+            
+            ## TASK 1: 📝 ADD RELEASE HIGHLIGHTS
+            
+            After version is confirmed correct, add a "🚀 Release Highlights" section to CHANGELOG.md.
+            
+            Insert IMMEDIATELY after the version header line (e.g., `## [5.0.1](...)`):
+            
+            ```markdown
+            ### 🚀 Release Highlights
+            
+            [2-4 sentences explaining the developer impact of this release]
+            [Focus on: stability improvements, upstream compatibility, security enhancements]
+            ```
+            
+            Commit with: `docs: Add AI-enhanced release highlights for v${{ steps.version.outputs.version }}`
+            
+            ---
+            
+            ## TASK 2: 📚 DOCUMENTATION SYNC
+            
+            Check if these need updates based on the changes:
+            - `README.md` - Installation instructions, version references
+            - `WHY_USE_OPEN_RUNTIME_FORK.md` - If fork-specific features changed
+            - `FORK_CHANGES.md` - If new fixes were added
+            
+            Only update if genuinely needed. Commit each with descriptive message.
+            
+            ---
+            
+            ## TASK 3: 🏷️ ISSUE MANAGEMENT
+            
+            Search for issues that this release addresses:
+            
+            ```bash
+            gh issue list --repo ${{ github.repository }} --state open --limit 50
+            ```
+            
+            For each issue fixed by commits in this release:
+            1. Add a comment: "This should be addressed in v${{ steps.version.outputs.version }}"
+            2. Close the issue if appropriate
+            
+            ---
+            
+            ## TASK 4: 💬 POST PR SUMMARY
+            
+            Post a comment to PR #${{ github.event.pull_request.number }}:
+            
+            ```markdown
+            ## 🚀 Release v${{ steps.version.outputs.version }} Ready!
+            
+            ### Version Review:
+            - **Proposed:** ${{ steps.version.outputs.version }} (from ${{ steps.prev_version.outputs.prev_version }})
+            - **Final:** [ACTUAL_VERSION] ✅
+            - **Reason:** [Why this version is correct]
+            
+            ### What Claude Did:
+            - [x] Reviewed version appropriateness
+            - [x] Added Release Highlights to CHANGELOG.md
+            - [x] Reviewed documentation (updates: [yes/no])
+            - [x] Processed related issues ([N] found)
+            
+            ### Fork-Specific Notes:
+            [Any notes about upstream compatibility, fork-specific fixes, etc.]
+            
+            ### Installation (after merge):
+            \`\`\`yaml
+            dependencies:
+              grpc:
+                git:
+                  url: https://github.com/open-runtime/grpc-dart
+                  tag_pattern: "^v"
+                version: ^[VERSION]
+            \`\`\`
+            
+            **Ready to merge!** 🎉
+            
+            ---
+            *🤖 Generated by Claude Code Action*
+            ```
+            
+            ---
+            
+            ## EXECUTION RULES
+            
+            1. **Git Setup First:**
+               ```bash
+               git config user.name "github-actions[bot]"
+               git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+               ```
+            
+            2. **Commit Each Change Separately** with conventional commit messages
+            
+            3. **Push All Changes:**
+               ```bash
+               git push origin ${{ github.head_ref }}
+               ```
+            
+            4. **Be Conservative** - this is a critical infrastructure package
+            
+            Now execute all tasks in order!
+          claude_args: |
+            --allowedTools "Read,Edit,Bash(git:*),Bash(gh:*),Bash(cat:*),Bash(head:*),Bash(grep:*)"
+
+      - name: ℹ️ Already Enhanced Notice
+        if: steps.check.outputs.already_enhanced == 'true'
+        run: |
+          echo "ℹ️ Release PR already enhanced - skipping"
+

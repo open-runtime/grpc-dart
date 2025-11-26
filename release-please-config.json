@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "dart",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": false,
+      "include-v-in-tag": true,
+      "include-component-in-tag": false,
+      "changelog-sections": [
+        { "type": "feat", "section": "✨ Features", "hidden": false },
+        { "type": "fix", "section": "🐛 Bug Fixes", "hidden": false },
+        { "type": "perf", "section": "⚡ Performance", "hidden": false },
+        { "type": "refactor", "section": "♻️ Refactoring", "hidden": false },
+        { "type": "docs", "section": "📚 Documentation", "hidden": false },
+        { "type": "chore", "section": "🔧 Chores", "hidden": true },
+        { "type": "test", "section": "✅ Tests", "hidden": true },
+        { "type": "ci", "section": "👷 CI/CD", "hidden": true }
+      ],
+      "extra-files": []
+    }
+  },
+  "separate-pull-requests": false,
+  "sequential-calls": false,
+  "group-pull-request-title-pattern": "chore: release ${version}",
+  "pull-request-title-pattern": "chore: release ${version}",
+  "pull-request-header": "🚀 Release PR - Please review and merge when ready"
+}
+
