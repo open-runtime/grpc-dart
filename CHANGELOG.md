@@ -2,6 +2,24 @@
 
 - Upgrading protos with new `googleapis` and `protobuf` versions.
 
+## [5.2.0](https://github.com/open-runtime/grpc-dart/compare/v5.1.1...v5.2.0) (2025-11-27)
+
+
+### ✨ Features
+
+* Upgrade to protobuf ^6.0.0 ([9142172](https://github.com/open-runtime/grpc-dart/commit/9142172fa577f607410c45b615d0eae32ccedfa2))
+
+
+### 🐛 Bug Fixes
+
+* **grpc:** Address P1 code review issues - restore error_details export and fix deprecated Server constructor ([bcd9ffb](https://github.com/open-runtime/grpc-dart/commit/bcd9ffb973fc22f57b2dd1e6531a04766f3957b6))
+* Remove unnecessary import in client_test.dart ([73fba90](https://github.com/open-runtime/grpc-dart/commit/73fba90a36c4a1ab82e9fa6d3594894999eb508b))
+
+
+### 📚 Documentation
+
+* **grpc:** Add PR [#8](https://github.com/open-runtime/grpc-dart/issues/8) resolution summary ([e9d5789](https://github.com/open-runtime/grpc-dart/commit/e9d5789a692788a161464978daeb8ac82b83d8af))
+
 ## [5.1.1](https://github.com/open-runtime/grpc-dart/compare/v5.1.0...v5.1.1) (2025-11-26)
 
 ### 🚀 Release Highlights
