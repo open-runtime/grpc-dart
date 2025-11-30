@@ -195,6 +195,101 @@ jobs:
     steps:
       - name: 📥 Checkout source code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Final Check for Untagged PRs (Race Condition Protection)
+        id: final_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔍 Final check for untagged merged release PRs (race condition protection)..."
+          
+          PENDING_PRS=$(gh pr list --repo ${{ github.repository }} \
+            --state merged \
+            --label "autorelease: pending" \
+            --json number,title,mergeCommit \
+            --jq '.[] | select(.title | test("^chore: release "))')
+          
+          if [ -z "$PENDING_PRS" ]; then
+            echo "✅ No untagged merged release PRs found"
+            exit 0
+          fi
+          
+          echo "⚠️ Found untagged PRs merged during workflow run - processing now..."
+          
+          while IFS= read -r pr; do
+            PR_NUM=$(echo "$pr" | jq -r '.number')
+            PR_TITLE=$(echo "$pr" | jq -r '.title')
+            MERGE_SHA=$(echo "$pr" | jq -r '.mergeCommit.oid')
+            VERSION=$(echo "$PR_TITLE" | sed -E 's/.*([0-9]+\.[0-9]+\.[0-9]+).*/\1/' || echo "")
+            
+            if [ -z "$VERSION" ]; then
+              echo "⚠️ Could not extract version from PR #$PR_NUM title: $PR_TITLE"
+              continue
+            fi
+            
+            TAG_NAME="v$VERSION"
+            echo "📦 Processing PR #$PR_NUM: $PR_TITLE"
+            
+            # Create tag if missing
+            if ! gh api repos/${{ github.repository }}/git/refs/tags/$TAG_NAME 2>/dev/null; then
+              echo "🏷️ Creating tag $TAG_NAME at $MERGE_SHA"
+              gh api repos/${{ github.repository }}/git/refs \
+                -X POST \
+                -f ref="refs/tags/$TAG_NAME" \
+                -f sha="$MERGE_SHA"
+            fi
+            
+            # Create release if missing
+            if ! gh release view $TAG_NAME --repo ${{ github.repository }} 2>/dev/null; then
+              echo "🎉 Creating GitHub Release $TAG_NAME"
+              CHANGELOG=$(awk -v ver="$VERSION" '
+                /^## \[/ {
+                  if (found) exit
+                  if ($0 ~ "## \\[" ver "\\]") found=1
+                }
+                found { print }
+              ' CHANGELOG.md | tail -n +2)
+              
+              if [ -z "$CHANGELOG" ]; then
+                CHANGELOG="Release v$VERSION - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details."
+              fi
+              
+              {
+                echo "## 📦 Installation"
+                echo ""
+                echo "**Dart 3.9+ (recommended):**"
+                echo "\`\`\`yaml"
+                echo "dependencies:"
+                echo "  grpc:"
+                echo "    git:"
+                echo "      url: https://github.com/open-runtime/grpc-dart"
+                echo "      tag_pattern: \"^v\""
+                echo "    version: ^$VERSION"
+                echo "\`\`\`"
+                echo ""
+                echo "---"
+                echo ""
+                echo "$CHANGELOG"
+              } > /tmp/release_notes.md
+              
+              gh release create $TAG_NAME \
+                --repo ${{ github.repository }} \
+                --title "v$VERSION" \
+                --notes-file /tmp/release_notes.md
+            fi
+            
+            # Update label
+            gh pr edit $PR_NUM \
+              --repo ${{ github.repository }} \
+              --remove-label "autorelease: pending" \
+              --add-label "autorelease: tagged" || true
+            
+            echo "✅ Processed PR #$PR_NUM"
+          done < <(echo "$PENDING_PRS" | jq -c '.')
+          
+          echo "✅ Final check complete - all untagged PRs processed"
 
       - name: 🤖 Run Release Please
         id: release
