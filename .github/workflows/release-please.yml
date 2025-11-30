@@ -32,54 +32,19 @@ permissions:
   actions: write
 
 jobs:
-  release-please:
-    name: 📦 Release Please
+  # =============================================================================
+  # Step 1: Handle Untagged Merged Release PRs FIRST
+  # =============================================================================
+  # This MUST run before release-please to prevent "untagged PRs outstanding" abort
+  # Release Please aborts if it finds merged PRs with "autorelease: pending" label
+  # By running this first, we ensure all untagged PRs are tagged before Release Please checks
+  handle-untagged-releases:
+    name: 🔧 Handle Untagged Releases (Pre-Check)
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      releases_created: ${{ steps.release.outputs.releases_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-      version: ${{ steps.release.outputs.version }}
-      major: ${{ steps.release.outputs.major }}
-      minor: ${{ steps.release.outputs.minor }}
-      patch: ${{ steps.release.outputs.patch }}
-      sha: ${{ steps.release.outputs.sha }}
-      pr: ${{ steps.release.outputs.pr }}
-      prs_created: ${{ steps.release.outputs.prs_created }}
-    steps:
-      - name: 📥 Checkout source code
-        uses: actions/checkout@v4
-
-      - name: 🤖 Run Release Please
-        id: release
-        uses: googleapis/release-please-action@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-          target-branch: ${{ github.ref_name }}
-
-      - name: 📝 Log Release Info
-        if: ${{ steps.release.outputs.releases_created == 'true' }}
-        run: |
-          echo "🎉 Release created!"
-          echo "📦 Version: ${{ steps.release.outputs.version }}"
-          echo "🏷️ Tag: ${{ steps.release.outputs.tag_name }}"
-          echo "🔗 https://github.com/${{ github.repository }}/releases/tag/${{ steps.release.outputs.tag_name }}"
-
-  # =============================================================================
-  # Fallback: Handle Untagged Merged Release PRs
-  # =============================================================================
-  # If Release Please aborts due to "untagged merged release PRs", this job
-  # will find those PRs, create the missing tags, and create GitHub releases.
-  # This handles edge cases like when Claude changes the version in a Release PR.
-  # =============================================================================
-  handle-untagged-releases:
-    name: 🔧 Handle Untagged Releases (Fallback)
-    needs: release-please
-    # Run if Release Please didn't create a release (might have aborted)
-    if: ${{ needs.release-please.outputs.releases_created != 'true' }}
-    runs-on: ubuntu-latest
+      release_created: ${{ steps.process.outputs.release_created }}
+      tag_name: ${{ steps.process.outputs.tag_name }}
+      version: ${{ steps.process.outputs.version }}
     steps:
       - name: 📥 Checkout source code
         uses: actions/checkout@v4
@@ -127,7 +92,6 @@ jobs:
             echo "   SHA: $MERGE_SHA"
             echo "   Tag: $TAG_NAME"
             
-            # Check if tag already exists
             if gh api repos/${{ github.repository }}/git/refs/tags/$TAG_NAME 2>/dev/null; then
               echo "✅ Tag $TAG_NAME already exists"
             else
@@ -138,13 +102,14 @@ jobs:
                 -f sha="$MERGE_SHA"
             fi
             
-            # Check if release already exists
             if gh release view $TAG_NAME --repo ${{ github.repository }} 2>/dev/null; then
               echo "✅ Release $TAG_NAME already exists"
             else
               echo "🎉 Creating GitHub Release $TAG_NAME"
+              RELEASE_CREATED=true
+              LATEST_TAG="$TAG_NAME"
+              LATEST_VERSION="$VERSION"
               
-              # Extract changelog for this version
               CHANGELOG=$(awk -v ver="$VERSION" '
                 /^## \[/ {
                   if (found) exit
@@ -157,7 +122,6 @@ jobs:
                 CHANGELOG="Release v$VERSION - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details."
               fi
               
-              # Create release notes file using printf (heredocs break YAML indentation)
               {
                 echo "## 📦 Installation"
                 echo ""
@@ -185,14 +149,12 @@ jobs:
                 echo "$CHANGELOG"
               } > /tmp/release_notes.md
               
-              # Create the release
               gh release create $TAG_NAME \
                 --repo ${{ github.repository }} \
                 --title "v$VERSION" \
                 --notes-file /tmp/release_notes.md
             fi
             
-            # Update label to autorelease: tagged
             echo "🏷️ Updating PR #$PR_NUM label to autorelease: tagged"
             gh pr edit $PR_NUM \
               --repo ${{ github.repository }} \
@@ -200,21 +162,75 @@ jobs:
               --add-label "autorelease: tagged" || true
             
             echo "✅ Processed PR #$PR_NUM"
-          done
+          done < <(echo "$PENDING_PRS" | jq -c '.')
+          
+          # Output the latest release info (if any was created)
+          if [ "$RELEASE_CREATED" = "true" ]; then
+            echo "release_created=true" >> $GITHUB_OUTPUT
+            echo "tag_name=$LATEST_TAG" >> $GITHUB_OUTPUT
+            echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "release_created=false" >> $GITHUB_OUTPUT
+          fi
+
+  # =============================================================================
+  # Step 2: Run Release Please (after untagged PRs are handled)
+  # =============================================================================
+  release-please:
+    name: 📦 Release Please
+    needs: handle-untagged-releases
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+      minor: ${{ steps.release.outputs.minor }}
+      patch: ${{ steps.release.outputs.patch }}
+      sha: ${{ steps.release.outputs.sha }}
+      pr: ${{ steps.release.outputs.pr }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+    steps:
+      - name: 📥 Checkout source code
+        uses: actions/checkout@v4
+
+      - name: 🤖 Run Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: ${{ github.ref_name }}
+
+      - name: 📝 Log Release Info
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        run: |
+          echo "🎉 Release created!"
+          echo "📦 Version: ${{ steps.release.outputs.version }}"
+          echo "🏷️ Tag: ${{ steps.release.outputs.tag_name }}"
+          echo "🔗 https://github.com/${{ github.repository }}/releases/tag/${{ steps.release.outputs.tag_name }}"
+
+  # =============================================================================
+  # Step 3: Verify Release
+  # =============================================================================
 
   # =============================================================================
   # Verify Release
   # =============================================================================
   verify-release:
     name: ✅ Verify Release
-    needs: release-please
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    needs: [release-please, handle-untagged-releases]
+    if: |
+      needs.release-please.outputs.releases_created == 'true' ||
+      (needs.handle-untagged-releases.outputs.release_created == 'true' && needs.handle-untagged-releases.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout source code
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ needs.release-please.outputs.releases_created == 'true' && needs.release-please.outputs.tag_name || needs.handle-untagged-releases.outputs.tag_name }}
 
       - name: 🎯 Install Dart SDK
         uses: dart-lang/setup-dart@v1
@@ -228,7 +244,7 @@ jobs:
         run: |
           echo "📦 Verifying package version..."
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-          EXPECTED="${{ needs.release-please.outputs.version }}"
+          EXPECTED="${{ needs.release-please.outputs.releases_created == 'true' && needs.release-please.outputs.version || needs.handle-untagged-releases.outputs.version }}"
           if [ "$VERSION" != "$EXPECTED" ]; then
             echo "❌ Version mismatch: pubspec.yaml has $VERSION, expected $EXPECTED"
             exit 1
@@ -243,7 +259,8 @@ jobs:
 
       - name: 📋 Release Summary
         run: |
-          echo "## 🎉 Release v${{ needs.release-please.outputs.version }} Verified!" >> $GITHUB_STEP_SUMMARY
+          VERSION="${{ needs.release-please.outputs.releases_created == 'true' && needs.release-please.outputs.version || needs.handle-untagged-releases.outputs.version }}"
+          echo "## 🎉 Release v$VERSION Verified!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Installation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -254,9 +271,9 @@ jobs:
           echo "    git:" >> $GITHUB_STEP_SUMMARY
           echo "      url: https://github.com/open-runtime/grpc-dart" >> $GITHUB_STEP_SUMMARY
           echo "      tag_pattern: \"^v\"" >> $GITHUB_STEP_SUMMARY
-          echo "    version: ^${{ needs.release-please.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "    version: ^$VERSION" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/v${{ needs.release-please.outputs.version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/v$VERSION)" >> $GITHUB_STEP_SUMMARY
           echo "- [Changelog](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md)" >> $GITHUB_STEP_SUMMARY
