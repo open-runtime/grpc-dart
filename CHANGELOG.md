@@ -4,6 +4,9 @@
 
 ## [5.2.2](https://github.com/open-runtime/grpc-dart/compare/v5.2.1...v5.2.2) (2025-11-30)
 
+### 🚀 Release Highlights
+
+This release refines the automated release workflow to ensure AI-enhanced release notes are generated reliably before creating GitHub releases. The fork's critical race condition and null connection fixes remain fully intact, providing continued production stability for high-concurrency gRPC servers.
 
 ### 🐛 Bug Fixes
 
