@@ -19,6 +19,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: # Allow manual triggering
 
 # Only one Release Please run per branch at a time
 concurrency:
