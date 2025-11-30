@@ -2,6 +2,14 @@
 
 - Upgrading protos with new `googleapis` and `protobuf` versions.
 
+## [5.2.3](https://github.com/open-runtime/grpc-dart/compare/v5.2.2...v5.2.3) (2025-11-30)
+
+
+### 🐛 Bug Fixes
+
+* add final check before Release Please to prevent race conditions ([4c7557e](https://github.com/open-runtime/grpc-dart/commit/4c7557e01f2ccc13a2ad5c76c78034249695791c))
+* add workflow_dispatch trigger to release-please workflow ([c64e6b3](https://github.com/open-runtime/grpc-dart/commit/c64e6b3753edc14e6f419e9a7e8a9af36f83210c))
+
 ## [5.2.2](https://github.com/open-runtime/grpc-dart/compare/v5.2.1...v5.2.2) (2025-11-30)
 
 ### 🚀 Release Highlights
