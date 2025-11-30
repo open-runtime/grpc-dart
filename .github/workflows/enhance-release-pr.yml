@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened]
     branches:
       - main
+  workflow_dispatch: # Added to allow manual triggering
 
 # Cancel in-progress runs when a new commit is pushed to the same PR
 concurrency:
@@ -20,20 +21,21 @@ permissions:
 jobs:
   enhance-release-pr:
     name: 🤖 Claude AI Enhancement
-    if: startsWith(github.head_ref, 'release-please--')
+    if: startsWith(github.event.pull_request.head.ref, 'release-please--')
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout PR Branch
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🏷️ Extract Version from PR Title
         id: version
         run: |
-          VERSION=$(echo "${{ github.event.pull_request.title }}" | grep -oP '\d+\.\d+\.\d+' || echo "")
+          # Extract version using sed -E (extended regex, more portable than grep -P)
+          VERSION=$(echo "${{ github.event.pull_request.title }}" | sed -E 's/.*([0-9]+\.[0-9]+\.[0-9]+).*/\1/' || echo "")
           if [ -z "$VERSION" ]; then
             echo "⚠️ Could not extract version from PR title"
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -46,8 +48,68 @@ jobs:
       - name: ⬅️ Get Previous Version
         id: prev_version
         if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PREV=$(cat .release-please-manifest.json | grep -oP '"\.: "\K[^"]+' || echo "0.0.0")
+          echo "🔍 Determining previous version..."
+          
+          # Method 1: Try to get from base branch's manifest (most reliable)
+          # Uses GitHub API to read .release-please-manifest.json from the base branch
+          echo "📋 Checking base branch (${{ github.event.pull_request.base.ref }}) manifest..."
+          BASE_MANIFEST=$(gh api repos/${{ github.repository }}/contents/.release-please-manifest.json?ref=${{ github.event.pull_request.base.ref }} 2>/dev/null | jq -r '.content' | base64 -d 2>/dev/null || echo "")
+          if [ -n "$BASE_MANIFEST" ]; then
+            PREV=$(echo "$BASE_MANIFEST" | jq -r '."."' 2>/dev/null || echo "")
+            if [ -n "$PREV" ] && [ "$PREV" != "null" ] && [ "$PREV" != "0.0.0" ]; then
+              echo "✅ Found version from base branch manifest: $PREV"
+              echo "prev_version=$PREV" >> $GITHUB_OUTPUT
+              echo "📦 Previous version: $PREV"
+              exit 0
+            fi
+          fi
+          
+          # Method 2: Get latest GitHub release tag
+          echo "🏷️ Checking GitHub releases..."
+          LATEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/latest 2>/dev/null | jq -r '.tag_name' | sed 's/^v//' || echo "")
+          if [ -n "$LATEST_RELEASE" ] && [ "$LATEST_RELEASE" != "null" ]; then
+            echo "✅ Found version from GitHub releases: $LATEST_RELEASE"
+            echo "prev_version=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+            echo "📦 Previous version: $LATEST_RELEASE"
+            exit 0
+          fi
+          
+          # Method 3: Get latest tag (even if no release exists)
+          echo "🏷️ Checking Git tags..."
+          # Use sed instead of grep -oP for portability (BSD grep doesn't support -P)
+          LATEST_TAG=$(git ls-remote --tags origin | sed -nE 's|.*refs/tags/v([0-9]+\.[0-9]+\.[0-9]+).*|\1|p' | sort -V | tail -1 || echo "")
+          if [ -n "$LATEST_TAG" ]; then
+            echo "✅ Found version from Git tags: $LATEST_TAG"
+            echo "prev_version=$LATEST_TAG" >> $GITHUB_OUTPUT
+            echo "📦 Previous version: $LATEST_TAG"
+            exit 0
+          fi
+          
+          # Method 4: Fallback to PR branch manifest (might have new version, but better than 0.0.0)
+          echo "📋 Checking PR branch manifest (fallback)..."
+          PREV=$(jq -r '."."' .release-please-manifest.json 2>/dev/null || echo "0.0.0")
+          if [ "$PREV" = "null" ] || [ -z "$PREV" ]; then
+            PREV="0.0.0"
+          fi
+          
+          # If we got the same version as proposed, try to decrement patch version
+          if [ "$PREV" = "${{ steps.version.outputs.version }}" ]; then
+            echo "⚠️ PR branch has same version as proposed, attempting to infer previous..."
+            # Try to get from git log or fallback to decrementing patch
+            MAJOR=$(echo "$PREV" | cut -d. -f1)
+            MINOR=$(echo "$PREV" | cut -d. -f2)
+            PATCH=$(echo "$PREV" | cut -d. -f3)
+            if [ "$PATCH" -gt 0 ]; then
+              PREV="$MAJOR.$MINOR.$((PATCH - 1))"
+              echo "📉 Decremented patch version: $PREV"
+            else
+              PREV="0.0.0"
+            fi
+          fi
+          
           echo "prev_version=$PREV" >> $GITHUB_OUTPUT
           echo "📦 Previous version: $PREV"
 
@@ -80,7 +142,7 @@ jobs:
             REPO: ${{ github.repository }}
             PROPOSED_VERSION: ${{ steps.version.outputs.version }}
             PREVIOUS_VERSION: ${{ steps.prev_version.outputs.prev_version }}
-            PR_BRANCH: ${{ github.head_ref }}
+            PR_BRANCH: ${{ github.event.pull_request.head.ref }}
             PR_NUMBER: ${{ github.event.pull_request.number }}
             
             # 🤖 CLAUDE CODE: RELEASE MANAGER FOR open-runtime/grpc-dart
@@ -254,7 +316,7 @@ jobs:
             
             3. **Push All Changes:**
                ```bash
-               git push origin ${{ github.head_ref }}
+               git push origin ${{ github.event.pull_request.head.ref }}
                ```
             
             4. **Be Conservative** - this is a critical infrastructure package
