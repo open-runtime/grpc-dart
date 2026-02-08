@@ -6,8 +6,9 @@ This document tracks all custom modifications, patches, and deviations from the 
 
 - **Fork Repository**: `https://github.com/open-runtime/grpc-dart`
 - **Upstream Repository**: `https://github.com/grpc/grpc-dart`
-- **Current Branch**: `aot_monorepo_compat`
-- **Last Upstream Merge**: November 25, 2025 (v5.0.0)
+- **Current Branch**: `chore/unify-dependencies`
+- **Last Upstream Sync**: February 2026 (cherry-picked protos.dart from upstream #816)
+- **Fork Status**: 0 commits behind upstream (fully synced)
 
 ## Custom Modifications
 
@@ -63,6 +64,17 @@ Race condition fixes from `origin/hiro/race_condition_fix` have been merged into
 **Implementation Date**: December 2025 (after upstream 5.0.X merge)
 
 ## Upstream Sync History
+
+### February 2026 - Cherry-pick protos.dart Export (upstream #816)
+- **Cherry-picked Commit**: `fa87a0d` from `upstream/master`
+- **Changes**:
+  - Added `lib/protos.dart` -- re-exports protobuf `Duration` and error detail types (`RetryInfo`, `DebugInfo`, `QuotaFailure`, `ErrorInfo`, `PreconditionFailure`, `BadRequest`, `RequestInfo`, `ResourceInfo`, `Help`, `LocalizedMessage`, etc.)
+  - Avoids naming conflicts between `dart:core Duration` and proto `Duration`
+  - CHANGELOG updated with upstream 5.1.0 entry
+- **Skipped Commit**: `f3ff3a7` (CI-only `actions/checkout` bump -- fork has different CI setup)
+- **Conflicts Resolved**: `pubspec.yaml` (kept fork metadata), `test/client_tests/client_test.dart` (kept new `protos.dart` import)
+- **Status**: ✅ Successfully applied, `dart analyze` clean
+- **Result**: Fork is now **0 commits behind upstream** (fully synced)
 
 ### December 2025 - Race Condition Fixes Applied & Null Connection Fix Restored
 - **Changes**: 
