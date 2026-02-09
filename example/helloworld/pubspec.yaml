@@ -2,8 +2,6 @@ name: helloworld
 description: Dart gRPC sample client and server.
 publish_to: none
 
-resolution: workspace
-
 environment:
   sdk: ^3.8.0
 

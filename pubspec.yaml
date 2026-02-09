@@ -5,8 +5,6 @@ repository: https://github.com/open-runtime/grpc-dart
 homepage: https://github.com/open-runtime/grpc-dart
 publish_to: none
 
-resolution: workspace
-
 topics:
   - grpc
   - protocols
