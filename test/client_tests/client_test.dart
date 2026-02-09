@@ -18,8 +18,8 @@ import 'dart:convert';
 import 'dart:io' show HttpStatus;
 
 import 'package:grpc/grpc.dart';
+import 'package:grpc/protos.dart' show BadRequest;
 import 'package:grpc/src/client/http2_connection.dart';
-// BadRequest is exported from grpc.dart, no need for separate import
 import 'package:grpc/src/generated/google/rpc/status.pb.dart';
 import 'package:grpc/src/shared/status.dart';
 import 'package:http2/transport.dart';
