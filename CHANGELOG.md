@@ -3,6 +3,27 @@
 - Added `protos.dart` library.
 - Require `protobuf:6.0.0`.
 
+## [5.3.0](https://github.com/open-runtime/grpc-dart/compare/v5.2.3...v5.3.0) (2026-02-09)
+
+
+### ✨ Features
+
+* cherry-pick protos.dart from upstream and unify deps ([4187e18](https://github.com/open-runtime/grpc-dart/commit/4187e1844cf3dd9ab2a33c3696e89300a3c0b887))
+
+
+### 📚 Documentation
+
+* update FORK_CHANGES.md with February 2026 upstream sync status ([6cf56a6](https://github.com/open-runtime/grpc-dart/commit/6cf56a611b0e46dc6cf98c80d4c37507a528adbc))
+
+
+### 🔧 Chores
+
+* bump version to 5.2.4 ([d96f52e](https://github.com/open-runtime/grpc-dart/commit/d96f52e93da0130df7a4d7510d0f56c91cfcf2c1))
+* cherry-pick upstream protos.dart export from grpc/grpc-dart[#816](https://github.com/open-runtime/grpc-dart/issues/816) ([f09c54b](https://github.com/open-runtime/grpc-dart/commit/f09c54bf9bd9605c31792c7cfca3a9943960c93d))
+* **deps:** bump SDK constraints and unify workspace dependencies ([3b56c5f](https://github.com/open-runtime/grpc-dart/commit/3b56c5f96336787471078a719ee9cfa6e9ce7bf5))
+* **deps:** bump SDK constraints to Dart 3.8 ([6135261](https://github.com/open-runtime/grpc-dart/commit/6135261911777bdaa1b4148ceb4f4b1e9d09d27e))
+* unify dependencies and add installer repos to workspace ([fbcd474](https://github.com/open-runtime/grpc-dart/commit/fbcd4741ff1b93ed8b5e400cf60bd50a277ffd85))
+
 ## 5.0.0
 
 - Upgrading protos with new `googleapis` and `protobuf` versions.
