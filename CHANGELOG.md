@@ -3,6 +3,14 @@
 - Added `protos.dart` library.
 - Require `protobuf:6.0.0`.
 
+## [5.3.1](https://github.com/open-runtime/grpc-dart/compare/v5.3.0...v5.3.1) (2026-02-10)
+
+
+### 🔧 Chores
+
+* **deps:** widen googleapis_auth to support 2.x, bump to v5.3.1 ([bbe4ee0](https://github.com/open-runtime/grpc-dart/commit/bbe4ee03424cf07d525cc951c358b70ea8eac38d))
+* **deps:** widen googleapis_auth to support 2.x, bump to v5.3.1 ([5770938](https://github.com/open-runtime/grpc-dart/commit/5770938e2471850fd2f69c7d56207dc3427d792d))
+
 ## [5.3.0](https://github.com/open-runtime/grpc-dart/compare/v5.2.3...v5.3.0) (2026-02-09)
 
 
