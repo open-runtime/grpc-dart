@@ -13,8 +13,6 @@ topics:
 environment:
   sdk: ^3.8.0
 
-resolution: workspace
-
 dependencies:
   async: ^2.13.0
   crypto: ^3.0.6
