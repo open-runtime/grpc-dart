@@ -3,6 +3,19 @@
 - Added `protos.dart` library.
 - Require `protobuf:6.0.0`.
 
+## [5.4.0](https://github.com/open-runtime/grpc-dart/compare/v5.3.0...v5.4.0) (2026-02-21)
+
+
+### ✨ Features
+
+* add Windows named pipe transport for client and server ([5eb8e93](https://github.com/open-runtime/grpc-dart/commit/5eb8e9349c8dea5c26f7103268d74640eefddc2f))
+
+
+### 🔧 Chores
+
+* **deps:** widen googleapis_auth to support 2.x, bump to v5.3.1 ([bbe4ee0](https://github.com/open-runtime/grpc-dart/commit/bbe4ee03424cf07d525cc951c358b70ea8eac38d))
+* **deps:** widen googleapis_auth to support 2.x, bump to v5.3.1 ([5770938](https://github.com/open-runtime/grpc-dart/commit/5770938e2471850fd2f69c7d56207dc3427d792d))
+
 ## [5.3.0](https://github.com/open-runtime/grpc-dart/compare/v5.2.3...v5.3.0) (2026-02-09)
 
 
