@@ -46,3 +46,52 @@ void testTcpAndUds(
 
   testUds('$name (over uds)', testCase);
 }
+
+/// Test functionality for Windows named pipes.
+///
+/// [pipeName] is the base name for the pipe. A unique suffix will be added.
+/// Only runs on Windows.
+void testNamedPipe(
+  String name,
+  FutureOr<void> Function(String pipeName) testCase, {
+  String basePipeName = 'grpc-test',
+}) {
+  if (!Platform.isWindows) {
+    return;
+  }
+
+  test('$name (over named pipe)', () async {
+    // Generate unique pipe name to avoid conflicts
+    final uniquePipeName = '$basePipeName-${DateTime.now().millisecondsSinceEpoch}';
+    await testCase(uniquePipeName);
+  });
+}
+
+/// Test functionality for all supported transports: TCP, Unix domain sockets, and named pipes.
+///
+/// On Windows: runs TCP and named pipe tests.
+/// On macOS/Linux: runs TCP and Unix domain socket tests.
+void testAllTransports(
+  String name, {
+  required FutureOr<void> Function(InternetAddress) tcpTestCase,
+  FutureOr<void> Function(InternetAddress)? udsTestCase,
+  FutureOr<void> Function(String pipeName)? namedPipeTestCase,
+  String host = 'localhost',
+  String basePipeName = 'grpc-test',
+}) {
+  // TCP test (all platforms)
+  test(name, () async {
+    final address = await InternetAddress.lookup(host);
+    await tcpTestCase(address.first);
+  });
+
+  // Unix domain socket test (macOS/Linux only)
+  if (udsTestCase != null) {
+    testUds('$name (over uds)', udsTestCase);
+  }
+
+  // Named pipe test (Windows only)
+  if (namedPipeTestCase != null) {
+    testNamedPipe(name, namedPipeTestCase, basePipeName: basePipeName);
+  }
+}

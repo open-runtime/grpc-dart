@@ -27,6 +27,11 @@ export 'src/client/client_transport_connector.dart'
 export 'src/client/connection.dart' show ConnectionState;
 export 'src/client/http2_channel.dart'
     show ClientChannel, ClientTransportConnectorChannel;
+// Windows named pipe support (only usable on Windows)
+export 'src/client/named_pipe_channel.dart'
+    show NamedPipeClientChannel, NamedPipeChannelOptions;
+export 'src/client/named_pipe_transport.dart'
+    show NamedPipeTransportConnector, NamedPipeException;
 export 'src/client/interceptor.dart'
     show ClientInterceptor, ClientUnaryInvoker, ClientStreamingInvoker;
 export 'src/client/method.dart' show ClientMethod;
@@ -43,6 +48,7 @@ export 'src/generated/google/rpc/error_details.pb.dart';
 export 'src/server/call.dart' show ServiceCall;
 export 'src/server/interceptor.dart'
     show Interceptor, ServerInterceptor, ServerStreamingInvoker;
+export 'src/server/named_pipe_server.dart' show NamedPipeServer;
 export 'src/server/server.dart'
     show
         ServerCredentials,
