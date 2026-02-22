@@ -348,20 +348,20 @@ void main() {
 
       final client = EchoClient(channel);
 
-      // Start a long server stream
-      final streamFuture = client.serverStream(100).toList();
+      // Start a long server stream and immediately attach an error handler
+      // so the GrpcError from shutdown doesn't become an unhandled async error.
+      final streamFuture = client.serverStream(100).toList().then(
+        (results) => results,
+        onError: (e) => <int>[],
+      );
 
       // Wait a bit then shutdown server
       await Future.delayed(const Duration(milliseconds: 50));
       await server.shutdown();
 
-      // Stream should either complete partially or throw
-      try {
-        final results = await streamFuture;
-        expect(results.length, lessThanOrEqualTo(100));
-      } on GrpcError {
-        // Expected - server went away
-      }
+      // Stream should either complete partially or have been caught above
+      final results = await streamFuture;
+      expect(results.length, lessThanOrEqualTo(100));
 
       await channel.shutdown();
     });

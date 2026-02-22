@@ -352,6 +352,20 @@ class Server extends ConnectionServer {
   }
 
   Future<void> shutdown() async {
+    // Cancel all active handlers before finishing connections to avoid
+    // deadlock: connection.finish() waits for all HTTP/2 streams to close,
+    // but active response streams (e.g. server-side streaming RPCs) won't
+    // close on their own. Cancelling handlers first terminates in-flight
+    // streams so connection.finish() can complete.
+    for (final connection in _connections) {
+      final connectionHandlers = handlers[connection];
+      if (connectionHandlers != null) {
+        for (final handler in connectionHandlers) {
+          handler.cancel();
+        }
+      }
+    }
+
     await Future.wait([
       for (var connection in _connections) connection.finish(),
       if (_insecureServer != null) _insecureServer!.close(),

@@ -505,5 +505,6 @@ class ServerHandler extends ServiceCall {
     isCanceled = true;
     _timeoutTimer?.cancel();
     _cancelResponseSubscription();
+    _stream.terminate();
   }
 }
