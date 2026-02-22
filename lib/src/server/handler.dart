@@ -63,6 +63,7 @@ class ServerHandler extends ServiceCall {
 
   DateTime? _deadline;
   bool _isTimedOut = false;
+  bool _streamTerminated = false;
   Timer? _timeoutTimer;
 
   final X509Certificate? _clientCertificate;
@@ -239,7 +240,7 @@ class ServerHandler extends ServiceCall {
       }
       _sendError(error);
       _onDone();
-      _stream.terminate();
+      _terminateStream();
       return;
     }
 
@@ -453,7 +454,7 @@ class ServerHandler extends ServiceCall {
     }
     _cancelResponseSubscription();
     _incomingSubscription!.cancel();
-    _stream.terminate();
+    _terminateStream();
   }
 
   void _onDoneError() {
@@ -505,10 +506,23 @@ class ServerHandler extends ServiceCall {
     isCanceled = true;
     _timeoutTimer?.cancel();
     _cancelResponseSubscription();
+    _terminateStream();
+  }
+
+  /// Terminates the underlying HTTP/2 stream by sending RST_STREAM.
+  ///
+  /// Guards against double-terminate: once a stream has been terminated
+  /// (or its sink is already closed), subsequent calls are no-ops. This is
+  /// necessary because [cancel] may be invoked by [Server.shutdown] on
+  /// handlers whose streams have already completed normally.
+  void _terminateStream() {
+    if (_streamTerminated) return;
+    _streamTerminated = true;
     try {
       _stream.terminate();
     } catch (_) {
-      // Stream may already be closed; safe to ignore.
+      // Stream sink may already be closed (e.g. response completed with
+      // endStream: true before shutdown). Safe to ignore.
     }
   }
 }
