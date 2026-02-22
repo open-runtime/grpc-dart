@@ -29,7 +29,7 @@ void main(List<String> args) {
     'grep -rn "^enum" $sourceDir 2>/dev/null',
   );
 
-  String testContent = '(no tests found)';
+  var testContent = '(no tests found)';
   final testDir = libDir.isNotEmpty ? libDir.replaceFirst('lib/', 'test/') : '';
   if (testDir.isNotEmpty && Directory(testDir).existsSync()) {
     testContent = _truncate(

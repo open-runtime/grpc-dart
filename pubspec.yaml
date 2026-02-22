@@ -12,7 +12,6 @@ topics:
 
 environment:
   sdk: ^3.9.0
-
 # NOTE: When used inside the aot_monorepo workspace, add
 # `resolution: workspace` here. It is intentionally omitted so this
 # package can also resolve standalone (e.g., in its own CI pipeline).
@@ -45,7 +44,7 @@ dev_dependencies:
     git:
       url: git@github.com:open-runtime/runtime_ci_tooling.git
       tag_pattern: v{{version}}
-    version: ^0.6.0
+    version: ^0.9.0
 
   # ==========================================================================
   # Direct pub.dev dev dependencies

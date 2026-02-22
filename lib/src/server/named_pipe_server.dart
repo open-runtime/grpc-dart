@@ -97,18 +97,10 @@ class NamedPipeServer extends ConnectionServer {
     List<ServerInterceptor> serverInterceptors = const <ServerInterceptor>[],
     CodecRegistry? codecRegistry,
     GrpcErrorHandler? errorHandler,
-  }) : super(
-         services,
-         interceptors,
-         serverInterceptors,
-         codecRegistry,
-         errorHandler,
-         keepAliveOptions,
-       );
+  }) : super(services, interceptors, serverInterceptors, codecRegistry, errorHandler, keepAliveOptions);
 
   /// The full Windows path for the named pipe.
-  String? get pipePath =>
-      _pipeName != null ? r'\\.\pipe\' + _pipeName! : null;
+  String? get pipePath => _pipeName != null ? r'\\.\pipe\' + _pipeName! : null;
 
   /// Whether the server is running.
   bool get isRunning => _isRunning;
@@ -141,10 +133,7 @@ class NamedPipeServer extends ConnectionServer {
     // Start the accept loop in a separate isolate
     _serverIsolate = await Isolate.spawn(
       _acceptLoop,
-      _AcceptLoopConfig(
-        pipeName: pipeName,
-        mainPort: _receivePort!.sendPort,
-      ),
+      _AcceptLoopConfig(pipeName: pipeName, mainPort: _receivePort!.sendPort),
     );
 
     _isRunning = true;
@@ -162,7 +151,9 @@ class NamedPipeServer extends ConnectionServer {
   /// Handles a new pipe connection.
   void _handleNewConnection(_PipeConnection connection) {
     // Create streams for the connection
+    // ignore: close_sinks, closed via responsePort listener lifecycle
     final incoming = StreamController<List<int>>();
+    // ignore: close_sinks, closed when connection ends
     final outgoing = StreamController<List<int>>();
 
     // Set up bidirectional communication with the isolate
@@ -190,10 +181,7 @@ class NamedPipeServer extends ConnectionServer {
     connection.sendPort.send(_SetResponsePort(responsePort.sendPort));
 
     // Create HTTP/2 connection and serve it
-    final transportConnection = ServerTransportConnection.viaStreams(
-      incoming.stream,
-      outgoing,
-    );
+    final transportConnection = ServerTransportConnection.viaStreams(incoming.stream, outgoing);
 
     serveConnection(connection: transportConnection);
   }
@@ -344,13 +332,7 @@ Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
     while (true) {
       bytesRead.value = 0;
 
-      final success = ReadFile(
-        hPipe,
-        buffer,
-        _kBufferSize,
-        bytesRead,
-        nullptr,
-      );
+      final success = ReadFile(hPipe, buffer, _kBufferSize, bytesRead, nullptr);
 
       if (success == 0) {
         final error = GetLastError();
@@ -391,13 +373,7 @@ void _writeToPipe(int hPipe, Uint8List data) {
       buffer[i] = data[i];
     }
 
-    final success = WriteFile(
-      hPipe,
-      buffer,
-      data.length,
-      bytesWritten,
-      nullptr,
-    );
+    final success = WriteFile(hPipe, buffer, data.length, bytesWritten, nullptr);
 
     if (success == 0) {
       final error = GetLastError();

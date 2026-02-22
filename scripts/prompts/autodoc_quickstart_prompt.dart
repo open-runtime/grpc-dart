@@ -39,7 +39,7 @@ void main(List<String> args) {
     'grep -rn "^export" $sourceDir 2>/dev/null | head -20',
   );
 
-  String libTree = '(same as source)';
+  var libTree = '(same as source)';
   if (libDir.isNotEmpty && libDir != sourceDir && Directory(libDir).existsSync()) {
     libTree = _runSync(
       'tree $libDir -L 2 --dirsfirst -I "*.g.dart" 2>/dev/null || echo "(no tree)"',
