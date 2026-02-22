@@ -58,6 +58,9 @@ jobs:
           git config --global url."https://x-access-token:${TOKEN}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
           git config --global url."https://x-access-token:${TOKEN}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
+      - name: Skip LFS for dependency clones
+        run: git lfs install --skip-smudge
+
       - uses: dart-lang/setup-dart@v1.7.1
         with:
           sdk: "3.9.2"
