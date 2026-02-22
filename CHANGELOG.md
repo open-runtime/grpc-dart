@@ -501,3 +501,11 @@ The API is shaping up, but may still change as more advanced features are implem
 
 This package is in a very early and experimental state. We do not recommend
 using it for anything but experiments.
+
+[5.3.0]: https://github.com/open-runtime/grpc-dart/compare/v5.2.3...v5.3.0
+[5.2.3]: https://github.com/open-runtime/grpc-dart/compare/v5.2.2...v5.2.3
+[5.2.2]: https://github.com/open-runtime/grpc-dart/compare/v5.2.1...v5.2.2
+[5.2.1]: https://github.com/open-runtime/grpc-dart/compare/v5.2.0...v5.2.1
+[5.2.0]: https://github.com/open-runtime/grpc-dart/compare/v5.1.1...v5.2.0
+[5.1.1]: https://github.com/open-runtime/grpc-dart/compare/v5.1.0...v5.1.1
+[5.1.0]: https://github.com/open-runtime/grpc-dart/releases/tag/v5.1.0
