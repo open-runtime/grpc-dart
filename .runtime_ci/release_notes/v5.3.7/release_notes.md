@@ -1,0 +1,15 @@
+# grpc v5.3.7
+
+# Version Bump: v5.3.7
+
+**Date**: 2026-02-22T21:44:37.936946Z
+**Previous**: v5.3.6
+**Commits**: 1
+
+## Commits
+
+f639c95 chore: add runtime_ci_tooling generated files
+
+
+---
+[Full Changelog](https://github.com/open-runtime/grpc/compare/v5.3.6...v5.3.7)
