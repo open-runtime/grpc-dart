@@ -15,3 +15,12 @@ doc/api/
 
 # Macos
 .DS_Store
+
+# CI/CD local run audit trails
+.cicd_runs/
+
+# Runtime CI runs
+.runtime_ci/runs/
+
+# Override files
+pubspec_overrides.yaml

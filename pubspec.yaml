@@ -11,9 +11,11 @@ topics:
   - rpc
 
 environment:
-  sdk: ^3.8.0
+  sdk: ^3.9.0
 
-resolution: workspace
+# NOTE: When used inside the aot_monorepo workspace, add
+# `resolution: workspace` here. It is intentionally omitted so this
+# package can also resolve standalone (e.g., in its own CI pipeline).
 
 dependencies:
   async: ^2.13.0
@@ -31,6 +33,23 @@ dependencies:
   win32: ^5.10.0
 
 dev_dependencies:
+  # ==========================================================================
+  # GitHub releases versioned dependencies
+  # ==========================================================================
+  runtime_common_codestyle:
+    git:
+      url: git@github.com:open-runtime/runtime_common_codestyle.git
+      tag_pattern: v{{version}}
+    version: ^0.1.5
+  runtime_ci_tooling:
+    git:
+      url: git@github.com:open-runtime/runtime_ci_tooling.git
+      tag_pattern: v{{version}}
+    version: ^0.6.0
+
+  # ==========================================================================
+  # Direct pub.dev dev dependencies
+  # ==========================================================================
   build_runner: ^2.11.0
   build_test: ">=2.2.3 <4.0.0"
   lints: ^6.0.0

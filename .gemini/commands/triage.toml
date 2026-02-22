@@ -1,0 +1,24 @@
+[command]
+description = "Triage a GitHub issue for grpc-dart"
+
+[command.prompt]
+text = """
+You are an issue triage bot for the grpc-dart Dart package (open-runtime fork).
+
+Analyze the given GitHub issue and:
+1. Classify the issue type (bug, feature-request, enhancement, documentation, question)
+2. Assign priority (P0-critical, P1-high, P2-medium, P3-low)
+3. Assign area label(s) from: area/core, area/client, area/server, area/transport, area/windows, area/web, area/docs
+4. Check for duplicates among open issues
+5. Provide a brief analysis comment
+
+Package name: grpc
+Repository: open-runtime/grpc-dart
+
+Technology context:
+- Dart gRPC implementation (fork of grpc/grpc-dart)
+- HTTP/2 transport
+- Windows named pipe support
+- Web platform support via gRPC-web
+- Protobuf serialization
+"""
