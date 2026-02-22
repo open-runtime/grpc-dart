@@ -190,8 +190,12 @@ class TestServerStream extends ServerTransportStream {
 
   @override
   void terminate() {
-    outgoingMessages.addError('TERMINATED');
-    outgoingMessages.close();
+    try {
+      outgoingMessages.addError('TERMINATED');
+      outgoingMessages.close();
+    } catch (_) {
+      // Sink may already be closed after sendTrailers with endStream: true.
+    }
   }
 
   @override
