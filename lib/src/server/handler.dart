@@ -437,10 +437,6 @@ class ServerHandler extends ServiceCall {
       logGrpcError('[gRPC] Stream closed during sendTrailers: $e');
     }
 
-    // Stream ended cleanly via endStream — mark as terminated so the
-    // outgoingMessages.done callback in handle() won't re-terminate it.
-    _streamTerminated = true;
-
     // We're done!
     _cancelResponseSubscription();
     _sinkIncoming();
