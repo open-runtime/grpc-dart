@@ -1,0 +1,81 @@
+{
+  "command": "merged-audit",
+  "started_at": "2026-02-22T04:18:11.555396",
+  "merged_from": [
+    {
+      "artifact": "cicd-audit-explore",
+      "command": "explore",
+      "args": [],
+      "started_at": "2026-02-22T04:13:01.038002",
+      "pid": 2633,
+      "platform": "linux",
+      "dart_version": "3.9.2",
+      "repo_root": "/home/runner/work/grpc-dart/grpc-dart",
+      "run_dir": "/home/runner/work/grpc-dart/grpc-dart/.runtime_ci/runs/run_2026-02-22T04-13-01_2633",
+      "ci": true,
+      "completed_at": "2026-02-22T04:13:32.620790",
+      "duration_seconds": 31,
+      "exit_code": 1,
+      "artifacts": [
+        "explore/prompt.txt",
+        "explore/gemini_response.json",
+        "meta.json"
+      ]
+    },
+    {
+      "artifact": "cicd-audit-release-notes",
+      "command": "release-notes",
+      "args": [],
+      "started_at": "2026-02-22T04:17:08.746886",
+      "pid": 2699,
+      "platform": "linux",
+      "dart_version": "3.9.2",
+      "repo_root": "/home/runner/work/grpc-dart/grpc-dart",
+      "run_dir": "/home/runner/work/grpc-dart/grpc-dart/.runtime_ci/runs/run_2026-02-22T04-17-08_2699",
+      "ci": true,
+      "completed_at": "2026-02-22T04:17:40.652831",
+      "duration_seconds": 31,
+      "exit_code": 1,
+      "artifacts": [
+        "release-notes/prompt.txt",
+        "meta.json"
+      ]
+    },
+    {
+      "artifact": "cicd-audit-compose",
+      "command": "compose",
+      "args": [],
+      "started_at": "2026-02-22T04:14:33.980256",
+      "pid": 2658,
+      "platform": "linux",
+      "dart_version": "3.9.2",
+      "repo_root": "/home/runner/work/grpc-dart/grpc-dart",
+      "run_dir": "/home/runner/work/grpc-dart/grpc-dart/.runtime_ci/runs/run_2026-02-22T04-14-33_2658",
+      "ci": true,
+      "completed_at": "2026-02-22T04:15:05.417903",
+      "duration_seconds": 31,
+      "artifacts": [
+        "compose/prompt.txt",
+        "compose/gemini_response.json",
+        "meta.json"
+      ]
+    },
+    {
+      "artifact": "cicd-audit-compose",
+      "command": "documentation",
+      "args": [],
+      "started_at": "2026-02-22T04:15:05.835880",
+      "pid": 4863,
+      "platform": "linux",
+      "dart_version": "3.9.2",
+      "repo_root": "/home/runner/work/grpc-dart/grpc-dart",
+      "run_dir": "/home/runner/work/grpc-dart/grpc-dart/.runtime_ci/runs/run_2026-02-22T04-15-05_4863",
+      "ci": true
+    }
+  ],
+  "artifact_count": 4,
+  "total_files": 9,
+  "ci": true,
+  "platform": "linux",
+  "dart_version": "3.9.2"
+}
