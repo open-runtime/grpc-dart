@@ -1,0 +1,28 @@
+{
+  "version": "5.3.8",
+  "previous_version": "v5.3.7",
+  "total_commits": 1,
+  "categories": {
+    "added": [],
+    "changed": [
+      {
+        "description": "Fixed analyzer lint issues across the codebase, including reordering export directives alphabetically, adding ignore: close_sinks for lifecycle-managed StreamControllers, removing an unnecessary import, and using var for local variable type inference in scripts.",
+        "pr": "",
+        "commits": [
+          "4b784021c8bf795ae2158aacc55f98e90728eaf7"
+        ]
+      },
+      {
+        "description": "Bumped runtime_ci_tooling dev_dependency to ^0.9.0.",
+        "pr": "",
+        "commits": [
+          "4b784021c8bf795ae2158aacc55f98e90728eaf7"
+        ]
+      }
+    ],
+    "deprecated": [],
+    "removed": [],
+    "fixed": [],
+    "security": []
+  }
+}

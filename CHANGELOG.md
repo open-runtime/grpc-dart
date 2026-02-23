@@ -1,3 +1,16 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [5.3.8] - 2026-02-22
+
+### Changed
+- Fixed analyzer lint issues across the codebase, including reordering export directives alphabetically, adding ignore: close_sinks for lifecycle-managed StreamControllers, removing an unnecessary import, and using var for local variable type inference in scripts.
+- Bumped runtime_ci_tooling dev_dependency to ^0.9.0.
+
 ## 5.1.0
 
 - Added `protos.dart` library.
@@ -502,6 +515,7 @@ The API is shaping up, but may still change as more advanced features are implem
 This package is in a very early and experimental state. We do not recommend
 using it for anything but experiments.
 
+[5.3.8]: https://github.com/open-runtime/grpc-dart/compare/v5.3.0...v5.3.8
 [5.3.0]: https://github.com/open-runtime/grpc-dart/compare/v5.2.3...v5.3.0
 [5.2.3]: https://github.com/open-runtime/grpc-dart/compare/v5.2.2...v5.2.3
 [5.2.2]: https://github.com/open-runtime/grpc-dart/compare/v5.2.1...v5.2.2
