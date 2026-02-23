@@ -100,6 +100,23 @@
       ],
       "hash": "b9651e5ed403d61d4dc3ae2f11abaf5df8d3e0efcc222d182680a9830cec7197",
       "last_updated": "2026-02-22T23:42:05.896202Z"
+    },
+    {
+      "id": "generated",
+      "name": "Generated",
+      "source_paths": [
+        "lib/src/generated/"
+      ],
+      "lib_paths": [
+        "lib/src/generated/"
+      ],
+      "output_path": "docs/generated/",
+      "generate": [
+        "quickstart",
+        "api_reference"
+      ],
+      "hash": "",
+      "last_updated": null
     }
   ],
   "templates": {
