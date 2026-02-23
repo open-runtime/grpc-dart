@@ -74,11 +74,7 @@ class NamedPipeClientChannel extends ClientChannelBase {
   /// typically not used with named pipes since they are local-only.
   /// Use [ChannelOptions] with [ChannelCredentials.insecure()] for
   /// most local IPC scenarios.
-  NamedPipeClientChannel(
-    this.pipeName, {
-    this.options = const ChannelOptions(),
-    super.channelShutdownHandler,
-  });
+  NamedPipeClientChannel(this.pipeName, {this.options = const ChannelOptions(), super.channelShutdownHandler});
 
   /// The full Windows path for the named pipe.
   String get pipePath => r'\\.\pipe\' + pipeName;
@@ -86,10 +82,7 @@ class NamedPipeClientChannel extends ClientChannelBase {
   @override
   ClientConnection createConnection() {
     final connector = NamedPipeTransportConnector(pipeName);
-    return Http2ClientConnection.fromClientTransportConnector(
-      connector,
-      options,
-    );
+    return Http2ClientConnection.fromClientTransportConnector(connector, options);
   }
 }
 

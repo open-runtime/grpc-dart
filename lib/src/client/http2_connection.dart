@@ -37,10 +37,7 @@ class Http2ClientConnection implements connection.ClientConnection {
   static final _methodPost = Header.ascii(':method', 'POST');
   static final _schemeHttp = Header.ascii(':scheme', 'http');
   static final _schemeHttps = Header.ascii(':scheme', 'https');
-  static final _contentTypeGrpc = Header.ascii(
-    'content-type',
-    'application/grpc',
-  );
+  static final _contentTypeGrpc = Header.ascii('content-type', 'application/grpc');
   static final _teTrailers = Header.ascii('te', 'trailers');
 
   final ChannelOptions options;
@@ -67,10 +64,7 @@ class Http2ClientConnection implements connection.ClientConnection {
   Http2ClientConnection(Object host, int port, this.options)
     : _transportConnector = SocketTransportConnector(host, port, options);
 
-  Http2ClientConnection.fromClientTransportConnector(
-    this._transportConnector,
-    this.options,
-  );
+  Http2ClientConnection.fromClientTransportConnector(this._transportConnector, this.options);
 
   ChannelCredentials get credentials => options.credentials;
 
@@ -101,8 +95,7 @@ class Http2ClientConnection implements connection.ClientConnection {
   }
 
   void _connect() {
-    if (_state != ConnectionState.idle &&
-        _state != ConnectionState.transientFailure) {
+    if (_state != ConnectionState.idle && _state != ConnectionState.transientFailure) {
       return;
     }
     _setState(ConnectionState.connecting);
@@ -120,9 +113,7 @@ class Http2ClientConnection implements connection.ClientConnection {
               },
               onPingTimeout: () => transport.finish(),
             );
-            transport.onFrameReceived.listen(
-              (_) => keepAliveManager?.onFrameReceived(),
-            );
+            transport.onFrameReceived.listen((_) => keepAliveManager?.onFrameReceived());
           }
           _connectionLifeTimer
             ..reset()
@@ -146,8 +137,7 @@ class Http2ClientConnection implements connection.ClientConnection {
   /// Assumes [_transportConnection] is not `null`.
   void _refreshConnectionIfUnhealthy() {
     final isHealthy = _transportConnection!.isOpen;
-    final shouldRefresh =
-        _connectionLifeTimer.elapsed > options.connectionTimeout;
+    final shouldRefresh = _connectionLifeTimer.elapsed > options.connectionTimeout;
     if (shouldRefresh) {
       _transportConnection!.finish();
       keepAliveManager?.onTransportTermination();
@@ -195,20 +185,14 @@ class Http2ClientConnection implements connection.ClientConnection {
       compressionCodec,
       userAgent: options.userAgent,
       grpcAcceptEncodings:
-          (callOptions?.metadata ?? const {})['grpc-accept-encoding'] ??
-          options.codecRegistry?.supportedEncodings,
+          (callOptions?.metadata ?? const {})['grpc-accept-encoding'] ?? options.codecRegistry?.supportedEncodings,
     );
     if (_transportConnection == null) {
       _connect();
       throw ArgumentError('Trying to make request on null connection');
     }
     final stream = _transportConnection!.makeRequest(headers);
-    return Http2TransportStream(
-      stream,
-      onRequestFailure,
-      options.codecRegistry,
-      compressionCodec,
-    );
+    return Http2TransportStream(stream, onRequestFailure, options.codecRegistry, compressionCodec);
   }
 
   void _startCall(ClientCall call) {
@@ -255,9 +239,7 @@ class Http2ClientConnection implements connection.ClientConnection {
   void _handleIdleTimeout() {
     if (_timer == null || _state != ConnectionState.ready) return;
     _cancelTimer();
-    _transportConnection?.finish().catchError(
-      (_) {},
-    ); // TODO(jakobr): Log error.
+    _transportConnection?.finish().catchError((_) {}); // TODO(jakobr): Log error.
     keepAliveManager?.onTransportTermination();
     _disconnect();
     _setState(ConnectionState.idle);
@@ -351,15 +333,12 @@ class Http2ClientConnection implements connection.ClientConnection {
       useTls ? _schemeHttps : _schemeHttp,
       Header(ascii.encode(':path'), utf8.encode(path)),
       Header(ascii.encode(':authority'), utf8.encode(authority)),
-      if (timeout != null)
-        Header.ascii('grpc-timeout', toTimeoutString(timeout)),
+      if (timeout != null) Header.ascii('grpc-timeout', toTimeoutString(timeout)),
       _contentTypeGrpc,
       _teTrailers,
       Header.ascii('user-agent', userAgent ?? defaultUserAgent),
-      if (grpcAcceptEncodings != null)
-        Header.ascii('grpc-accept-encoding', grpcAcceptEncodings),
-      if (compressionCodec != null)
-        Header.ascii('grpc-encoding', compressionCodec.encodingName),
+      if (grpcAcceptEncodings != null) Header.ascii('grpc-accept-encoding', grpcAcceptEncodings),
+      if (compressionCodec != null) Header.ascii('grpc-encoding', compressionCodec.encodingName),
     ];
     metadata?.forEach((key, value) {
       headers.add(Header(ascii.encode(key), utf8.encode(value)));
@@ -379,8 +358,7 @@ class SocketTransportConnector implements ClientTransportConnector {
   Object get host => proxy == null ? _host : proxy!.host;
   int get port => proxy == null ? _port : proxy!.port;
 
-  SocketTransportConnector(this._host, this._port, this._options)
-    : assert(_host is InternetAddress || _host is String);
+  SocketTransportConnector(this._host, this._port, this._options) : assert(_host is InternetAddress || _host is String);
 
   @override
   Future<ClientTransportConnection> connect() async {
@@ -514,9 +492,7 @@ class SocketTransportConnector implements ClientTransportConnector {
     if (response.startsWith('HTTP/1.1 200')) {
       completer.complete();
     } else {
-      throw TransportException(
-        'Error establishing proxy connection: $response',
-      );
+      throw TransportException('Error establishing proxy connection: $response');
     }
   }
 }

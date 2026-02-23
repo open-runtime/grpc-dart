@@ -45,16 +45,12 @@ class RetryInfo extends $pb.GeneratedMessage {
   factory RetryInfo.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory RetryInfo.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory RetryInfo.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'RetryInfo',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
-    ..aOM<$0.Duration>(1, _omitFieldNames ? '' : 'retryDelay',
-        subBuilder: $0.Duration.create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RetryInfo',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
+    ..aOM<$0.Duration>(1, _omitFieldNames ? '' : 'retryDelay', subBuilder: $0.Duration.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -71,8 +67,7 @@ class RetryInfo extends $pb.GeneratedMessage {
   @$core.override
   RetryInfo createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static RetryInfo getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RetryInfo>(create);
+  static RetryInfo getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RetryInfo>(create);
   static RetryInfo? _defaultInstance;
 
   /// Clients should wait at least this long between retrying the same request.
@@ -105,14 +100,11 @@ class DebugInfo extends $pb.GeneratedMessage {
   factory DebugInfo.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory DebugInfo.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory DebugInfo.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'DebugInfo',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'DebugInfo',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..pPS(1, _omitFieldNames ? '' : 'stackEntries')
     ..aOS(2, _omitFieldNames ? '' : 'detail')
     ..hasRequiredFields = false;
@@ -131,8 +123,7 @@ class DebugInfo extends $pb.GeneratedMessage {
   @$core.override
   DebugInfo createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static DebugInfo getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<DebugInfo>(create);
+  static DebugInfo getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<DebugInfo>(create);
   static DebugInfo? _defaultInstance;
 
   /// The stack trace entries indicating where the error occurred.
@@ -172,10 +163,8 @@ class QuotaFailure_Violation extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'QuotaFailure.Violation',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'QuotaFailure.Violation',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'subject')
     ..aOS(2, _omitFieldNames ? '' : 'description')
     ..hasRequiredFields = false;
@@ -183,10 +172,8 @@ class QuotaFailure_Violation extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   QuotaFailure_Violation clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  QuotaFailure_Violation copyWith(
-          void Function(QuotaFailure_Violation) updates) =>
-      super.copyWith((message) => updates(message as QuotaFailure_Violation))
-          as QuotaFailure_Violation;
+  QuotaFailure_Violation copyWith(void Function(QuotaFailure_Violation) updates) =>
+      super.copyWith((message) => updates(message as QuotaFailure_Violation)) as QuotaFailure_Violation;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -196,8 +183,8 @@ class QuotaFailure_Violation extends $pb.GeneratedMessage {
   @$core.override
   QuotaFailure_Violation createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static QuotaFailure_Violation getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<QuotaFailure_Violation>(create);
+  static QuotaFailure_Violation getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<QuotaFailure_Violation>(create);
   static QuotaFailure_Violation? _defaultInstance;
 
   /// The subject on which the quota check failed.
@@ -254,24 +241,19 @@ class QuotaFailure extends $pb.GeneratedMessage {
   factory QuotaFailure.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory QuotaFailure.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory QuotaFailure.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'QuotaFailure',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
-    ..pPM<QuotaFailure_Violation>(1, _omitFieldNames ? '' : 'violations',
-        subBuilder: QuotaFailure_Violation.create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'QuotaFailure',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
+    ..pPM<QuotaFailure_Violation>(1, _omitFieldNames ? '' : 'violations', subBuilder: QuotaFailure_Violation.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   QuotaFailure clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   QuotaFailure copyWith(void Function(QuotaFailure) updates) =>
-      super.copyWith((message) => updates(message as QuotaFailure))
-          as QuotaFailure;
+      super.copyWith((message) => updates(message as QuotaFailure)) as QuotaFailure;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -281,8 +263,7 @@ class QuotaFailure extends $pb.GeneratedMessage {
   @$core.override
   QuotaFailure createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static QuotaFailure getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<QuotaFailure>(create);
+  static QuotaFailure getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<QuotaFailure>(create);
   static QuotaFailure? _defaultInstance;
 
   /// Describes all quota violations.
@@ -332,14 +313,11 @@ class ErrorInfo extends $pb.GeneratedMessage {
   factory ErrorInfo.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory ErrorInfo.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory ErrorInfo.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ErrorInfo',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ErrorInfo',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'reason')
     ..aOS(2, _omitFieldNames ? '' : 'domain')
     ..m<$core.String, $core.String>(3, _omitFieldNames ? '' : 'metadata',
@@ -363,8 +341,7 @@ class ErrorInfo extends $pb.GeneratedMessage {
   @$core.override
   ErrorInfo createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static ErrorInfo getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ErrorInfo>(create);
+  static ErrorInfo getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ErrorInfo>(create);
   static ErrorInfo? _defaultInstance;
 
   /// The reason of the error. This is a constant value that identifies the
@@ -430,10 +407,8 @@ class PreconditionFailure_Violation extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'PreconditionFailure.Violation',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PreconditionFailure.Violation',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'type')
     ..aOS(2, _omitFieldNames ? '' : 'subject')
     ..aOS(3, _omitFieldNames ? '' : 'description')
@@ -442,23 +417,19 @@ class PreconditionFailure_Violation extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   PreconditionFailure_Violation clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  PreconditionFailure_Violation copyWith(
-          void Function(PreconditionFailure_Violation) updates) =>
-      super.copyWith(
-              (message) => updates(message as PreconditionFailure_Violation))
-          as PreconditionFailure_Violation;
+  PreconditionFailure_Violation copyWith(void Function(PreconditionFailure_Violation) updates) =>
+      super.copyWith((message) => updates(message as PreconditionFailure_Violation)) as PreconditionFailure_Violation;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static PreconditionFailure_Violation create() =>
-      PreconditionFailure_Violation._();
+  static PreconditionFailure_Violation create() => PreconditionFailure_Violation._();
   @$core.override
   PreconditionFailure_Violation createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static PreconditionFailure_Violation getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<PreconditionFailure_Violation>(create);
+  static PreconditionFailure_Violation getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PreconditionFailure_Violation>(create);
   static PreconditionFailure_Violation? _defaultInstance;
 
   /// The type of PreconditionFailure. We recommend using a service-specific
@@ -522,10 +493,8 @@ class PreconditionFailure extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'PreconditionFailure',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PreconditionFailure',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..pPM<PreconditionFailure_Violation>(1, _omitFieldNames ? '' : 'violations',
         subBuilder: PreconditionFailure_Violation.create)
     ..hasRequiredFields = false;
@@ -534,8 +503,7 @@ class PreconditionFailure extends $pb.GeneratedMessage {
   PreconditionFailure clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   PreconditionFailure copyWith(void Function(PreconditionFailure) updates) =>
-      super.copyWith((message) => updates(message as PreconditionFailure))
-          as PreconditionFailure;
+      super.copyWith((message) => updates(message as PreconditionFailure)) as PreconditionFailure;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -545,8 +513,8 @@ class PreconditionFailure extends $pb.GeneratedMessage {
   @$core.override
   PreconditionFailure createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static PreconditionFailure getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<PreconditionFailure>(create);
+  static PreconditionFailure getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PreconditionFailure>(create);
   static PreconditionFailure? _defaultInstance;
 
   /// Describes all precondition violations.
@@ -575,10 +543,8 @@ class BadRequest_FieldViolation extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'BadRequest.FieldViolation',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'BadRequest.FieldViolation',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'field')
     ..aOS(2, _omitFieldNames ? '' : 'description')
     ..hasRequiredFields = false;
@@ -586,10 +552,8 @@ class BadRequest_FieldViolation extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   BadRequest_FieldViolation clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  BadRequest_FieldViolation copyWith(
-          void Function(BadRequest_FieldViolation) updates) =>
-      super.copyWith((message) => updates(message as BadRequest_FieldViolation))
-          as BadRequest_FieldViolation;
+  BadRequest_FieldViolation copyWith(void Function(BadRequest_FieldViolation) updates) =>
+      super.copyWith((message) => updates(message as BadRequest_FieldViolation)) as BadRequest_FieldViolation;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -599,8 +563,8 @@ class BadRequest_FieldViolation extends $pb.GeneratedMessage {
   @$core.override
   BadRequest_FieldViolation createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static BadRequest_FieldViolation getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<BadRequest_FieldViolation>(create);
+  static BadRequest_FieldViolation getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<BadRequest_FieldViolation>(create);
   static BadRequest_FieldViolation? _defaultInstance;
 
   /// A path leading to a field in the request body. The value will be a
@@ -642,16 +606,12 @@ class BadRequest extends $pb.GeneratedMessage {
   factory BadRequest.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory BadRequest.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory BadRequest.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'BadRequest',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
-    ..pPM<BadRequest_FieldViolation>(
-        1, _omitFieldNames ? '' : 'fieldViolations',
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'BadRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
+    ..pPM<BadRequest_FieldViolation>(1, _omitFieldNames ? '' : 'fieldViolations',
         subBuilder: BadRequest_FieldViolation.create)
     ..hasRequiredFields = false;
 
@@ -669,8 +629,7 @@ class BadRequest extends $pb.GeneratedMessage {
   @$core.override
   BadRequest createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static BadRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<BadRequest>(create);
+  static BadRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<BadRequest>(create);
   static BadRequest? _defaultInstance;
 
   /// Describes all violations in a client request.
@@ -696,14 +655,11 @@ class RequestInfo extends $pb.GeneratedMessage {
   factory RequestInfo.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory RequestInfo.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory RequestInfo.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'RequestInfo',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RequestInfo',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'requestId')
     ..aOS(2, _omitFieldNames ? '' : 'servingData')
     ..hasRequiredFields = false;
@@ -712,8 +668,7 @@ class RequestInfo extends $pb.GeneratedMessage {
   RequestInfo clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   RequestInfo copyWith(void Function(RequestInfo) updates) =>
-      super.copyWith((message) => updates(message as RequestInfo))
-          as RequestInfo;
+      super.copyWith((message) => updates(message as RequestInfo)) as RequestInfo;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -723,8 +678,7 @@ class RequestInfo extends $pb.GeneratedMessage {
   @$core.override
   RequestInfo createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static RequestInfo getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<RequestInfo>(create);
+  static RequestInfo getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RequestInfo>(create);
   static RequestInfo? _defaultInstance;
 
   /// An opaque string that should only be interpreted by the service generating
@@ -771,14 +725,11 @@ class ResourceInfo extends $pb.GeneratedMessage {
   factory ResourceInfo.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory ResourceInfo.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory ResourceInfo.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ResourceInfo',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ResourceInfo',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'resourceType')
     ..aOS(2, _omitFieldNames ? '' : 'resourceName')
     ..aOS(3, _omitFieldNames ? '' : 'owner')
@@ -789,8 +740,7 @@ class ResourceInfo extends $pb.GeneratedMessage {
   ResourceInfo clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   ResourceInfo copyWith(void Function(ResourceInfo) updates) =>
-      super.copyWith((message) => updates(message as ResourceInfo))
-          as ResourceInfo;
+      super.copyWith((message) => updates(message as ResourceInfo)) as ResourceInfo;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -800,8 +750,7 @@ class ResourceInfo extends $pb.GeneratedMessage {
   @$core.override
   ResourceInfo createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static ResourceInfo getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ResourceInfo>(create);
+  static ResourceInfo getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ResourceInfo>(create);
   static ResourceInfo? _defaultInstance;
 
   /// A name for the type of resource being accessed, e.g. "sql table",
@@ -870,14 +819,11 @@ class Help_Link extends $pb.GeneratedMessage {
   factory Help_Link.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Help_Link.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Help_Link.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Help.Link',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Help.Link',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'description')
     ..aOS(2, _omitFieldNames ? '' : 'url')
     ..hasRequiredFields = false;
@@ -896,8 +842,7 @@ class Help_Link extends $pb.GeneratedMessage {
   @$core.override
   Help_Link createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Help_Link getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Help_Link>(create);
+  static Help_Link getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Help_Link>(create);
   static Help_Link? _defaultInstance;
 
   /// Describes what the link offers.
@@ -937,26 +882,20 @@ class Help extends $pb.GeneratedMessage {
 
   Help._();
 
-  factory Help.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Help.fromBuffer($core.List<$core.int> data, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Help.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Help.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Help',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
-    ..pPM<Help_Link>(1, _omitFieldNames ? '' : 'links',
-        subBuilder: Help_Link.create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Help',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
+    ..pPM<Help_Link>(1, _omitFieldNames ? '' : 'links', subBuilder: Help_Link.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   Help clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Help copyWith(void Function(Help) updates) =>
-      super.copyWith((message) => updates(message as Help)) as Help;
+  Help copyWith(void Function(Help) updates) => super.copyWith((message) => updates(message as Help)) as Help;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -966,8 +905,7 @@ class Help extends $pb.GeneratedMessage {
   @$core.override
   Help createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Help getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Help>(create);
+  static Help getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Help>(create);
   static Help? _defaultInstance;
 
   /// URL(s) pointing to additional information on handling the current error.
@@ -997,10 +935,8 @@ class LocalizedMessage extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'LocalizedMessage',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'LocalizedMessage',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'locale')
     ..aOS(2, _omitFieldNames ? '' : 'message')
     ..hasRequiredFields = false;
@@ -1009,8 +945,7 @@ class LocalizedMessage extends $pb.GeneratedMessage {
   LocalizedMessage clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   LocalizedMessage copyWith(void Function(LocalizedMessage) updates) =>
-      super.copyWith((message) => updates(message as LocalizedMessage))
-          as LocalizedMessage;
+      super.copyWith((message) => updates(message as LocalizedMessage)) as LocalizedMessage;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -1020,8 +955,8 @@ class LocalizedMessage extends $pb.GeneratedMessage {
   @$core.override
   LocalizedMessage createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static LocalizedMessage getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<LocalizedMessage>(create);
+  static LocalizedMessage getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LocalizedMessage>(create);
   static LocalizedMessage? _defaultInstance;
 
   /// The locale used following the specification defined at
@@ -1047,7 +982,5 @@ class LocalizedMessage extends $pb.GeneratedMessage {
   void clearMessage() => $_clearField(2);
 }
 
-const $core.bool _omitFieldNames =
-    $core.bool.fromEnvironment('protobuf.omit_field_names');
-const $core.bool _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const $core.bool _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
+const $core.bool _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

@@ -77,8 +77,7 @@ class ServerKeepAlive {
         _timeOfLastReceivedPing = clock.stopwatch()
           ..reset()
           ..start();
-      } else if (_timeOfLastReceivedPing!.elapsed >
-          options.minIntervalBetweenPingsWithoutData) {
+      } else if (_timeOfLastReceivedPing!.elapsed > options.minIntervalBetweenPingsWithoutData) {
         _badPings++;
       }
       if (_badPings > options.maxBadPings!) {

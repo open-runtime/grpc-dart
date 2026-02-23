@@ -30,19 +30,7 @@ class RS256Signer {
   // NIST sha-256 OID (2 16 840 1 101 3 4 2 1)
   // See a reference for the encoding here:
   // http://msdn.microsoft.com/en-us/library/bb540809%28v=vs.85%29.aspx
-  static const _rsaSha256AlgorithmIdentifier = [
-    0x06,
-    0x09,
-    0x60,
-    0x86,
-    0x48,
-    0x01,
-    0x65,
-    0x03,
-    0x04,
-    0x02,
-    0x01,
-  ];
+  static const _rsaSha256AlgorithmIdentifier = [0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
 
   final RSAPrivateKey _rsaKey;
 
@@ -68,9 +56,7 @@ class RS256Signer {
     //     digest OCTET STRING
     // }
     var offset = 0;
-    final digestInfo = Uint8List(
-      2 + 2 + _rsaSha256AlgorithmIdentifier.length + 2 + 2 + hash.length,
-    );
+    final digestInfo = Uint8List(2 + 2 + _rsaSha256AlgorithmIdentifier.length + 2 + 2 + hash.length);
     {
       // DigestInfo
       digestInfo[offset++] = ASN1Parser.sequenceTag;
@@ -183,9 +169,7 @@ class ASN1Parser {
           }
           return ASN1Sequence(objects);
         default:
-          invalidFormat(
-            'Unexpected tag $tag at offset ${offset - 1} (end: $end).',
-          );
+          invalidFormat('Unexpected tag $tag at offset ${offset - 1} (end: $end).');
       }
     }
 
@@ -250,16 +234,7 @@ class RSAPrivateKey {
   /// The number of bits used for the modulus. Usually 1024, 2048 or 4096 bits.
   int get bitLength => n.bitLength;
 
-  RSAPrivateKey(
-    this.n,
-    this.e,
-    this.d,
-    this.p,
-    this.q,
-    this.dmp1,
-    this.dmq1,
-    this.coeff,
-  );
+  RSAPrivateKey(this.n, this.e, this.d, this.p, this.q, this.dmp1, this.dmq1, this.coeff);
 }
 
 /// Provides a [encrypt] method for encrypting messages with a [RSAPrivateKey].
@@ -270,11 +245,7 @@ abstract class RSAAlgorithm {
   ///
   /// The [intendedLength] argument specifies the number of bytes in which the
   /// result should be encoded. Zero bytes will be used for padding.
-  static List<int> encrypt(
-    RSAPrivateKey key,
-    List<int> bytes,
-    int intendedLength,
-  ) {
+  static List<int> encrypt(RSAPrivateKey key, List<int> bytes, int intendedLength) {
     final message = bytes2BigInt(bytes);
     final encryptedMessage = _encryptInteger(key, message);
     return integer2Bytes(encryptedMessage, intendedLength);

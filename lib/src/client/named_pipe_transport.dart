@@ -96,10 +96,7 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 
       if (hPipe == INVALID_HANDLE_VALUE) {
         final error = GetLastError();
-        throw NamedPipeException(
-          'Failed to connect to named pipe "$pipePath": Win32 error $error',
-          error,
-        );
+        throw NamedPipeException('Failed to connect to named pipe "$pipePath": Win32 error $error', error);
       }
 
       _pipeHandle = hPipe;
@@ -113,20 +110,14 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
       if (success == 0) {
         final error = GetLastError();
         CloseHandle(hPipe);
-        throw NamedPipeException(
-          'Failed to set pipe mode: Win32 error $error',
-          error,
-        );
+        throw NamedPipeException('Failed to set pipe mode: Win32 error $error', error);
       }
 
       // Create bidirectional stream wrapper
       _pipeStream = _NamedPipeStream(hPipe, _doneCompleter);
 
       // Create HTTP/2 connection over the pipe streams
-      return ClientTransportConnection.viaStreams(
-        _pipeStream!.incoming,
-        _pipeStream!.outgoingSink,
-      );
+      return ClientTransportConnection.viaStreams(_pipeStream!.incoming, _pipeStream!.outgoingSink);
     } finally {
       calloc.free(pipePathPtr);
     }
@@ -157,10 +148,8 @@ class _NamedPipeStream {
   final int _handle;
   final Completer<void> _doneCompleter;
 
-  final StreamController<List<int>> _incomingController =
-      StreamController<List<int>>();
-  final StreamController<List<int>> _outgoingController =
-      StreamController<List<int>>();
+  final StreamController<List<int>> _incomingController = StreamController<List<int>>();
+  final StreamController<List<int>> _outgoingController = StreamController<List<int>>();
 
   bool _isClosed = false;
 
@@ -195,13 +184,7 @@ class _NamedPipeStream {
         bytesRead.value = 0;
 
         // Read from pipe (blocking call)
-        final success = ReadFile(
-          _handle,
-          buffer,
-          _kBufferSize,
-          bytesRead,
-          nullptr,
-        );
+        final success = ReadFile(_handle, buffer, _kBufferSize, bytesRead, nullptr);
 
         if (success == 0) {
           final error = GetLastError();
@@ -209,9 +192,7 @@ class _NamedPipeStream {
             // Pipe closed gracefully
             break;
           }
-          _incomingController.addError(
-            NamedPipeException('Read failed: Win32 error $error', error),
-          );
+          _incomingController.addError(NamedPipeException('Read failed: Win32 error $error', error));
           break;
         }
 
@@ -249,19 +230,11 @@ class _NamedPipeStream {
         buffer[i] = data[i];
       }
 
-      final success = WriteFile(
-        _handle,
-        buffer,
-        data.length,
-        bytesWritten,
-        nullptr,
-      );
+      final success = WriteFile(_handle, buffer, data.length, bytesWritten, nullptr);
 
       if (success == 0) {
         final error = GetLastError();
-        _incomingController.addError(
-          NamedPipeException('Write failed: Win32 error $error', error),
-        );
+        _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
         close();
       }
     } finally {
