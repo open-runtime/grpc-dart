@@ -262,7 +262,7 @@ class NamedPipeServer extends ConnectionServer {
 
     // Step 2: Close all active pipe streams. This causes PeekNamedPipe to
     // fail in active read loops (the handle becomes invalid), and cleans up
-    // Win32 handles via FlushFileBuffers + DisconnectNamedPipe + CloseHandle.
+    // Win32 handles via DisconnectNamedPipe + CloseHandle.
     for (final stream in _activeStreams.toList()) {
       stream.close();
     }
@@ -524,7 +524,20 @@ class _ServerPipeStream {
     }
 
     // Clean up the Win32 pipe handle.
-    FlushFileBuffers(_handle);
+    //
+    // IMPORTANT: Do NOT call FlushFileBuffers here. It is a synchronous FFI
+    // call that blocks until the client reads ALL pending data from the pipe
+    // buffer. During server shutdown, the client may not be reading (e.g.,
+    // it's waiting for the shutdown to complete, or has itself shut down).
+    // In that case FlushFileBuffers blocks the entire Dart isolate thread
+    // indefinitely — preventing test timeouts, async work, and process exit.
+    //
+    // With synchronous (non-overlapped) pipe mode, WriteFile already copies
+    // data to the pipe buffer before returning. DisconnectNamedPipe marks
+    // the connection as terminated so the client gets ERROR_PIPE_NOT_CONNECTED
+    // on its next read/write, and CloseHandle releases the kernel object.
+    // Any unread data in the pipe buffer is discarded — which is acceptable
+    // during server-initiated shutdown.
     DisconnectNamedPipe(_handle);
     CloseHandle(_handle);
 

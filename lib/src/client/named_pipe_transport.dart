@@ -199,10 +199,16 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
     _pipeStream?.close();
     final handle = _pipeHandle;
     if (handle != null && handle != INVALID_HANDLE_VALUE) {
-      // FlushFileBuffers can block if the pipe has pending writes, but
-      // this is acceptable during shutdown — we need to ensure data
-      // integrity. The pipe is local-only so this should be fast.
-      FlushFileBuffers(handle);
+      // IMPORTANT: Do NOT call FlushFileBuffers here. It is a synchronous
+      // FFI call that blocks until the server reads ALL pending data from
+      // the pipe buffer. During shutdown, the server may not be reading
+      // (e.g., it's also shutting down). In that case FlushFileBuffers
+      // blocks the Dart isolate thread indefinitely — freezing the event
+      // loop and preventing process exit.
+      //
+      // With synchronous pipe mode, WriteFile already ensures data is in
+      // the pipe buffer before returning. CloseHandle releases the handle
+      // and any unread data is discarded — acceptable during shutdown.
       CloseHandle(handle);
       _pipeHandle = null;
     }
@@ -417,7 +423,7 @@ class _NamedPipeStream {
   ///
   /// Note: This does NOT close the underlying Win32 handle. The handle is
   /// owned by [NamedPipeTransportConnector] and closed in its [shutdown()]
-  /// method, which also flushes pending writes via FlushFileBuffers.
+  /// method, which closes the Win32 handle via CloseHandle.
   void close() {
     if (_isClosed) return;
     _isClosed = true;
