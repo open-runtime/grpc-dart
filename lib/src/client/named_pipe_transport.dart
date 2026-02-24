@@ -222,6 +222,12 @@ class _NamedPipeStream {
   final StreamController<List<int>> _incomingController = StreamController<List<int>>();
   final StreamController<List<int>> _outgoingController = StreamController<List<int>>();
 
+  /// Subscription to outgoing data events, stored so it can be explicitly
+  /// cancelled during [close]. Without explicit cancellation, a dangling
+  /// subscription keeps the event loop alive when [_outgoingController.close]
+  /// throws due to an active `addStream()` from the HTTP/2 transport.
+  StreamSubscription<List<int>>? _outgoingSubscription;
+
   bool _isClosed = false;
 
   _NamedPipeStream(this._handle, this._doneCompleter) {
@@ -229,7 +235,7 @@ class _NamedPipeStream {
     Future.microtask(_readLoop);
 
     // Forward outgoing data to the pipe
-    _outgoingController.stream.listen(
+    _outgoingSubscription = _outgoingController.stream.listen(
       _writeData,
       onDone: close,
       onError: (error) {
@@ -398,8 +404,16 @@ class _NamedPipeStream {
   /// This method is safe to call from any context — including during active
   /// HTTP/2 `addStream()` operations. The HTTP/2 transport pipes frames into
   /// [outgoingSink] via `addStream()`, which locks the [StreamController].
-  /// Calling `.close()` on a locked controller throws "Cannot add event while
-  /// adding a stream". We catch this gracefully because shutdown must not fail.
+  ///
+  /// By cancelling [_outgoingSubscription] first, we trigger the cascade:
+  ///  1. The single-subscription controller detects no listeners
+  ///  2. The active `addStream()` cancels its source subscription
+  ///  3. The `addStream()` Future completes, unlocking the controller
+  ///  4. `_outgoingController.close()` succeeds normally
+  ///
+  /// Without this explicit cancellation, the subscription keeps the event
+  /// loop alive indefinitely — causing the test process to hang for 20+
+  /// minutes until the CI timeout kills it.
   ///
   /// Note: This does NOT close the underlying Win32 handle. The handle is
   /// owned by [NamedPipeTransportConnector] and closed in its [shutdown()]
@@ -410,16 +424,18 @@ class _NamedPipeStream {
 
     _incomingController.close();
 
-    // The outgoing controller may have an active addStream() from the HTTP/2
-    // transport. In that case, close() will throw. This is expected during
-    // shutdown — the pipe handle cleanup in NamedPipeTransportConnector.shutdown()
-    // will break the connection regardless.
+    // Cancel the outgoing subscription BEFORE closing the controller.
+    // This unlocks the controller if addStream() is active (see doc above).
+    _outgoingSubscription?.cancel();
+    _outgoingSubscription = null;
+
+    // With the subscription cancelled, close() should succeed. Keep the
+    // try-catch as defense-in-depth in case of unexpected edge cases.
     try {
       _outgoingController.close();
     } catch (_) {
-      // "Cannot add event while adding a stream" — safe to ignore during
-      // shutdown. The handle owner (NamedPipeTransportConnector) will close
-      // the Win32 handle in its shutdown() method.
+      // Defensive: should not happen after subscription cancellation,
+      // but must not fail during shutdown.
     }
 
     if (!_doneCompleter.isCompleted) {

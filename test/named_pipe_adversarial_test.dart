@@ -62,6 +62,7 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
 
         // Start many clients connecting simultaneously. Some will be mid-
         // handshake when we kill the server.
@@ -111,6 +112,7 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
 
         final channel = NamedPipeClientChannel(
           pipeName,
@@ -158,6 +160,7 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
 
         final channel = NamedPipeClientChannel(
           pipeName,
@@ -222,6 +225,7 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
 
         final channel = NamedPipeClientChannel(
           pipeName,
@@ -290,6 +294,7 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
 
         // Spin up 3 independent channels.
         final channels = List.generate(
@@ -351,6 +356,7 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
 
         // Client 1: Start a long server stream, then kill the channel.
         final channel1 = NamedPipeClientChannel(
@@ -379,8 +385,10 @@ void main() {
           options: const NamedPipeChannelOptions(),
         );
         final client2 = EchoClient(channel2);
-        final result = await client2.echo(777);
-        expect(result, equals(777));
+        // Value must be ≤255 — the echo service serializes int as a single
+        // byte ([value]), so values >255 are truncated by Uint8List.
+        final result = await client2.echo(99);
+        expect(result, equals(99));
 
         await channel2.shutdown();
         await server.shutdown();
@@ -418,9 +426,10 @@ void main() {
           );
           final client = EchoClient(channel);
 
-          // Verify the cycle works.
-          final result = await client.echo(cycle * 100);
-          expect(result, equals(cycle * 100), reason: 'cycle $cycle');
+          // Verify the cycle works. Values must be ≤255 because the echo
+          // service serializes int as a single byte ([value]).
+          final result = await client.echo(cycle * 25);
+          expect(result, equals(cycle * 25), reason: 'cycle $cycle');
 
           await channel.shutdown();
           await server.shutdown();
@@ -460,6 +469,7 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
 
         final channel = NamedPipeClientChannel(
           pipeName,
@@ -470,12 +480,17 @@ void main() {
         // Request 1000 items. Each item is a small gRPC frame, but 1000
         // of them back-to-back will fill and overflow the 65536-byte pipe
         // buffer multiple times, exercising partial reads.
+        //
+        // The echo service serializes int as a single byte ([value]), so
+        // server-stream values >255 wrap around (value & 0xFF). This is
+        // expected — the test validates frame ordering and data integrity,
+        // not the encoding range.
         final results = await client.serverStream(1000).toList();
 
-        // Verify every item arrived in order with correct values.
+        // Verify every item arrived in order with correct (modular) values.
         expect(results.length, equals(1000));
         for (var i = 0; i < 1000; i++) {
-          expect(results[i], equals(i + 1), reason: 'item $i');
+          expect(results[i], equals((i + 1) & 0xFF), reason: 'item $i');
         }
 
         await channel.shutdown();
@@ -499,6 +514,7 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
 
         final channel = NamedPipeClientChannel(
           pipeName,
@@ -524,8 +540,9 @@ void main() {
         // Feed data into all 5 streams concurrently.
         for (var i = 0; i < 20; i++) {
           for (var s = 0; s < 5; s++) {
-            // Each stream gets values in range [s*1000 .. s*1000+19].
-            controllers[s].add(s * 1000 + i);
+            // Each stream gets unique values ≤127 so that doubled results
+            // are still ≤254 (single-byte echo encoding).
+            controllers[s].add(s * 20 + i);
           }
           // Tiny yield so writes interleave across streams.
           await Future.delayed(Duration.zero);
@@ -541,7 +558,7 @@ void main() {
 
         // Verify each stream got its own data back, doubled.
         for (var s = 0; s < 5; s++) {
-          final expected = List.generate(20, (i) => (s * 1000 + i) * 2);
+          final expected = List.generate(20, (i) => (s * 20 + i) * 2);
           expect(
             results[s],
             equals(expected),
@@ -579,6 +596,7 @@ void main() {
       (pipeName) async {
         final server1 = NamedPipeServer.create(services: [EchoService()]);
         await server1.serve(pipeName: pipeName);
+        addTearDown(() => server1.shutdown());
 
         final server2 = NamedPipeServer.create(services: [EchoService()]);
         var server2Started = false;
@@ -590,6 +608,9 @@ void main() {
           // This is the IDEAL outcome: the second server detects the
           // collision and refuses to start.
         }
+        addTearDown(() async {
+          if (server2Started) await server2.shutdown();
+        });
 
         // Regardless of whether server2 started, server1 must still work.
         final channel = NamedPipeClientChannel(
