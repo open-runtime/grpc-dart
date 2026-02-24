@@ -20,7 +20,9 @@ import 'package:test/test.dart';
 void testUds(String name, FutureOr<void> Function(InternetAddress) testCase) {
   test(
     name,
-    skip: Platform.isWindows ? 'Unix domain sockets are not supported on Windows' : null,
+    skip: Platform.isWindows
+        ? 'Unix domain sockets are not supported on Windows'
+        : null,
     () async {
       final tempDir = await Directory.systemTemp.createTemp();
       final address = InternetAddress(
@@ -64,10 +66,11 @@ void testNamedPipe(
   String name,
   FutureOr<void> Function(String pipeName) testCase, {
   String basePipeName = 'grpc-test',
+  Timeout timeout = const Timeout(Duration(seconds: 30)),
 }) {
   test(
     '$name (over named pipe)',
-    timeout: const Timeout(Duration(seconds: 30)),
+    timeout: timeout,
     skip: Platform.isWindows ? null : 'Named pipes are Windows-only',
     () async {
       // Generate unique pipe name to avoid conflicts between parallel tests.

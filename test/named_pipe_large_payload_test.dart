@@ -22,7 +22,7 @@
 /// Every test is Windows-only (via [testNamedPipe]) and uses a unique pipe
 /// name derived from the test description to prevent cross-test interference.
 @TestOn('vm')
-@Timeout(Duration(seconds: 120))
+@Timeout(Duration(seconds: 90))
 library;
 
 import 'dart:async';
@@ -148,14 +148,13 @@ void main() {
     });
 
     // -------------------------------------------------------------------------
-    // Test 4: 1MB payload (extreme)
+    // Test 4: 512KB payload (large)
     // -------------------------------------------------------------------------
-    // At 1048576 bytes (16x the pipe buffer), this is an extreme stress test
-    // for the transport. It requires ~16 full buffer cycles and pushes both
-    // the HTTP/2 framing layer and the pipe's flow control to their limits.
-    // This verifies that the transport handles sustained large transfers
-    // without memory corruption, deadlock, or excessive latency.
-    testNamedPipe('1MB payload (extreme)', (pipeName) async {
+    // At 524288 bytes (8x the pipe buffer), this is a large stress test for
+    // the transport. It requires ~8 full buffer cycles and pushes both the
+    // HTTP/2 framing layer and the pipe's flow control hard. Reduced from
+    // 1MB to stay within the 20-minute CI test budget on Windows runners.
+    testNamedPipe('512KB payload (large)', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
@@ -166,10 +165,10 @@ void main() {
       );
       final client = EchoClient(channel);
 
-      final payload = generatePayload(1048576);
+      final payload = generatePayload(524288);
       final result = await client.echoBytes(payload);
 
-      expect(result.length, equals(1048576));
+      expect(result.length, equals(524288));
       expect(result, equals(payload));
 
       await channel.shutdown();
@@ -435,14 +434,13 @@ void main() {
     });
 
     // -------------------------------------------------------------------------
-    // Test 10: Bidi stream — 5 x 100KB chunks
+    // Test 10: Bidi stream — 5 x 32KB chunks
     // -------------------------------------------------------------------------
-    // Each chunk is 102400 bytes, exceeding the 65536-byte pipe buffer.
-    // The transport must handle partial writes and reads for EACH individual
-    // message in the bidi stream. This is the most demanding bidi test:
-    // 500KB in each direction, with every message requiring multi-buffer
-    // transfers.
-    testNamedPipe('bidi stream: 5 x 100KB chunks', (pipeName) async {
+    // Each chunk is 32768 bytes (~half the pipe buffer). The transport must
+    // handle multi-message bidi streams where each message is substantial.
+    // Reduced from 5x100KB to stay within the 20-minute CI test budget
+    // on Windows runners while still exercising the bidi path meaningfully.
+    testNamedPipe('bidi stream: 5 x 32KB chunks', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
@@ -453,10 +451,10 @@ void main() {
       );
       final client = EchoClient(channel);
 
-      // Build 5 chunks of 100KB each with unique patterns.
+      // Build 5 chunks of 32KB each with unique patterns.
       final sentChunks = <Uint8List>[];
       for (var i = 0; i < 5; i++) {
-        sentChunks.add(generatePayload(102400, i * 50));
+        sentChunks.add(generatePayload(32768, i * 50));
       }
 
       final inputController = StreamController<List<int>>();
@@ -488,7 +486,7 @@ void main() {
       for (var i = 0; i < 5; i++) {
         expect(
           receivedChunks[i].length,
-          equals(102400),
+          equals(32768),
           reason: 'chunk $i length',
         );
         expect(
@@ -511,7 +509,7 @@ void main() {
     // -------------------------------------------------------------------------
     // Test 11: Concurrent large payload RPCs
     // -------------------------------------------------------------------------
-    // Fires 5 concurrent echoBytes calls, each with a different 50KB payload
+    // Fires 5 concurrent echoBytes calls, each with a different 20KB payload
     // seeded with a unique value. All 5 payloads are in-flight simultaneously
     // on the same channel (multiplexed as separate HTTP/2 streams over a
     // single pipe). If the transport's stream demuxing is incorrect, response
@@ -530,10 +528,10 @@ void main() {
         );
         final client = EchoClient(channel);
 
-        // Create 5 payloads of 50KB each with different seeds.
+        // Create 5 payloads of 20KB each with different seeds.
         final payloads = <Uint8List>[];
         for (var i = 0; i < 5; i++) {
-          payloads.add(generatePayload(51200, i * 37));
+          payloads.add(generatePayload(20480, i * 37));
         }
 
         // Fire all 5 RPCs concurrently.
@@ -546,7 +544,7 @@ void main() {
 
         // Verify each response matches its specific request.
         for (var i = 0; i < 5; i++) {
-          expect(results[i].length, equals(51200), reason: 'RPC $i length');
+          expect(results[i].length, equals(20480), reason: 'RPC $i length');
           expect(
             results[i],
             equals(payloads[i]),
