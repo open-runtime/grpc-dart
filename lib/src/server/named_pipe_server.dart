@@ -268,11 +268,22 @@ class NamedPipeServer extends ConnectionServer {
     }
     _activeStreams.clear();
 
-    // Step 3: Unblock the server isolate's blocking ConnectNamedPipe call.
+    // Step 3: Queue kill BEFORE the dummy client connection.
+    // The accept loop has a yield point (await Future.delayed) after each
+    // ConnectNamedPipe. By queuing the kill first, the kill flag is already
+    // set when the accept loop reaches the yield point after being unblocked
+    // by the dummy client in step 4. This prevents the loop from creating
+    // another pipe instance and blocking on ConnectNamedPipe again.
+    //
+    // Use beforeNextEvent so the accept loop's current event (up to the
+    // yield point) completes, and the isolate exits before the next event.
+    _serverIsolate?.kill(priority: Isolate.beforeNextEvent);
+
+    // Step 4: Unblock the server isolate's blocking ConnectNamedPipe call.
     // ConnectNamedPipe is a synchronous Win32 call that blocks the isolate's
     // thread — Isolate.kill() cannot interrupt it. Opening a dummy client
     // connection satisfies ConnectNamedPipe, allowing the isolate to reach
-    // its next event-loop checkpoint where the kill can take effect.
+    // the yield point where the kill takes effect.
     //
     // IMPORTANT: Do this BEFORE closing the receive port. The dummy
     // connection unblocks the isolate which may try to send a
@@ -282,10 +293,6 @@ class NamedPipeServer extends ConnectionServer {
       _connectDummyClient(pipeName);
     }
 
-    // Step 4: Kill the server isolate (now unblocked).
-    // Use beforeNextEvent so pending `finally` blocks get a chance to
-    // free native memory before the isolate is torn down.
-    _serverIsolate?.kill(priority: Isolate.beforeNextEvent);
     _serverIsolate = null;
 
     // Step 5: Clean up the receive port AFTER killing the isolate.
@@ -606,6 +613,18 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
       // The main isolate will handle all reads/writes using PeekNamedPipe
       // polling, keeping its event loop responsive.
       config.mainPort.send(_PipeHandle(hPipe));
+
+      // Yield to the event loop so Isolate.kill(beforeNextEvent) can take
+      // effect. Without this, the loop immediately calls CreateNamedPipe →
+      // ConnectNamedPipe with no event-loop checkpoint, making the isolate
+      // unkillable — causing the test process to hang for 20+ minutes until
+      // the CI timeout kills it.
+      //
+      // During shutdown, the main isolate sends Isolate.kill() BEFORE the
+      // dummy client connection that unblocks ConnectNamedPipe. This ensures
+      // the kill flag is queued before we reach this yield point, so the
+      // isolate exits cleanly here instead of looping back to block again.
+      await Future<void>.delayed(Duration.zero);
     }
   } finally {
     calloc.free(pipePathPtr);
