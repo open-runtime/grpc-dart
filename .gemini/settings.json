@@ -1,4 +1,5 @@
 {
+  "_comment": "Copy this file to your package's .gemini/settings.json and customize as needed.",
   "model": {
     "maxSessionTurns": 200
   },
@@ -51,6 +52,13 @@
       ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "$GH_TOKEN"
+      }
+    },
+    "sentry": {
+      "command": "npx",
+      "args": ["-y", "@sentry/mcp-server@latest"],
+      "env": {
+        "SENTRY_ACCESS_TOKEN": "$SENTRY_ACCESS_TOKEN"
       }
     }
   }
