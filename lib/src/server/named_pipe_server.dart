@@ -355,7 +355,9 @@ class _ServerPipeStream {
       _writeData,
       onDone: close,
       onError: (error) {
-        _incomingController.addError(error);
+        if (!_isClosed) {
+          _incomingController.addError(error);
+        }
         close();
       },
     );
@@ -473,12 +475,28 @@ class _ServerPipeStream {
   }
 
   /// Closes the pipe stream and cleans up the Win32 handle.
+  ///
+  /// This method is safe to call from any context — including during active
+  /// HTTP/2 `addStream()` operations. The HTTP/2 transport pipes frames into
+  /// [outgoingSink] via `addStream()`, which locks the [StreamController].
+  /// Calling `.close()` on a locked controller throws "Cannot add event while
+  /// adding a stream". We catch this gracefully because shutdown must not fail.
   void close() {
     if (_isClosed) return;
     _isClosed = true;
 
+    // Close incoming first — stops the read loop from adding more data.
     _incomingController.close();
-    _outgoingController.close();
+
+    // The outgoing controller may have an active addStream() from the HTTP/2
+    // transport. In that case, close() will throw. This is expected during
+    // shutdown — the HTTP/2 transport will notice the broken pipe and clean up.
+    try {
+      _outgoingController.close();
+    } catch (_) {
+      // "Cannot add event while adding a stream" — safe to ignore during
+      // shutdown. The pipe handle cleanup below will break the connection.
+    }
 
     // Clean up the Win32 pipe handle.
     FlushFileBuffers(_handle);
