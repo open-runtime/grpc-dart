@@ -221,36 +221,44 @@ class NamedPipeServer extends ConnectionServer {
   /// Shuts down the server gracefully.
   ///
   /// This method:
-  /// 1. Stops accepting new connections
+  /// 1. Stops accepting new connections (`_isRunning = false`)
   /// 2. Opens a dummy client connection to unblock the server isolate's
   ///    blocking ConnectNamedPipe call (Isolate.kill cannot interrupt FFI)
   /// 3. Kills the server isolate
+  /// 4. Cleans up the receive port (last — the isolate may still send to it
+  ///    between steps 2 and 3)
   Future<void> shutdown() async {
     if (!_isRunning) return;
 
+    // Step 1: Stop handling new connections. _handleIsolateMessage checks
+    // this flag before processing _PipeConnection messages, so any straggler
+    // messages from the isolate are safely ignored.
     _isRunning = false;
     final pipeName = _pipeName;
 
-    // Cancel the receive port subscription
-    await _receivePortSubscription?.cancel();
-    _receivePortSubscription = null;
-
-    // Close the receive port
-    _receivePort?.close();
-    _receivePort = null;
-
-    // Unblock the server isolate's blocking ConnectNamedPipe call.
+    // Step 2: Unblock the server isolate's blocking ConnectNamedPipe call.
     // ConnectNamedPipe is a synchronous Win32 call that blocks the isolate's
     // thread — Isolate.kill() cannot interrupt it. Opening a dummy client
     // connection satisfies ConnectNamedPipe, allowing the isolate to reach
     // its next event-loop checkpoint where the kill can take effect.
+    //
+    // IMPORTANT: Do this BEFORE closing the receive port. The dummy
+    // connection unblocks the isolate which may try to send a
+    // _PipeConnection message — the port must still be open for that send
+    // (it will be a no-op because _isRunning is false).
     if (pipeName != null) {
       _connectDummyClient(pipeName);
     }
 
-    // Kill the server isolate (now unblocked)
+    // Step 3: Kill the server isolate (now unblocked).
     _serverIsolate?.kill(priority: Isolate.immediate);
     _serverIsolate = null;
+
+    // Step 4: Clean up the receive port AFTER killing the isolate.
+    await _receivePortSubscription?.cancel();
+    _receivePortSubscription = null;
+    _receivePort?.close();
+    _receivePort = null;
 
     _pipeName = null;
     _readyCompleter = null;
@@ -260,7 +268,10 @@ class NamedPipeServer extends ConnectionServer {
   /// a blocking ConnectNamedPipe call in the server isolate.
   static void _connectDummyClient(String pipeName) {
     final pipePath = r'\\.\pipe\' + pipeName;
-    final pipePathPtr = pipePath.toNativeUtf16();
+    // Allocate with calloc so the matching calloc.free() is correct.
+    // toNativeUtf16() defaults to malloc — passing calloc explicitly
+    // avoids an allocator mismatch.
+    final pipePathPtr = pipePath.toNativeUtf16(allocator: calloc);
     try {
       final hPipe = CreateFile(pipePathPtr, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, NULL);
       if (hPipe != INVALID_HANDLE_VALUE) {
@@ -330,7 +341,8 @@ class _ServerError {
 /// knows clients can connect.
 Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   final pipePath = r'\\.\pipe\' + config.pipeName;
-  final pipePathPtr = pipePath.toNativeUtf16();
+  // Use calloc allocator so the matching calloc.free() is correct.
+  final pipePathPtr = pipePath.toNativeUtf16(allocator: calloc);
   var readySent = false;
 
   try {
@@ -451,6 +463,10 @@ Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
 
 /// Writes data to a pipe.
 void _writeToPipe(int hPipe, Uint8List data) {
+  // Guard against zero-length writes: calloc<Uint8>(0) is undefined
+  // behavior (may return nullptr on some platforms).
+  if (data.isEmpty) return;
+
   final buffer = calloc<Uint8>(data.length);
   final bytesWritten = calloc<DWORD>();
 

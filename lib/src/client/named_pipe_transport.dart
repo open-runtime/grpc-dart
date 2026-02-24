@@ -95,7 +95,10 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
       );
     }
 
-    final pipePathPtr = pipePath.toNativeUtf16();
+    // Use calloc allocator so the matching calloc.free() is correct.
+    // toNativeUtf16() defaults to malloc — passing calloc explicitly
+    // avoids an allocator mismatch.
+    final pipePathPtr = pipePath.toNativeUtf16(allocator: calloc);
 
     try {
       // Open the named pipe for reading and writing.
@@ -294,6 +297,10 @@ class _NamedPipeStream {
   /// Writes data to the pipe.
   void _writeData(List<int> data) {
     if (_isClosed) return;
+
+    // Guard against zero-length writes: calloc<Uint8>(0) is undefined
+    // behavior (may return nullptr on some platforms).
+    if (data.isEmpty) return;
 
     final buffer = calloc<Uint8>(data.length);
     final bytesWritten = calloc<DWORD>();

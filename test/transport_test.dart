@@ -41,132 +41,7 @@ import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
-
-// =============================================================================
-// Test Service Definitions
-// =============================================================================
-
-class EchoClient extends Client {
-  static final _$echo = ClientMethod<int, int>(
-    '/test.EchoService/Echo',
-    (int value) => [value],
-    (List<int> value) => value[0],
-  );
-
-  static final _$serverStream = ClientMethod<int, int>(
-    '/test.EchoService/ServerStream',
-    (int value) => [value],
-    (List<int> value) => value[0],
-  );
-
-  static final _$clientStream = ClientMethod<int, int>(
-    '/test.EchoService/ClientStream',
-    (int value) => [value],
-    (List<int> value) => value[0],
-  );
-
-  static final _$bidiStream = ClientMethod<int, int>(
-    '/test.EchoService/BidiStream',
-    (int value) => [value],
-    (List<int> value) => value[0],
-  );
-
-  EchoClient(super.channel);
-
-  ResponseFuture<int> echo(int request, {CallOptions? options}) {
-    return $createUnaryCall(_$echo, request, options: options);
-  }
-
-  ResponseStream<int> serverStream(int request, {CallOptions? options}) {
-    return $createStreamingCall(
-      _$serverStream,
-      Stream.value(request),
-      options: options,
-    );
-  }
-
-  ResponseFuture<int> clientStream(Stream<int> requests, {CallOptions? options}) {
-    return $createStreamingCall(
-      _$clientStream,
-      requests,
-      options: options,
-    ).single;
-  }
-
-  ResponseStream<int> bidiStream(Stream<int> requests, {CallOptions? options}) {
-    return $createStreamingCall(
-      _$bidiStream,
-      requests,
-      options: options,
-    );
-  }
-}
-
-class EchoService extends Service {
-  @override
-  String get $name => 'test.EchoService';
-
-  EchoService() {
-    $addMethod(ServiceMethod<int, int>(
-      'Echo',
-      _echo,
-      false,
-      false,
-      (List<int> value) => value[0],
-      (int value) => [value],
-    ));
-    $addMethod(ServiceMethod<int, int>(
-      'ServerStream',
-      _serverStream,
-      false,
-      true,
-      (List<int> value) => value[0],
-      (int value) => [value],
-    ));
-    $addMethod(ServiceMethod<int, int>(
-      'ClientStream',
-      _clientStream,
-      true,
-      false,
-      (List<int> value) => value[0],
-      (int value) => [value],
-    ));
-    $addMethod(ServiceMethod<int, int>(
-      'BidiStream',
-      _bidiStream,
-      true,
-      true,
-      (List<int> value) => value[0],
-      (int value) => [value],
-    ));
-  }
-
-  Future<int> _echo(ServiceCall call, Future<int> request) async {
-    return await request;
-  }
-
-  Stream<int> _serverStream(ServiceCall call, Future<int> request) async* {
-    final count = await request;
-    for (var i = 1; i <= count; i++) {
-      yield i;
-      await Future.delayed(const Duration(milliseconds: 10));
-    }
-  }
-
-  Future<int> _clientStream(ServiceCall call, Stream<int> requests) async {
-    var sum = 0;
-    await for (final value in requests) {
-      sum += value;
-    }
-    return sum;
-  }
-
-  Stream<int> _bidiStream(ServiceCall call, Stream<int> requests) async* {
-    await for (final value in requests) {
-      yield value * 2; // Echo back doubled value
-    }
-  }
-}
+import 'src/echo_service.dart';
 
 // =============================================================================
 // Test Channel Wrapper
@@ -194,11 +69,13 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        address,
-        server.port!,
-        ChannelOptions(credentials: ChannelCredentials.insecure()),
-      ));
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
 
       final client = EchoClient(channel);
       expect(await client.echo(42), equals(42));
@@ -212,11 +89,13 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        address,
-        server.port!,
-        ChannelOptions(credentials: ChannelCredentials.insecure()),
-      ));
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
 
       final client = EchoClient(channel);
       final results = await client.serverStream(5).toList();
@@ -230,14 +109,18 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        address,
-        server.port!,
-        ChannelOptions(credentials: ChannelCredentials.insecure()),
-      ));
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
 
       final client = EchoClient(channel);
-      final result = await client.clientStream(Stream.fromIterable([1, 2, 3, 4, 5]));
+      final result = await client.clientStream(
+        Stream.fromIterable([1, 2, 3, 4, 5]),
+      );
       expect(result, equals(15)); // Sum of 1+2+3+4+5
 
       await channel.shutdown();
@@ -248,14 +131,18 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        address,
-        server.port!,
-        ChannelOptions(credentials: ChannelCredentials.insecure()),
-      ));
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
 
       final client = EchoClient(channel);
-      final results = await client.bidiStream(Stream.fromIterable([1, 2, 3])).toList();
+      final results = await client
+          .bidiStream(Stream.fromIterable([1, 2, 3]))
+          .toList();
       expect(results, equals([2, 4, 6])); // Doubled values
 
       await channel.shutdown();
@@ -266,11 +153,13 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        address,
-        server.port!,
-        ChannelOptions(credentials: ChannelCredentials.insecure()),
-      ));
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
 
       final client = EchoClient(channel);
 
@@ -287,11 +176,13 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        address,
-        server.port!,
-        ChannelOptions(credentials: ChannelCredentials.insecure()),
-      ));
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
 
       final client = EchoClient(channel);
 
@@ -316,14 +207,16 @@ void main() {
       );
       await server.serve(address: address, port: 0);
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        address,
-        server.port!,
-        ChannelOptions(
-          credentials: ChannelCredentials.insecure(),
-          codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+          ),
         ),
-      ));
+      );
 
       final client = EchoClient(channel);
       final result = await client.echo(
@@ -340,20 +233,22 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        address,
-        server.port!,
-        ChannelOptions(credentials: ChannelCredentials.insecure()),
-      ));
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
 
       final client = EchoClient(channel);
 
       // Start a long server stream and immediately attach an error handler
       // so the GrpcError from shutdown doesn't become an unhandled async error.
-      final streamFuture = client.serverStream(100).toList().then(
-        (results) => results,
-        onError: (e) => <int>[],
-      );
+      final streamFuture = client
+          .serverStream(100)
+          .toList()
+          .then((results) => results, onError: (e) => <int>[]);
 
       // Wait a bit then shutdown server
       await Future.delayed(const Duration(milliseconds: 50));
@@ -383,16 +278,18 @@ void main() {
         ),
       );
 
-      final channel = TestClientChannel(Http2ClientConnection(
-        'localhost',
-        server.port!,
-        ChannelOptions(
-          credentials: ChannelCredentials.secure(
-            certificates: File('test/data/localhost.crt').readAsBytesSync(),
-            authority: 'localhost',
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          'localhost',
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.secure(
+              certificates: File('test/data/localhost.crt').readAsBytesSync(),
+              authority: 'localhost',
+            ),
           ),
         ),
-      ));
+      );
 
       final client = EchoClient(channel);
       expect(await client.echo(42), equals(42));
@@ -450,7 +347,9 @@ void main() {
       );
 
       final client = EchoClient(channel);
-      final result = await client.clientStream(Stream.fromIterable([1, 2, 3, 4, 5]));
+      final result = await client.clientStream(
+        Stream.fromIterable([1, 2, 3, 4, 5]),
+      );
       expect(result, equals(15));
 
       await channel.shutdown();
@@ -467,7 +366,9 @@ void main() {
       );
 
       final client = EchoClient(channel);
-      final results = await client.bidiStream(Stream.fromIterable([1, 2, 3])).toList();
+      final results = await client
+          .bidiStream(Stream.fromIterable([1, 2, 3]))
+          .toList();
       expect(results, equals([2, 4, 6]));
 
       await channel.shutdown();
@@ -499,47 +400,54 @@ void main() {
   // =============================================================================
 
   group('Transport Selection', () {
-    test('platform-appropriate transport works', timeout: const Timeout(Duration(seconds: 30)), () async {
-      if (Platform.isWindows) {
-        // On Windows, test named pipe
-        final pipeName = 'grpc-platform-test-${DateTime.now().millisecondsSinceEpoch}';
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        await server.serve(pipeName: pipeName);
+    test(
+      'platform-appropriate transport works',
+      timeout: const Timeout(Duration(seconds: 30)),
+      () async {
+        if (Platform.isWindows) {
+          // On Windows, test named pipe
+          final pipeName =
+              'grpc-platform-test-${DateTime.now().millisecondsSinceEpoch}';
+          final server = NamedPipeServer.create(services: [EchoService()]);
+          await server.serve(pipeName: pipeName);
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
+          final channel = NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          );
 
-        final client = EchoClient(channel);
-        expect(await client.echo(42), equals(42));
+          final client = EchoClient(channel);
+          expect(await client.echo(42), equals(42));
 
-        await channel.shutdown();
-        await server.shutdown();
-      } else {
-        // On Unix, test UDS
-        final tempDir = await Directory.systemTemp.createTemp();
-        final address = InternetAddress(
-          '${tempDir.path}/socket',
-          type: InternetAddressType.unix,
-        );
+          await channel.shutdown();
+          await server.shutdown();
+        } else {
+          // On Unix, test UDS
+          final tempDir = await Directory.systemTemp.createTemp();
+          final address = InternetAddress(
+            '${tempDir.path}/socket',
+            type: InternetAddressType.unix,
+          );
 
-        final server = Server.create(services: [EchoService()]);
-        await server.serve(address: address, port: 0);
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-        final channel = TestClientChannel(Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ));
+          final channel = TestClientChannel(
+            Http2ClientConnection(
+              address,
+              server.port!,
+              ChannelOptions(credentials: ChannelCredentials.insecure()),
+            ),
+          );
 
-        final client = EchoClient(channel);
-        expect(await client.echo(42), equals(42));
+          final client = EchoClient(channel);
+          expect(await client.echo(42), equals(42));
 
-        await channel.shutdown();
-        await server.shutdown();
-        await tempDir.delete(recursive: true);
-      }
-    });
+          await channel.shutdown();
+          await server.shutdown();
+          await tempDir.delete(recursive: true);
+        }
+      },
+    );
   });
 }
