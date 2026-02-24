@@ -249,6 +249,22 @@ class _NamedPipeStream {
   StreamSink<List<int>> get outgoingSink => _outgoingController.sink;
 
   /// Continuously reads from the pipe and adds to incoming stream.
+  ///
+  /// **Error propagation**: When [ReadFile] fails with an unexpected Win32
+  /// error (not BROKEN_PIPE / NO_DATA), a [NamedPipeException] is added to
+  /// [_incomingController] as a stream error. This error propagates through:
+  ///
+  ///  1. [_incomingController.stream] (the [incoming] stream)
+  ///  2. [ClientTransportConnection.viaStreams] — the HTTP/2 transport layer
+  ///  3. The HTTP/2 transport detects the stream error and closes
+  ///  4. [NamedPipeTransportConnector.done] completes, triggering connection
+  ///     abandonment in [Http2ClientConnection]
+  ///  5. Pending gRPC calls are failed with [GrpcError.unavailable], wrapping
+  ///     the original [NamedPipeException] message
+  ///
+  /// This is the correct behavior: transport-level read failures surface as
+  /// gRPC UNAVAILABLE errors, which clients can retry via standard gRPC
+  /// retry policies.
   Future<void> _readLoop() async {
     final buffer = calloc<Uint8>(_kBufferSize);
     final bytesRead = calloc<DWORD>();
@@ -294,7 +310,12 @@ class _NamedPipeStream {
     }
   }
 
-  /// Writes data to the pipe.
+  /// Writes data to the pipe, handling partial writes.
+  ///
+  /// [WriteFile] can succeed but write fewer bytes than requested when the
+  /// pipe's internal buffer is nearly full. A partial write silently drops
+  /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
+  /// until all bytes are written or an error occurs.
   void _writeData(List<int> data) {
     if (_isClosed) return;
 
@@ -311,12 +332,26 @@ class _NamedPipeStream {
         buffer[i] = data[i];
       }
 
-      final success = WriteFile(_handle, buffer, data.length, bytesWritten, nullptr);
+      var offset = 0;
+      while (offset < data.length) {
+        bytesWritten.value = 0;
+        final remaining = data.length - offset;
+        final success = WriteFile(_handle, buffer.elementAt(offset), remaining, bytesWritten, nullptr);
 
-      if (success == 0) {
-        final error = GetLastError();
-        _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
-        close();
+        if (success == 0) {
+          final error = GetLastError();
+          _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
+          close();
+          return;
+        }
+
+        if (bytesWritten.value == 0) {
+          _incomingController.addError(NamedPipeException('Write stalled: 0 bytes written', 0));
+          close();
+          return;
+        }
+
+        offset += bytesWritten.value;
       }
     } finally {
       calloc.free(buffer);

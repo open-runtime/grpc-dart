@@ -156,21 +156,44 @@ void main() {
       );
       final client = EchoClient(channel);
 
-      // Request a long server stream (100 items, ~10ms each = ~1 second).
-      // Attach an error handler immediately to catch the GrpcError that
-      // will be thrown when the server is torn down.
-      final streamFuture = client
-          .serverStream(100)
-          .toList()
-          .then((results) => results, onError: (e) => <int>[]);
+      // Request a long server stream (1000 items, ~10ms each = ~10 seconds).
+      // Using 1000 instead of 100 makes it impossible for the stream to
+      // complete before the server is shut down, eliminating flakiness on
+      // fast machines.
+      //
+      // We use a Completer to synchronize: wait until at least one item
+      // has been received (proving the stream is active) before shutting
+      // down the server, rather than relying on a fixed time delay which
+      // is inherently racy.
+      final receivedFirst = Completer<void>();
+      final results = <int>[];
 
-      // Let a few items flow, then pull the plug.
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final subscription = client.serverStream(1000).listen(
+        (value) {
+          results.add(value);
+          if (!receivedFirst.isCompleted) {
+            receivedFirst.complete();
+          }
+        },
+        onError: (_) {
+          // Expected: GrpcError when server shuts down mid-stream.
+          if (!receivedFirst.isCompleted) {
+            receivedFirst.complete();
+          }
+        },
+      );
+
+      // Wait until the stream is provably active before shutting down.
+      await receivedFirst.future;
       await server.shutdown();
 
-      // The stream should have been cut short.
-      final results = await streamFuture;
-      expect(results.length, lessThan(100));
+      // Cancel the client subscription to prevent dangling listeners.
+      await subscription.cancel();
+
+      // The stream should have been cut short — 1000 items at 10ms each
+      // would take ~10 seconds, but we shut down almost immediately after
+      // the first item.
+      expect(results.length, lessThan(1000));
 
       await channel.shutdown();
     });

@@ -47,6 +47,11 @@ void testTcpAndUds(
   testUds('$name (over uds)', testCase);
 }
 
+/// Monotonically increasing counter used by [testNamedPipe] to guarantee
+/// globally unique pipe names even when tests start within the same
+/// microsecond (e.g., parallel test execution via `dart test --concurrency`).
+int _pipeNameCounter = 0;
+
 /// Test functionality for Windows named pipes.
 ///
 /// [pipeName] is the base name for the pipe. A unique suffix will be added.
@@ -69,9 +74,19 @@ void testNamedPipe(
     timeout: const Timeout(Duration(seconds: 30)),
     () async {
       // Generate unique pipe name to avoid conflicts between parallel tests.
-      // Include microseconds for sub-millisecond uniqueness on fast machines.
+      //
+      // Uniqueness is ensured by combining three components:
+      //  1. microsecondsSinceEpoch — coarse time-based uniqueness
+      //  2. _pipeNameCounter — monotonic counter for same-microsecond starts
+      //  3. pid — differentiates across parallel test runner processes
+      //
+      // Previous approach used two separate DateTime.now() calls and
+      // DateTime.microsecond (0-999 within the current second) which could
+      // collide when tests start within the same millisecond.
+      final now = DateTime.now();
+      final counter = _pipeNameCounter++;
       final uniquePipeName =
-          '$basePipeName-${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
+          '$basePipeName-${now.microsecondsSinceEpoch}-${counter}-${pid}';
       await testCase(uniquePipeName);
     },
   );

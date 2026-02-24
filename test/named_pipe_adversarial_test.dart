@@ -1,0 +1,612 @@
+// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba
+// Pieces.app. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/// Adversarial concurrency tests for the Windows named-pipe gRPC transport.
+///
+/// These tests target specific race conditions, resource leaks, and crash
+/// vectors that the happy-path stress tests in `named_pipe_stress_test.dart`
+/// do NOT cover. Each test is designed to be maximally adversarial: it
+/// deliberately creates the conditions under which the transport is most
+/// likely to deadlock, double-free handles, leak isolates, or corrupt
+/// streams.
+///
+/// Every test is Windows-only (via [testNamedPipe]) and uses a unique pipe
+/// name derived from the test description to prevent cross-test interference.
+@TestOn('vm')
+@Timeout(Duration(seconds: 60))
+library;
+
+import 'dart:async';
+
+import 'package:grpc/grpc.dart';
+import 'package:test/test.dart';
+
+import 'common.dart';
+import 'src/echo_service.dart';
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+void main() {
+  // ===========================================================================
+  // 1. Shutdown-During-Connect Races
+  // ===========================================================================
+
+  group('Shutdown-During-Connect Races', () {
+    // -------------------------------------------------------------------------
+    // Test 1: Server shutdown while client is mid-CreateFile handshake
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: The client calls CreateFile() to open the pipe, then
+    // calls SetNamedPipeHandleState(). Between those two Win32 calls, the
+    // server calls shutdown(), kills its isolate, and closes all pipe handles.
+    // The client's SetNamedPipeHandleState (or the subsequent ReadFile) then
+    // operates on an invalid/closed handle.
+    //
+    // EXPECTED: The client RPC fails with a GrpcError (not a hang or crash).
+    // Both server and client shut down cleanly.
+    testNamedPipe(
+      'server shutdown racing client connect does not hang or crash',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        // Start many clients connecting simultaneously. Some will be mid-
+        // handshake when we kill the server.
+        final channels = List.generate(
+          5,
+          (_) => NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          ),
+        );
+        final clients = channels.map(EchoClient.new).toList();
+
+        // Fire RPCs without awaiting -- they race against shutdown.
+        final rpcFutures = <Future<void>>[];
+        for (var i = 0; i < clients.length; i++) {
+          rpcFutures.add(
+            clients[i].echo(i).then((_) {}, onError: (_) {}),
+          );
+        }
+
+        // Immediately shut down the server while clients are connecting.
+        // Do NOT await the RPCs first -- the race IS the test.
+        await server.shutdown();
+
+        // Wait for all RPCs to settle (succeed or fail).
+        await Future.wait(rpcFutures);
+
+        // Clean up channels. Some may already be dead -- shutdown must be safe.
+        for (final ch in channels) {
+          await ch.shutdown();
+        }
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 2: Concurrent connect + shutdown on the SAME channel
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: A single channel's first RPC triggers connect(). If
+    // channel.shutdown() is called before connect() returns, the transport
+    // connector's _pipeHandle may be null when shutdown() tries to
+    // FlushFileBuffers + CloseHandle. Or the connect() may complete and
+    // assign _pipeHandle AFTER shutdown() already checked it.
+    //
+    // EXPECTED: No hang, no double-close, no unhandled exception.
+    testNamedPipe(
+      'channel shutdown concurrent with first RPC connect',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        // Fire the RPC (triggers lazy connect) and immediately shut down.
+        final rpcFuture = client.echo(42).then(
+          (v) => v,
+          onError: (_) => -1,
+        );
+
+        // Race: shut down while the RPC is in-flight.
+        await channel.shutdown();
+
+        // The RPC either succeeded or failed gracefully.
+        final result = await rpcFuture;
+        expect(result, anyOf(equals(42), equals(-1)));
+
+        await server.shutdown();
+      },
+    );
+  });
+
+  // ===========================================================================
+  // 2. Bidirectional Streaming Under Shutdown
+  // ===========================================================================
+
+  group('Bidirectional Streaming Under Shutdown', () {
+    // -------------------------------------------------------------------------
+    // Test 3: Server shutdown during active bidi stream with interleaved
+    //         read/write
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: The server's _startPipeReader is in a ReadFile loop
+    // while the client is simultaneously writing via _writeToPipe. When
+    // shutdown() kills the server isolate, the _PipeClosed message may
+    // never arrive (isolate killed before it sends), leaving the client's
+    // incoming StreamController open forever (resource leak / hang).
+    //
+    // EXPECTED: The bidi stream terminates (with error or short data) within
+    // the test timeout. No hang.
+    testNamedPipe(
+      'server shutdown during active bidi stream terminates cleanly',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        // Create a long-lived bidi stream: the client sends 200 items with
+        // small delays, keeping the stream active for ~2 seconds.
+        final inputController = StreamController<int>();
+        final responseStream = client.bidiStream(inputController.stream);
+
+        // Collect responses (with error tolerance).
+        final received = <int>[];
+        final streamDone = Completer<void>();
+        responseStream.listen(
+          received.add,
+          onError: (_) {
+            if (!streamDone.isCompleted) streamDone.complete();
+          },
+          onDone: () {
+            if (!streamDone.isCompleted) streamDone.complete();
+          },
+        );
+
+        // Send a burst of data to saturate the pipe's read/write interleave.
+        for (var i = 0; i < 20; i++) {
+          inputController.add(i);
+          // Tiny delay so writes interleave with reads on the server side.
+          await Future.delayed(const Duration(milliseconds: 5));
+        }
+
+        // Kill the server while the bidi stream is mid-flight.
+        await server.shutdown();
+
+        // The stream must terminate within a reasonable time -- not hang.
+        await streamDone.future.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            fail('bidi stream did not terminate after server shutdown');
+          },
+        );
+
+        // Close the client side.
+        await inputController.close();
+        await channel.shutdown();
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 4: Client-stream with server shutdown before final response
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: The client sends a stream of values via clientStream().
+    // The server accumulates them and returns a single sum. If the server is
+    // killed mid-accumulation, the client is waiting on ResponseFuture.single
+    // which may hang forever if the pipe's incoming controller never closes.
+    //
+    // EXPECTED: The client-stream RPC fails with GrpcError within the
+    // timeout. No hang.
+    testNamedPipe(
+      'client-stream RPC fails cleanly when server dies mid-accumulation',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        // Create a slow client stream that sends values over ~2 seconds.
+        final inputController = StreamController<int>();
+
+        // Start the client-stream RPC (returns when server sends response).
+        final resultFuture = client
+            .clientStream(inputController.stream)
+            .then((v) => v, onError: (_) => -1);
+
+        // Send a few values.
+        for (var i = 1; i <= 5; i++) {
+          inputController.add(i);
+          await Future.delayed(const Duration(milliseconds: 20));
+        }
+
+        // Kill the server before closing the client stream.
+        await server.shutdown();
+
+        // Close the input so the RPC can settle (even if the response is
+        // already dead).
+        await inputController.close();
+
+        // The result must arrive (success or error) within the timeout.
+        final result = await resultFuture.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            fail('clientStream RPC hung after server shutdown');
+          },
+        );
+
+        // If server died, we get -1 (error). If it somehow completed, sum
+        // of 1..5 = 15. Either is acceptable.
+        expect(result, anyOf(equals(15), equals(-1)));
+
+        await channel.shutdown();
+      },
+    );
+  });
+
+  // ===========================================================================
+  // 3. Concurrent Shutdown + RPC
+  // ===========================================================================
+
+  group('Concurrent Shutdown + RPC', () {
+    // -------------------------------------------------------------------------
+    // Test 5: Server shutdown() racing with in-flight RPCs from multiple
+    //         clients
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: Multiple clients are hammering the server with RPCs.
+    // shutdown() is called on the server while RPCs are being processed by
+    // the server handler. The handler's serveConnection() has already
+    // dispatched to _echo, but the response path goes through an outgoing
+    // StreamController whose pipe handle is being closed by shutdown().
+    // This can cause "Cannot add event after closing" on the server side.
+    //
+    // EXPECTED: All RPCs either succeed or fail with GrpcError. The server
+    // shuts down without unhandled async exceptions. No hang.
+    testNamedPipe(
+      'server shutdown racing 50 concurrent RPCs from 3 clients',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        // Spin up 3 independent channels.
+        final channels = List.generate(
+          3,
+          (_) => NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          ),
+        );
+        final clients = channels.map(EchoClient.new).toList();
+
+        // Warm up: ensure all 3 channels are connected.
+        await Future.wait([
+          clients[0].echo(0),
+          clients[1].echo(0),
+          clients[2].echo(0),
+        ]);
+
+        // Fire 50 RPCs spread across all 3 clients, without awaiting.
+        final rpcFutures = <Future<void>>[];
+        for (var i = 0; i < 50; i++) {
+          final client = clients[i % 3];
+          rpcFutures.add(
+            client.echo(i).then((_) {}, onError: (_) {}),
+          );
+        }
+
+        // After a tiny delay (to let some RPCs be mid-processing), shut down.
+        await Future.delayed(const Duration(milliseconds: 10));
+        await server.shutdown();
+
+        // All RPCs must settle.
+        await Future.wait(rpcFutures).timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            fail('RPCs hung after server.shutdown()');
+          },
+        );
+
+        for (final ch in channels) {
+          await ch.shutdown();
+        }
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 6: Channel shutdown while server-streaming RPC is yielding
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: The server is mid-yield in _serverStream (inside the
+    // async* generator). The client calls channel.shutdown(), which triggers
+    // FlushFileBuffers + CloseHandle on the pipe handle. The server's
+    // _writeToPipe then writes to a closed handle, causing ERROR_BROKEN_PIPE.
+    // The server must handle this without crashing or leaking.
+    //
+    // EXPECTED: Channel shutdown completes. Server remains healthy for
+    // subsequent clients.
+    testNamedPipe(
+      'channel shutdown during server-streaming RPC, server survives',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        // Client 1: Start a long server stream, then kill the channel.
+        final channel1 = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client1 = EchoClient(channel1);
+
+        // Request 500 items (~5 seconds of streaming).
+        final streamFuture = client1
+            .serverStream(500)
+            .toList()
+            .then((r) => r, onError: (_) => <int>[]);
+
+        // Let some items flow.
+        await Future.delayed(const Duration(milliseconds: 50));
+
+        // Kill the client channel while the server is actively streaming.
+        await channel1.shutdown();
+        await streamFuture; // Must settle, not hang.
+
+        // Client 2: Verify the server is still alive after the rude
+        // disconnection.
+        final channel2 = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client2 = EchoClient(channel2);
+        final result = await client2.echo(777);
+        expect(result, equals(777));
+
+        await channel2.shutdown();
+        await server.shutdown();
+      },
+    );
+  });
+
+  // ===========================================================================
+  // 4. Client Reconnect After Server Restart
+  // ===========================================================================
+
+  group('Client Reconnect After Server Restart', () {
+    // -------------------------------------------------------------------------
+    // Test 7: Fresh channel on same pipe name after server restart
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: The OS may not immediately release the pipe namespace
+    // entry after server shutdown. A new server trying to CreateNamedPipe on
+    // the same name could get ERROR_ACCESS_DENIED or ERROR_ALREADY_EXISTS if
+    // the old server's isolate cleanup is not complete. The client connecting
+    // to the restarted server may hit the stale pipe instance from the old
+    // server.
+    //
+    // EXPECTED: After a brief delay, the new server starts successfully and
+    // the new client connects and completes RPCs. 8 cycles with no failures.
+    testNamedPipe(
+      '8 rapid server restart cycles with fresh client each time',
+      (pipeName) async {
+        for (var cycle = 0; cycle < 8; cycle++) {
+          final server = NamedPipeServer.create(services: [EchoService()]);
+          await server.serve(pipeName: pipeName);
+
+          final channel = NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          );
+          final client = EchoClient(channel);
+
+          // Verify the cycle works.
+          final result = await client.echo(cycle * 100);
+          expect(result, equals(cycle * 100), reason: 'cycle $cycle');
+
+          await channel.shutdown();
+          await server.shutdown();
+
+          // Minimal delay -- we WANT to stress the OS pipe cleanup.
+          // 100ms is tight enough to catch race conditions but enough
+          // for the OS to reclaim the pipe name most of the time.
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+      },
+    );
+  });
+
+  // ===========================================================================
+  // 5. Large Payload Stress
+  // ===========================================================================
+
+  group('Large Payload Stress', () {
+    // -------------------------------------------------------------------------
+    // Test 8: Messages near the 65536-byte buffer boundary
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: The pipe's read buffer (_kBufferSize) is 65536 bytes.
+    // Sending a message whose serialized HTTP/2 frame is exactly at, just
+    // below, or just above this boundary exercises the ReadFile partial-read
+    // and WriteFile partial-write paths. If the buffer management is wrong,
+    // ReadFile returns a partial read that gets reassembled incorrectly,
+    // corrupting the HTTP/2 frame and causing a protocol error or hang.
+    //
+    // The EchoService serializes int as a single-element List<int>, so the
+    // gRPC frame overhead dominates. To stress the buffer boundary we use
+    // server-streaming with a large count, causing many back-to-back frames
+    // that saturate the pipe buffer.
+    //
+    // EXPECTED: All 1000 items arrive correctly. No data corruption.
+    testNamedPipe(
+      'high-throughput server stream saturating pipe buffer',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        // Request 1000 items. Each item is a small gRPC frame, but 1000
+        // of them back-to-back will fill and overflow the 65536-byte pipe
+        // buffer multiple times, exercising partial reads.
+        final results = await client.serverStream(1000).toList();
+
+        // Verify every item arrived in order with correct values.
+        expect(results.length, equals(1000));
+        for (var i = 0; i < 1000; i++) {
+          expect(results[i], equals(i + 1), reason: 'item $i');
+        }
+
+        await channel.shutdown();
+        await server.shutdown();
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 9: Many concurrent bidi streams saturating the pipe
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: Multiple bidi streams on the SAME channel means
+    // multiple HTTP/2 streams multiplexed over a single pipe. The pipe's
+    // ReadFile/WriteFile calls are serialized per-direction, but the HTTP/2
+    // framing layer interleaves frames from different streams. If the frame
+    // reassembly or stream demux is wrong, data leaks between streams.
+    //
+    // EXPECTED: Each bidi stream independently echoes its values doubled.
+    // No cross-stream contamination.
+    testNamedPipe(
+      '5 concurrent bidi streams on one channel, no cross-stream leaks',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        // Launch 5 bidi streams in parallel, each sending 20 items.
+        final streamFutures = <Future<List<int>>>[];
+        final controllers = <StreamController<int>>[];
+
+        for (var s = 0; s < 5; s++) {
+          final controller = StreamController<int>();
+          controllers.add(controller);
+
+          final responseFuture = client
+              .bidiStream(controller.stream)
+              .toList()
+              .then((r) => r, onError: (_) => <int>[]);
+          streamFutures.add(responseFuture);
+        }
+
+        // Feed data into all 5 streams concurrently.
+        for (var i = 0; i < 20; i++) {
+          for (var s = 0; s < 5; s++) {
+            // Each stream gets values in range [s*1000 .. s*1000+19].
+            controllers[s].add(s * 1000 + i);
+          }
+          // Tiny yield so writes interleave across streams.
+          await Future.delayed(Duration.zero);
+        }
+
+        // Close all input streams.
+        for (final c in controllers) {
+          await c.close();
+        }
+
+        // Collect results.
+        final results = await Future.wait(streamFutures);
+
+        // Verify each stream got its own data back, doubled.
+        for (var s = 0; s < 5; s++) {
+          final expected = List.generate(20, (i) => (s * 1000 + i) * 2);
+          expect(
+            results[s],
+            equals(expected),
+            reason: 'stream $s data mismatch',
+          );
+        }
+
+        await channel.shutdown();
+        await server.shutdown();
+      },
+    );
+  });
+
+  // ===========================================================================
+  // 6. Pipe Name Collision
+  // ===========================================================================
+
+  group('Pipe Name Collision', () {
+    // -------------------------------------------------------------------------
+    // Test 10: Two servers trying to serve the same pipe name simultaneously
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: CreateNamedPipe with PIPE_UNLIMITED_INSTANCES means the
+    // second server CAN successfully create a new instance of the same pipe.
+    // This is dangerous: two server isolates would both call ConnectNamedPipe
+    // on the same pipe namespace, leading to undefined behavior where client
+    // connections are non-deterministically routed to either server. The
+    // second serve() should ideally detect this and fail, OR if it succeeds,
+    // both servers must be independently functional.
+    //
+    // EXPECTED: Either the second serve() throws an error (ideal), OR both
+    // servers work independently. In either case, no hang and no crash. We
+    // verify that at least one server is functional.
+    testNamedPipe(
+      'two servers on same pipe name: either fails or both work',
+      (pipeName) async {
+        final server1 = NamedPipeServer.create(services: [EchoService()]);
+        await server1.serve(pipeName: pipeName);
+
+        final server2 = NamedPipeServer.create(services: [EchoService()]);
+        var server2Started = false;
+
+        try {
+          await server2.serve(pipeName: pipeName);
+          server2Started = true;
+        } catch (e) {
+          // This is the IDEAL outcome: the second server detects the
+          // collision and refuses to start.
+        }
+
+        // Regardless of whether server2 started, server1 must still work.
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+        final result = await client.echo(42);
+        expect(result, equals(42));
+        await channel.shutdown();
+
+        // Clean up.
+        if (server2Started) {
+          await server2.shutdown();
+        }
+        await server1.shutdown();
+      },
+    );
+  });
+}

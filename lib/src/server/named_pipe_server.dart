@@ -195,6 +195,9 @@ class NamedPipeServer extends ConnectionServer {
         incoming.add(message.data);
       } else if (message is _PipeClosed) {
         incoming.close();
+        // Close outgoing too — signals the HTTP/2 layer that the transport
+        // is gone so it doesn't hold the controller open indefinitely.
+        outgoing.close();
         responsePort.close();
       }
     });
@@ -251,7 +254,12 @@ class NamedPipeServer extends ConnectionServer {
     }
 
     // Step 3: Kill the server isolate (now unblocked).
-    _serverIsolate?.kill(priority: Isolate.immediate);
+    // Use beforeNextEvent so pending `finally` blocks (e.g. in
+    // _startPipeReader) get a chance to free native memory before
+    // the isolate is torn down. The dummy client connection in step 2
+    // unblocks the ReadFile call, allowing the isolate to reach its
+    // next event-loop checkpoint.
+    _serverIsolate?.kill(priority: Isolate.beforeNextEvent);
     _serverIsolate = null;
 
     // Step 4: Clean up the receive port AFTER killing the isolate.
@@ -419,6 +427,25 @@ void _spawnConnectionHandler(int hPipe, SendPort mainPort) {
 }
 
 /// Starts reading from a pipe and sending data to the response port.
+///
+/// **Threading model**: This function runs in the server isolate and calls
+/// [ReadFile] with `nullptr` for lpOverlapped (synchronous / blocking mode).
+/// Because [ReadFile] blocks the isolate thread, the isolate's event loop
+/// cannot process incoming [_PipeData] write messages (from
+/// [_spawnConnectionHandler]'s `connectionPort.listen`) until [ReadFile]
+/// returns. This creates a **half-duplex** pattern: reads and writes
+/// alternate rather than executing concurrently.
+///
+/// In practice this works because:
+///  - HTTP/2 framing over the pipe naturally alternates request/response.
+///  - The main isolate buffers outgoing data in its [StreamController] until
+///    the server isolate's event loop drains it.
+///  - Write messages simply queue in the [ReceivePort] and execute as soon as
+///    [ReadFile] yields (either with data or a zero-byte result).
+///
+/// If true full-duplex pipe I/O is needed in the future, the read loop should
+/// be moved to a dedicated isolate (separate from the connection handler) or
+/// use overlapped I/O with an event-based completion model.
 Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
   final buffer = calloc<Uint8>(_kBufferSize);
   final bytesRead = calloc<DWORD>();
@@ -461,7 +488,13 @@ Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
   }
 }
 
-/// Writes data to a pipe.
+/// Writes data to a pipe, handling partial writes.
+///
+/// [WriteFile] can succeed but write fewer bytes than requested when the
+/// pipe's internal buffer is nearly full. A partial write silently drops
+/// the remaining bytes, which corrupts HTTP/2 framing (the receiver
+/// misinterprets the next read boundary). This function loops until all
+/// bytes are written or an error occurs.
 void _writeToPipe(int hPipe, Uint8List data) {
   // Guard against zero-length writes: calloc<Uint8>(0) is undefined
   // behavior (may return nullptr on some platforms).
@@ -475,11 +508,24 @@ void _writeToPipe(int hPipe, Uint8List data) {
       buffer[i] = data[i];
     }
 
-    final success = WriteFile(hPipe, buffer, data.length, bytesWritten, nullptr);
+    var offset = 0;
+    while (offset < data.length) {
+      bytesWritten.value = 0;
+      final remaining = data.length - offset;
+      final success = WriteFile(hPipe, buffer.elementAt(offset), remaining, bytesWritten, nullptr);
 
-    if (success == 0) {
-      final error = GetLastError();
-      stderr.writeln('Pipe write error: $error');
+      if (success == 0) {
+        final error = GetLastError();
+        stderr.writeln('Pipe write error: $error');
+        return;
+      }
+
+      if (bytesWritten.value == 0) {
+        stderr.writeln('Pipe write stalled: WriteFile wrote 0 bytes');
+        return;
+      }
+
+      offset += bytesWritten.value;
     }
   } finally {
     calloc.free(buffer);
