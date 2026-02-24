@@ -306,6 +306,7 @@ void main() {
   group('Named Pipe Transport', () {
     testNamedPipe('basic unary RPC', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
@@ -322,6 +323,7 @@ void main() {
 
     testNamedPipe('server streaming RPC', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
@@ -339,6 +341,7 @@ void main() {
 
     testNamedPipe('client streaming RPC', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
@@ -358,6 +361,7 @@ void main() {
 
     testNamedPipe('bidirectional streaming RPC', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
@@ -377,6 +381,7 @@ void main() {
 
     testNamedPipe('multiple concurrent RPCs', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
@@ -409,6 +414,7 @@ void main() {
           final pipeName =
               'grpc-platform-test-${DateTime.now().millisecondsSinceEpoch}';
           final server = NamedPipeServer.create(services: [EchoService()]);
+          addTearDown(() => server.shutdown());
           await server.serve(pipeName: pipeName);
 
           final channel = NamedPipeClientChannel(
