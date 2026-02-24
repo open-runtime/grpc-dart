@@ -41,7 +41,7 @@ dev_dependencies:
   runtime_ci_tooling:
     git:
       url: git@github.com:open-runtime/runtime_ci_tooling.git
-      tag_pattern: v{{version}}
+      ref: feat/multi-package-support
     version: ^0.12.0
 
   # ==========================================================================
