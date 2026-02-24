@@ -630,37 +630,19 @@ void main() {
   // ===========================================================================
 
   group('Named Pipe Cross-Platform', () {
-    // 17. On non-Windows platforms the testNamedPipe helper returns early,
-    //     meaning the test body never executes. We verify that behaviour by
-    //     running a plain `test()` that checks the platform guard.
-    test('testNamedPipe skips on non-Windows platforms', () {
-      if (Platform.isWindows) {
-        // On Windows, testNamedPipe tests DO run — nothing to assert here
-        // other than confirming the platform detection itself.
-        expect(Platform.isWindows, isTrue);
-      } else {
-        // On macOS/Linux, testNamedPipe should be a no-op.  We cannot
-        // assert that a skipped test "didn't run" from inside another test,
-        // but we CAN verify that the guard logic (Platform.isWindows) works
-        // and that NamedPipeServer.create + serve would throw.
+    // 17. On non-Windows platforms the testNamedPipe helper registers the
+    //     test with skip: 'Named pipes are Windows-only'. We verify the
+    //     underlying platform guard by running a plain `test()`.
+    test('NamedPipeServer.serve() throws UnsupportedError on non-Windows', () {
+      if (!Platform.isWindows) {
+        // On macOS/Linux, NamedPipeServer.serve() should throw since
+        // the Win32 API is unavailable.
         final server = NamedPipeServer.create(services: [EchoService()]);
         expect(
           () => server.serve(pipeName: 'irrelevant'),
           throwsA(isA<UnsupportedError>()),
         );
       }
-    });
-
-    // 18. On macOS/Linux, NamedPipeServer.create().serve() throws
-    //     UnsupportedError. This runs on ALL platforms (plain test()).
-    test('NamedPipeServer.serve() throws UnsupportedError on non-Windows', () {
-      if (!Platform.isWindows) {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        expect(
-          () => server.serve(pipeName: 'any-pipe-name'),
-          throwsA(isA<UnsupportedError>()),
-        );
-      }
-    });
+    }, skip: Platform.isWindows ? 'Only applicable on non-Windows' : null);
   });
 }

@@ -303,7 +303,7 @@ void main() {
       await channel.shutdown();
     });
 
-    testTcpAndUds('server terminate during active streams does not crash', (
+    testTcpAndUds('server shutdown during active streams does not crash', (
       address,
     ) async {
       final server = Server.create(services: [EchoService()]);
@@ -328,8 +328,7 @@ void main() {
       // Let some data flow
       await Future.delayed(const Duration(milliseconds: 30));
 
-      // Terminate (hard kill) while stream is active.
-      // This tests the _terminateStream guard - server.shutdown
+      // Shutdown while stream is active. server.shutdown()
       // calls cancel() on all active handlers, which calls
       // _terminateStream(). If the handler already completed
       // and terminated, the second call must be a no-op.

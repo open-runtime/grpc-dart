@@ -229,9 +229,13 @@ class ServerHandler extends ServiceCall {
     final error = _onMetadata();
     if (error != null) {
       if (!requests.isClosed) {
-        requests
-          ..addError(error)
-          ..close();
+        try {
+          requests
+            ..addError(error)
+            ..close();
+        } catch (e) {
+          logGrpcError('[gRPC] Failed to deliver error to request stream in _startStreamingRequest: $e');
+        }
       }
       _sendError(error);
       _onDone();
@@ -269,7 +273,7 @@ class ServerHandler extends ServiceCall {
           ..addError(error)
           ..close();
       } catch (e) {
-        logGrpcError('[gRPC] Stream closed during _onTimedOut: $e');
+        logGrpcError('[gRPC] Failed to deliver timeout error to request stream in _onTimedOut: $e');
       }
     }
   }
@@ -288,7 +292,7 @@ class ServerHandler extends ServiceCall {
             ..addError(error)
             ..close();
         } catch (e) {
-          logGrpcError('[gRPC] Stream closed during _onDataActive (bad message): $e');
+          logGrpcError('[gRPC] Failed to deliver error to request stream in _onDataActive (bad message): $e');
         }
       }
       return;
@@ -303,7 +307,7 @@ class ServerHandler extends ServiceCall {
             ..addError(error)
             ..close();
         } catch (e) {
-          logGrpcError('[gRPC] Stream closed during _onDataActive (too many requests): $e');
+          logGrpcError('[gRPC] Failed to deliver error to request stream in _onDataActive (too many requests): $e');
         }
       }
       return;
@@ -323,7 +327,7 @@ class ServerHandler extends ServiceCall {
             ..addError(grpcError, trace)
             ..close();
         } catch (e) {
-          logGrpcError('[gRPC] Stream closed during _onDataActive (deserialize): $e');
+          logGrpcError('[gRPC] Failed to deliver error to request stream in _onDataActive (deserialize): $e');
         }
       }
       return;
@@ -332,7 +336,7 @@ class ServerHandler extends ServiceCall {
       try {
         _requests!.add(request);
       } catch (e) {
-        logGrpcError('[gRPC] Stream closed during _onDataActive (add request): $e');
+        logGrpcError('[gRPC] Failed to add request to stream in _onDataActive: $e');
         return;
       }
     }
@@ -360,7 +364,7 @@ class ServerHandler extends ServiceCall {
         } catch (e) {
           // Stream was closed between check and add - ignore this error
           // The handler has already been notified or terminated
-          logGrpcError('[gRPC] Stream closed during error handling in _onResponse: $e');
+          logGrpcError('[gRPC] Failed to deliver error to request stream in _onResponse: $e');
         }
       }
       _sendError(grpcError, trace);
@@ -445,7 +449,7 @@ class ServerHandler extends ServiceCall {
     } catch (e) {
       // Stream is already closed - this can happen during concurrent termination
       // The client is gone, so we can't send the trailers anyway
-      logGrpcError('[gRPC] Stream closed during sendTrailers: $e');
+      logGrpcError('[gRPC] Failed to send trailers (stream may already be closed): $e');
     }
 
     // We're done!
@@ -461,7 +465,13 @@ class ServerHandler extends ServiceCall {
     _timeoutTimer?.cancel();
     isCanceled = true;
     if (_requests != null && !_requests!.isClosed) {
-      _requests!.addError(GrpcError.cancelled('Cancelled'));
+      try {
+        _requests!
+          ..addError(GrpcError.cancelled('Cancelled'))
+          ..close();
+      } catch (e) {
+        logGrpcError('[gRPC] Failed to deliver cancellation to request stream in _onError: $e');
+      }
     }
     _cancelResponseSubscription();
     _incomingSubscription!.cancel();
@@ -483,7 +493,7 @@ class ServerHandler extends ServiceCall {
           _requests!.addError(error);
         } catch (e) {
           // Stream was closed - ignore this error
-          logGrpcError('[gRPC] Stream closed in _onDoneExpected: $e');
+          logGrpcError('[gRPC] Failed to deliver error to request stream in _onDoneExpected: $e');
         }
       }
     }
@@ -491,7 +501,11 @@ class ServerHandler extends ServiceCall {
   }
 
   void _onDone() {
-    _requests?.close();
+    try {
+      _requests?.close();
+    } catch (e) {
+      logGrpcError('[gRPC] Failed to close request stream in _onDone: $e');
+    }
     _incomingSubscription!.cancel();
   }
 
@@ -527,9 +541,10 @@ class ServerHandler extends ServiceCall {
     _streamTerminated = true;
     try {
       _stream.terminate();
-    } catch (_) {
+    } catch (e) {
       // Stream sink may already be closed (e.g. response completed with
       // endStream: true before shutdown). Safe to ignore.
+      logGrpcError('[gRPC] Failed to terminate stream (may already be closed): $e');
     }
   }
 }

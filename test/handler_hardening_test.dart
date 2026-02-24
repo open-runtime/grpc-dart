@@ -168,9 +168,17 @@ void main() {
       }
 
       final responseCompleter = Completer<void>();
+      var sawGrpcStatus = false;
 
       harness.fromServer.stream.listen(
-        (_) {},
+        (message) {
+          if (message is HeadersStreamMessage) {
+            final headers = headersToMap(message.headers);
+            if (headers.containsKey('grpc-status')) {
+              sawGrpcStatus = true;
+            }
+          }
+        },
         onError: (_) {},
         onDone: () {
           if (!responseCompleter.isCompleted) {
@@ -189,7 +197,9 @@ void main() {
         onTimeout: () => fail('Timed out waiting for response'),
       );
 
-      // Test passes if we reach here without an unhandled exception.
+      // Verify the server sent a proper gRPC status (not just silently survived)
+      expect(sawGrpcStatus, isTrue,
+          reason: 'Server should have sent grpc-status in trailers');
     });
   });
 
@@ -272,9 +282,17 @@ void main() {
       }
 
       final responseCompleter = Completer<void>();
+      var sawOkStatus = false;
 
       harness.fromServer.stream.listen(
-        (_) {},
+        (message) {
+          if (message is HeadersStreamMessage) {
+            final headers = headersToMap(message.headers);
+            if (headers['grpc-status'] == '0') {
+              sawOkStatus = true;
+            }
+          }
+        },
         onError: (_) {},
         onDone: () {
           if (!responseCompleter.isCompleted) {
@@ -301,8 +319,9 @@ void main() {
       // Give the timeout timer a chance to fire after the stream closed
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // Test passes if we get here without a crash. The timer fires on an
-      // already-completed handler and is silently ignored.
+      // Verify the normal response completed successfully before the timer fired
+      expect(sawOkStatus, isTrue,
+          reason: 'Handler should have completed with OK status before timeout fired');
     });
   });
 
@@ -367,14 +386,20 @@ void main() {
         onTimeout: () => fail('Timed out waiting for response'),
       );
 
-      // Verify no "Cannot add event after closing" error was captured
-      final hasBadStateError = harness.capturedErrors.any(
-        (e) => e.message?.contains('Cannot add event after closing') ?? false,
-      );
+      // The key assertion: we reached here without an unhandled StateError
+      // crashing the test. Before the fix, sending data to a closed
+      // _requests stream would throw "Cannot add event after closing" as
+      // an unhandled exception. The try-catch guards in _onDataActive
+      // now catch this and log it via logGrpcError (not the error handler),
+      // so the test completing is itself the proof.
+      //
+      // Additionally verify the handler's intentional error was reported:
       expect(
-        hasBadStateError,
-        isFalse,
-        reason: 'Should not have "Cannot add event after closing" error',
+        harness.capturedErrors.any(
+          (e) => e.message?.contains('Immediate failure') ?? false,
+        ),
+        isTrue,
+        reason: 'Handler should have reported the intentional GrpcError',
       );
     });
   });
@@ -395,7 +420,7 @@ void main() {
 
     test('server shutdown after normal completion does not crash', () async {
       // A handler that completes normally. After it finishes, we also
-      // trigger server shutdown which calls cancel() -> _terminateStream().
+      // call cancel() which calls _terminateStream().
       // The stream was already terminated by the normal completion path,
       // so the second terminate must be a no-op.
       Future<int> methodHandler(ServiceCall call, Future<int> request) async {
@@ -403,9 +428,17 @@ void main() {
       }
 
       final responseCompleter = Completer<void>();
+      var sawOkStatus = false;
 
       harness.fromServer.stream.listen(
-        (_) {},
+        (message) {
+          if (message is HeadersStreamMessage) {
+            final headers = headersToMap(message.headers);
+            if (headers['grpc-status'] == '0') {
+              sawOkStatus = true;
+            }
+          }
+        },
         onError: (_) {},
         onDone: () {
           if (!responseCompleter.isCompleted) {
@@ -424,10 +457,14 @@ void main() {
         onTimeout: () => fail('Timed out waiting for response'),
       );
 
-      // The server completed normally. Now simulate what happens when
+      expect(sawOkStatus, isTrue,
+          reason: 'Handler should have completed with OK status');
+
+      // Now exercise the double-terminate guard:
       // Server.shutdown() iterates over active handlers and calls cancel().
-      // This should not crash even though the stream is already done.
-      // (The _streamTerminated guard prevents double-terminate.)
+      // Even though this handler already completed and terminated its stream,
+      // shutdownActiveConnections() must be safe.
+      await (harness.server as Server).shutdown();
     });
   });
 
@@ -461,9 +498,17 @@ void main() {
         }
 
         final responseCompleter = Completer<void>();
+        var sawGrpcStatus = false;
 
         harness.fromServer.stream.listen(
-          (_) {},
+          (message) {
+            if (message is HeadersStreamMessage) {
+              final headers = headersToMap(message.headers);
+              if (headers.containsKey('grpc-status')) {
+                sawGrpcStatus = true;
+              }
+            }
+          },
           onError: (_) {},
           onDone: () {
             if (!responseCompleter.isCompleted) {
@@ -484,8 +529,9 @@ void main() {
           onTimeout: () => fail('Timed out waiting for response'),
         );
 
-        // Test passes if the server didn't crash. The serialization error
-        // was caught and converted to a proper gRPC error response.
+        // Verify the server sent an error status (not just silently survived)
+        expect(sawGrpcStatus, isTrue,
+            reason: 'Server should have sent grpc-status for serialization error');
       },
     );
   });

@@ -18,19 +18,19 @@ import 'package:test/test.dart';
 
 /// Test functionality for Unix domain socket.
 void testUds(String name, FutureOr<void> Function(InternetAddress) testCase) {
-  if (Platform.isWindows) {
-    return;
-  }
-
-  test(name, () async {
-    final tempDir = await Directory.systemTemp.createTemp();
-    final address = InternetAddress(
-      '${tempDir.path}/socket',
-      type: InternetAddressType.unix,
-    );
-    addTearDown(() => tempDir.delete(recursive: true));
-    await testCase(address);
-  });
+  test(
+    name,
+    skip: Platform.isWindows ? 'Unix domain sockets are not supported on Windows' : null,
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp();
+      final address = InternetAddress(
+        '${tempDir.path}/socket',
+        type: InternetAddressType.unix,
+      );
+      addTearDown(() => tempDir.delete(recursive: true));
+      await testCase(address);
+    },
+  );
 }
 
 /// Test functionality for both TCP and Unix domain sockets.
@@ -65,13 +65,10 @@ void testNamedPipe(
   FutureOr<void> Function(String pipeName) testCase, {
   String basePipeName = 'grpc-test',
 }) {
-  if (!Platform.isWindows) {
-    return;
-  }
-
   test(
     '$name (over named pipe)',
     timeout: const Timeout(Duration(seconds: 30)),
+    skip: Platform.isWindows ? null : 'Named pipes are Windows-only',
     () async {
       // Generate unique pipe name to avoid conflicts between parallel tests.
       //

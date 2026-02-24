@@ -356,13 +356,14 @@ class Server extends ConnectionServer {
   }
 
   Future<void> shutdown() async {
-    await shutdownActiveConnections();
-    await Future.wait([
-      if (_insecureServer != null) _insecureServer!.close(),
-      if (_secureServer != null) _secureServer!.close(),
-    ]);
+    // Close server sockets first to stop accepting new connections,
+    // then drain active connections.
+    final insecure = _insecureServer;
+    final secure = _secureServer;
     _insecureServer = null;
     _secureServer = null;
+    await Future.wait([if (insecure != null) insecure.close(), if (secure != null) secure.close()]);
+    await shutdownActiveConnections();
   }
 }
 

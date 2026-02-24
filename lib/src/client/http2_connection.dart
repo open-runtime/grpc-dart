@@ -154,7 +154,8 @@ class Http2ClientConnection implements connection.ClientConnection {
     final shouldRefresh = _connectionLifeTimer.elapsed > options.connectionTimeout;
     if (shouldRefresh) {
       _transportConnection!.finish();
-      keepAliveManager?.onTransportTermination();
+      // Note: onTransportTermination is called by _disconnect() inside
+      // _abandonConnection(), so we don't call it here to avoid double-call.
     }
     if (!isHealthy || shouldRefresh) {
       _abandonConnection();
@@ -254,7 +255,8 @@ class Http2ClientConnection implements connection.ClientConnection {
     if (_timer == null || _state != ConnectionState.ready) return;
     _cancelTimer();
     _transportConnection?.finish().catchError((_) {}); // TODO(jakobr): Log error.
-    keepAliveManager?.onTransportTermination();
+    // Note: onTransportTermination is called by _disconnect() below,
+    // so we don't call it here to avoid double-call.
     _disconnect();
     _setState(ConnectionState.idle);
   }
