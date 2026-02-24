@@ -17,7 +17,6 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io' show Platform, stderr;
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:http2/transport.dart';
@@ -52,6 +51,27 @@ import 'service.dart';
 /// // Shutdown when done
 /// await server.shutdown();
 /// ```
+///
+/// ## Architecture
+///
+/// The server uses a two-isolate architecture:
+///
+/// - **Server isolate**: Runs the accept loop (`CreateNamedPipe` +
+///   `ConnectNamedPipe`). This isolate's only job is to accept connections
+///   and send the raw Win32 pipe handle to the main isolate. It blocks on
+///   `ConnectNamedPipe` which is a synchronous Win32 call — this is fine
+///   because the isolate does nothing else while waiting.
+///
+/// - **Main isolate**: Handles all data I/O (reads and writes) for every
+///   connection. Uses `PeekNamedPipe` polling to check for available data
+///   before calling `ReadFile`, keeping the event loop responsive. This is
+///   critical because the main isolate's event loop must remain unblocked
+///   to process HTTP/2 framing, handle timeouts, and manage multiple
+///   concurrent connections.
+///
+/// The previous architecture (data I/O in the server isolate) deadlocked
+/// because `ConnectNamedPipe` blocked the server isolate's event loop,
+/// preventing `PeekNamedPipe` polling and `WriteFile` calls from executing.
 ///
 /// ## Security
 ///
@@ -90,6 +110,11 @@ class NamedPipeServer extends ConnectionServer {
   /// Completer that resolves when the server isolate has created the first
   /// pipe instance and is ready to accept client connections.
   Completer<void>? _readyCompleter;
+
+  /// Active pipe streams for connections being served.
+  /// Tracked so shutdown() can close them all, causing their PeekNamedPipe
+  /// read loops to exit and their Win32 handles to be cleaned up.
+  final List<_ServerPipeStream> _activeStreams = [];
 
   /// Create a named pipe server for the given [services].
   NamedPipeServer.create({
@@ -178,9 +203,13 @@ class NamedPipeServer extends ConnectionServer {
       if (!(_readyCompleter?.isCompleted ?? true)) {
         _readyCompleter!.complete();
       }
-    } else if (message is _PipeConnection) {
+    } else if (message is _PipeHandle) {
       if (_isRunning) {
-        _handleNewConnection(message);
+        _handleNewConnection(message.handle);
+      } else {
+        // Server is shutting down — clean up the handle immediately.
+        DisconnectNamedPipe(message.handle);
+        CloseHandle(message.handle);
       }
     } else if (message is _ServerError) {
       // If we haven't signaled readiness yet, propagate the error to serve().
@@ -193,42 +222,21 @@ class NamedPipeServer extends ConnectionServer {
   }
 
   /// Handles a new pipe connection.
-  void _handleNewConnection(_PipeConnection connection) {
-    // Create streams for the connection
-    // ignore: close_sinks, closed via responsePort listener lifecycle
-    final incoming = StreamController<List<int>>();
-    // ignore: close_sinks, closed when connection ends
-    final outgoing = StreamController<List<int>>();
+  ///
+  /// All data I/O (reads and writes) runs in the main isolate using
+  /// [PeekNamedPipe] polling for reads and direct [WriteFile] for writes.
+  /// Win32 pipe handles are valid across isolates (same process), so the
+  /// handle obtained by ConnectNamedPipe in the server isolate can be used
+  /// here in the main isolate.
+  void _handleNewConnection(int hPipe) {
+    final stream = _ServerPipeStream(hPipe);
+    _activeStreams.add(stream);
 
-    // Set up bidirectional communication with the isolate
-    final responsePort = ReceivePort();
-    responsePort.listen((message) {
-      if (message is _PipeData) {
-        incoming.add(message.data);
-      } else if (message is _PipeClosed) {
-        incoming.close();
-        // Close outgoing too — signals the HTTP/2 layer that the transport
-        // is gone so it doesn't hold the controller open indefinitely.
-        outgoing.close();
-        responsePort.close();
-      }
-    });
-
-    // Forward outgoing data to the isolate
-    outgoing.stream.listen(
-      (data) {
-        connection.sendPort.send(_PipeData(Uint8List.fromList(data)));
-      },
-      onDone: () {
-        connection.sendPort.send(_PipeClosed());
-      },
-    );
-
-    // Tell the connection handler where to send incoming data
-    connection.sendPort.send(_SetResponsePort(responsePort.sendPort));
+    // Remove from tracking when the stream closes (broken pipe, shutdown, etc.)
+    stream._closeFuture.then((_) => _activeStreams.remove(stream));
 
     // Create HTTP/2 connection and serve it
-    final transportConnection = ServerTransportConnection.viaStreams(incoming.stream, outgoing.sink);
+    final transportConnection = ServerTransportConnection.viaStreams(stream.incoming, stream.outgoingSink);
 
     serveConnection(connection: transportConnection);
   }
@@ -237,21 +245,30 @@ class NamedPipeServer extends ConnectionServer {
   ///
   /// This method:
   /// 1. Stops accepting new connections (`_isRunning = false`)
-  /// 2. Opens a dummy client connection to unblock the server isolate's
+  /// 2. Closes all active pipe streams (breaking their PeekNamedPipe read
+  ///    loops and cleaning up Win32 handles)
+  /// 3. Opens a dummy client connection to unblock the server isolate's
   ///    blocking ConnectNamedPipe call (Isolate.kill cannot interrupt FFI)
-  /// 3. Kills the server isolate
-  /// 4. Cleans up the receive port (last — the isolate may still send to it
-  ///    between steps 2 and 3)
+  /// 4. Kills the server isolate
+  /// 5. Cleans up the receive port
   Future<void> shutdown() async {
     if (!_isRunning) return;
 
     // Step 1: Stop handling new connections. _handleIsolateMessage checks
-    // this flag before processing _PipeConnection messages, so any straggler
+    // this flag before processing _PipeHandle messages, so any straggler
     // messages from the isolate are safely ignored.
     _isRunning = false;
     final pipeName = _pipeName;
 
-    // Step 2: Unblock the server isolate's blocking ConnectNamedPipe call.
+    // Step 2: Close all active pipe streams. This causes PeekNamedPipe to
+    // fail in active read loops (the handle becomes invalid), and cleans up
+    // Win32 handles via FlushFileBuffers + DisconnectNamedPipe + CloseHandle.
+    for (final stream in _activeStreams.toList()) {
+      stream.close();
+    }
+    _activeStreams.clear();
+
+    // Step 3: Unblock the server isolate's blocking ConnectNamedPipe call.
     // ConnectNamedPipe is a synchronous Win32 call that blocks the isolate's
     // thread — Isolate.kill() cannot interrupt it. Opening a dummy client
     // connection satisfies ConnectNamedPipe, allowing the isolate to reach
@@ -259,22 +276,19 @@ class NamedPipeServer extends ConnectionServer {
     //
     // IMPORTANT: Do this BEFORE closing the receive port. The dummy
     // connection unblocks the isolate which may try to send a
-    // _PipeConnection message — the port must still be open for that send
+    // _PipeHandle message — the port must still be open for that send
     // (it will be a no-op because _isRunning is false).
     if (pipeName != null) {
       _connectDummyClient(pipeName);
     }
 
-    // Step 3: Kill the server isolate (now unblocked).
-    // Use beforeNextEvent so pending `finally` blocks (e.g. in
-    // _startPipeReader) get a chance to free native memory before
-    // the isolate is torn down. The dummy client connection in step 2
-    // unblocks the ReadFile call, allowing the isolate to reach its
-    // next event-loop checkpoint.
+    // Step 4: Kill the server isolate (now unblocked).
+    // Use beforeNextEvent so pending `finally` blocks get a chance to
+    // free native memory before the isolate is torn down.
     _serverIsolate?.kill(priority: Isolate.beforeNextEvent);
     _serverIsolate = null;
 
-    // Step 4: Clean up the receive port AFTER killing the isolate.
+    // Step 5: Clean up the receive port AFTER killing the isolate.
     await _receivePortSubscription?.cancel();
     _receivePortSubscription = null;
     _receivePort?.close();
@@ -304,6 +318,180 @@ class NamedPipeServer extends ConnectionServer {
 }
 
 // =============================================================================
+// Server Pipe Stream (Main Isolate)
+// =============================================================================
+
+/// Bidirectional stream wrapper for a server-side named pipe connection.
+///
+/// Runs entirely in the **main isolate** — NOT in the server isolate.
+/// This is critical because the server isolate's event loop is blocked by
+/// [ConnectNamedPipe] waiting for the next client. If reads/writes ran in
+/// the server isolate, `await Future.delayed(...)` in the PeekNamedPipe
+/// polling loop could never resume, deadlocking all data transfer.
+///
+/// The main isolate's event loop is never blocked by FFI calls (PeekNamedPipe
+/// returns immediately, ReadFile only runs when data is confirmed available),
+/// so polling, timeouts, and concurrent connections all work correctly.
+class _ServerPipeStream {
+  final int _handle;
+
+  final StreamController<List<int>> _incomingController = StreamController<List<int>>();
+  final StreamController<List<int>> _outgoingController = StreamController<List<int>>();
+
+  bool _isClosed = false;
+
+  /// Completes when this stream is closed (for external tracking).
+  final Completer<void> _closeCompleter = Completer<void>();
+
+  /// Future that completes when this stream closes.
+  Future<void> get _closeFuture => _closeCompleter.future;
+
+  _ServerPipeStream(this._handle) {
+    // Start reading in a microtask to avoid blocking the constructor.
+    Future.microtask(_readLoop);
+
+    // Forward outgoing data to the pipe via WriteFile.
+    _outgoingController.stream.listen(
+      _writeData,
+      onDone: close,
+      onError: (error) {
+        _incomingController.addError(error);
+        close();
+      },
+    );
+  }
+
+  /// Stream of incoming bytes from the pipe.
+  Stream<List<int>> get incoming => _incomingController.stream;
+
+  /// Sink for outgoing bytes to the pipe.
+  StreamSink<List<int>> get outgoingSink => _outgoingController.sink;
+
+  /// Continuously reads from the pipe using PeekNamedPipe polling.
+  ///
+  /// [PeekNamedPipe] returns immediately without blocking, so the main
+  /// isolate's event loop remains responsive. [ReadFile] is only called
+  /// when data is confirmed available, making it effectively non-blocking.
+  ///
+  /// The 1ms delay between polls yields to the full event queue (timers,
+  /// I/O callbacks, incoming messages), allowing concurrent connections
+  /// and HTTP/2 writes to proceed between read checks.
+  Future<void> _readLoop() async {
+    final buffer = calloc<Uint8>(kNamedPipeBufferSize);
+    final bytesRead = calloc<DWORD>();
+    final peekAvail = calloc<DWORD>();
+
+    try {
+      while (!_isClosed) {
+        // Non-blocking check for available data.
+        peekAvail.value = 0;
+        final peekResult = PeekNamedPipe(_handle, nullptr, 0, nullptr, peekAvail, nullptr);
+
+        if (peekResult == 0) {
+          final error = GetLastError();
+          if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
+            stderr.writeln('Server pipe peek error: $error');
+          }
+          break;
+        }
+
+        if (peekAvail.value == 0) {
+          // No data yet — yield to event loop.
+          await Future.delayed(const Duration(milliseconds: 1));
+          continue;
+        }
+
+        // Data confirmed available — ReadFile returns immediately.
+        bytesRead.value = 0;
+        final success = ReadFile(_handle, buffer, kNamedPipeBufferSize, bytesRead, nullptr);
+
+        if (success == 0) {
+          final error = GetLastError();
+          if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
+            stderr.writeln('Server pipe read error: $error');
+          }
+          break;
+        }
+
+        final count = bytesRead.value;
+        if (count > 0) {
+          _incomingController.add(copyFromNativeBuffer(buffer, count));
+        }
+      }
+    } finally {
+      calloc.free(buffer);
+      calloc.free(bytesRead);
+      calloc.free(peekAvail);
+      close();
+    }
+  }
+
+  /// Writes data to the pipe, handling partial writes.
+  ///
+  /// [WriteFile] can succeed but write fewer bytes than requested when the
+  /// pipe's internal buffer is nearly full. A partial write silently drops
+  /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
+  /// until all bytes are written or an error occurs.
+  void _writeData(List<int> data) {
+    if (_isClosed) return;
+
+    // Guard against zero-length writes: calloc<Uint8>(0) is undefined
+    // behavior (may return nullptr on some platforms).
+    if (data.isEmpty) return;
+
+    final buffer = calloc<Uint8>(data.length);
+    final bytesWritten = calloc<DWORD>();
+
+    try {
+      copyToNativeBuffer(buffer, data);
+
+      var offset = 0;
+      while (offset < data.length) {
+        bytesWritten.value = 0;
+        final remaining = data.length - offset;
+        final success = WriteFile(_handle, buffer + offset, remaining, bytesWritten, nullptr);
+
+        if (success == 0) {
+          final error = GetLastError();
+          stderr.writeln('Server pipe write error: $error');
+          close();
+          return;
+        }
+
+        if (bytesWritten.value == 0) {
+          stderr.writeln('Server pipe write stalled: 0 bytes written');
+          close();
+          return;
+        }
+
+        offset += bytesWritten.value;
+      }
+    } finally {
+      calloc.free(buffer);
+      calloc.free(bytesWritten);
+    }
+  }
+
+  /// Closes the pipe stream and cleans up the Win32 handle.
+  void close() {
+    if (_isClosed) return;
+    _isClosed = true;
+
+    _incomingController.close();
+    _outgoingController.close();
+
+    // Clean up the Win32 pipe handle.
+    FlushFileBuffers(_handle);
+    DisconnectNamedPipe(_handle);
+    CloseHandle(_handle);
+
+    if (!_closeCompleter.isCompleted) {
+      _closeCompleter.complete();
+    }
+  }
+}
+
+// =============================================================================
 // Isolate Communication Messages
 // =============================================================================
 
@@ -319,28 +507,15 @@ class _AcceptLoopConfig {
 /// ready to accept client connections.
 class _ServerReady {}
 
-/// Message indicating a new pipe connection.
-class _PipeConnection {
-  final SendPort sendPort;
+/// Message carrying a raw Win32 pipe handle for a newly accepted connection.
+///
+/// The handle was obtained by [ConnectNamedPipe] in the server isolate but
+/// is valid in the main isolate because Dart isolates share the same OS
+/// process (and therefore the same Win32 handle table).
+class _PipeHandle {
+  final int handle;
 
-  _PipeConnection(this.sendPort);
-}
-
-/// Message containing pipe data.
-class _PipeData {
-  final Uint8List data;
-
-  _PipeData(this.data);
-}
-
-/// Message indicating the pipe is closed.
-class _PipeClosed {}
-
-/// Message to set the response port for a connection.
-class _SetResponsePort {
-  final SendPort sendPort;
-
-  _SetResponsePort(this.sendPort);
+  _PipeHandle(this.handle);
 }
 
 /// Message indicating a server error.
@@ -351,7 +526,7 @@ class _ServerError {
 }
 
 // =============================================================================
-// Server Isolate
+// Server Isolate (Accept Loop Only)
 // =============================================================================
 
 /// The accept loop running in a separate isolate.
@@ -359,6 +534,13 @@ class _ServerError {
 /// Creates named pipe instances in a loop, waiting for client connections.
 /// Sends [_ServerReady] after the first pipe is created so the main isolate
 /// knows clients can connect.
+///
+/// **This isolate only accepts connections.** All data I/O happens in the
+/// main isolate. This is because [ConnectNamedPipe] blocks the isolate's
+/// entire thread (it's a synchronous Win32 call), which would prevent any
+/// event-loop-based operations (like [PeekNamedPipe] polling or [WriteFile]
+/// processing) from running. By isolating the blocking accept call, the
+/// main isolate's event loop remains responsive for concurrent data I/O.
 Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   final pipePath = namedPipePath(config.pipeName);
   // Use calloc allocator so the matching calloc.free() is correct.
@@ -402,148 +584,12 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         continue;
       }
 
-      // Handle this connection in a separate handler
-      _spawnConnectionHandler(hPipe, config.mainPort);
+      // Send the raw handle to the main isolate for data I/O.
+      // The main isolate will handle all reads/writes using PeekNamedPipe
+      // polling, keeping its event loop responsive.
+      config.mainPort.send(_PipeHandle(hPipe));
     }
   } finally {
     calloc.free(pipePathPtr);
-  }
-}
-
-/// Spawns a handler for a single pipe connection.
-void _spawnConnectionHandler(int hPipe, SendPort mainPort) {
-  // Create a port for this connection's communication
-  final connectionPort = ReceivePort();
-  SendPort? responsePort;
-
-  // Notify main isolate of new connection
-  mainPort.send(_PipeConnection(connectionPort.sendPort));
-
-  // Handle messages for this connection
-  connectionPort.listen((message) {
-    if (message is _SetResponsePort) {
-      responsePort = message.sendPort;
-      // Start reading from the pipe
-      _startPipeReader(hPipe, responsePort!);
-    } else if (message is _PipeData) {
-      // Write data to the pipe
-      _writeToPipe(hPipe, message.data);
-    } else if (message is _PipeClosed) {
-      // Close the pipe
-      FlushFileBuffers(hPipe);
-      DisconnectNamedPipe(hPipe);
-      CloseHandle(hPipe);
-      connectionPort.close();
-    }
-  });
-}
-
-/// Starts reading from a pipe and sending data to the response port.
-///
-/// Uses [PeekNamedPipe] to poll for data availability before calling
-/// [ReadFile]. This enables **full-duplex** communication: the isolate's
-/// event loop can process incoming write messages (from the main isolate)
-/// between read polls, rather than being blocked indefinitely by ReadFile.
-///
-/// Without PeekNamedPipe, ReadFile blocks the isolate thread, preventing
-/// the event loop from processing _PipeData write messages. This created
-/// a half-duplex pattern where reads and writes had to alternate. With
-/// polling, both directions can proceed whenever data is available.
-Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
-  final buffer = calloc<Uint8>(kNamedPipeBufferSize);
-  final bytesRead = calloc<DWORD>();
-  final peekAvail = calloc<DWORD>();
-
-  try {
-    while (true) {
-      // Non-blocking check for available data. PeekNamedPipe returns
-      // immediately, allowing the isolate's event loop to process
-      // incoming write messages between polls.
-      peekAvail.value = 0;
-      final peekResult = PeekNamedPipe(hPipe, nullptr, 0, nullptr, peekAvail, nullptr);
-
-      if (peekResult == 0) {
-        final error = GetLastError();
-        if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
-          stderr.writeln('Pipe peek error: $error');
-        }
-        break;
-      }
-
-      if (peekAvail.value == 0) {
-        // No data yet — yield to event loop so write messages can be
-        // processed. 1ms delay yields to the full event queue (timers,
-        // I/O callbacks), not just microtasks.
-        await Future.delayed(const Duration(milliseconds: 1));
-        continue;
-      }
-
-      // Data confirmed available — ReadFile returns immediately.
-      bytesRead.value = 0;
-      final success = ReadFile(hPipe, buffer, kNamedPipeBufferSize, bytesRead, nullptr);
-
-      if (success == 0) {
-        final error = GetLastError();
-        if (error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA) {
-          break;
-        }
-        stderr.writeln('Pipe read error: $error');
-        break;
-      }
-
-      final count = bytesRead.value;
-      if (count > 0) {
-        final data = copyFromNativeBuffer(buffer, count);
-        responsePort.send(_PipeData(data));
-      }
-    }
-  } finally {
-    calloc.free(buffer);
-    calloc.free(bytesRead);
-    calloc.free(peekAvail);
-    responsePort.send(_PipeClosed());
-  }
-}
-
-/// Writes data to a pipe, handling partial writes.
-///
-/// [WriteFile] can succeed but write fewer bytes than requested when the
-/// pipe's internal buffer is nearly full. A partial write silently drops
-/// the remaining bytes, which corrupts HTTP/2 framing (the receiver
-/// misinterprets the next read boundary). This function loops until all
-/// bytes are written or an error occurs.
-void _writeToPipe(int hPipe, Uint8List data) {
-  // Guard against zero-length writes: calloc<Uint8>(0) is undefined
-  // behavior (may return nullptr on some platforms).
-  if (data.isEmpty) return;
-
-  final buffer = calloc<Uint8>(data.length);
-  final bytesWritten = calloc<DWORD>();
-
-  try {
-    copyToNativeBuffer(buffer, data);
-
-    var offset = 0;
-    while (offset < data.length) {
-      bytesWritten.value = 0;
-      final remaining = data.length - offset;
-      final success = WriteFile(hPipe, buffer + offset, remaining, bytesWritten, nullptr);
-
-      if (success == 0) {
-        final error = GetLastError();
-        stderr.writeln('Pipe write error: $error');
-        return;
-      }
-
-      if (bytesWritten.value == 0) {
-        stderr.writeln('Pipe write stalled: WriteFile wrote 0 bytes');
-        return;
-      }
-
-      offset += bytesWritten.value;
-    }
-  } finally {
-    calloc.free(buffer);
-    calloc.free(bytesWritten);
   }
 }
