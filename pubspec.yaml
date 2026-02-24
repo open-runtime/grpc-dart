@@ -42,7 +42,7 @@ dev_dependencies:
     git:
       url: git@github.com:open-runtime/runtime_ci_tooling.git
       tag_pattern: v{{version}}
-    version: ^0.11.0
+    version: ^0.12.0
 
   # ==========================================================================
   # Direct pub.dev dev dependencies
