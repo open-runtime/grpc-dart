@@ -119,9 +119,16 @@ void main() {
       );
 
       final client = EchoClient(channel);
-      final result = await client.clientStream(
-        Stream.fromIterable([1, 2, 3, 4, 5]),
-      );
+      // Use a controller with event-loop yields to prevent HTTP/2
+      // flow-control deadlock on UDS transports.
+      final ctrl = StreamController<int>();
+      () async {
+        for (final v in [1, 2, 3, 4, 5]) {
+          ctrl.add(v);
+        }
+        await ctrl.close();
+      }();
+      final result = await client.clientStream(ctrl.stream);
       expect(result, equals(15)); // Sum of 1+2+3+4+5
 
       await channel.shutdown();
@@ -333,8 +340,20 @@ void main() {
       final client = EchoClient(channel);
       // 50 items with values cycling 1..5. Sum = 15 × 10 = 150.
       // Stays within single-byte encoding (≤ 255).
+      //
+      // Use a controller with event-loop yields to prevent HTTP/2
+      // flow-control deadlock on UDS (same pattern as bidi tests).
+      final ctrl = StreamController<int>();
+      () async {
+        for (var i = 0; i < 50; i++) {
+          ctrl.add((i % 5) + 1);
+          if (i % 10 == 0) await Future.delayed(Duration.zero);
+        }
+        await ctrl.close();
+      }();
+
       final result = await client.clientStream(
-        Stream.fromIterable(List.generate(50, (i) => (i % 5) + 1)),
+        ctrl.stream,
         options: CallOptions(compression: const GzipCodec()),
       );
       expect(result, equals(150));
@@ -809,9 +828,17 @@ void main() {
         );
 
         final client = EchoClient(channel);
-        final results = await client
-            .bidiStream(Stream.fromIterable(List.generate(50, (i) => i + 1)))
-            .toList();
+        // Use a controller with event-loop yields to prevent flow-control
+        // deadlock (same pattern as TCP/UDS bidi tests).
+        final ctrl = StreamController<int>();
+        () async {
+          for (var i = 0; i < 50; i++) {
+            ctrl.add(i + 1);
+            if (i % 10 == 0) await Future.delayed(Duration.zero);
+          }
+          await ctrl.close();
+        }();
+        final results = await client.bidiStream(ctrl.stream).toList();
         expect(results, equals(List.generate(50, (i) => (i + 1) * 2)));
 
         await channel.shutdown();
