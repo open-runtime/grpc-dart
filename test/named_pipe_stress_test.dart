@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba
+// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba.,
 // Pieces.app. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
