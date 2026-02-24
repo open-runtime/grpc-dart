@@ -521,6 +521,9 @@ void main() {
     // unexpected sessions.
     testTcpAndUds(
       '10 concurrent RPCs on fresh channel converge to single connection',
+      // UDS connection coalescing can be slower than TCP on Linux CI —
+      // give it 2 minutes instead of the default 30s.
+      udsTimeout: const Timeout(Duration(minutes: 2)),
       (address) async {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);

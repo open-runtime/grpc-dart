@@ -21,6 +21,37 @@ import 'package:grpc/src/client/connection.dart';
 import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
 
+/// Paced stream producer that yields to the event loop periodically.
+///
+/// Use in flow-control-sensitive contexts (client streams, bidi streams)
+/// instead of [Stream.fromIterable] to avoid exhausting HTTP/2 flow-control
+/// windows. [Stream.fromIterable] delivers all items synchronously in a
+/// single microtask, which can deadlock on transports with limited buffering
+/// (e.g. Unix domain sockets, named pipes).
+///
+/// **Yield semantics**: After every [yieldEvery] items, the generator
+/// performs `await Future.delayed(Duration.zero)` so the event loop can
+/// process HTTP/2 frames (DATA, WINDOW_UPDATE). This allows the peer to
+/// consume data and send flow-control updates before more data is produced.
+///
+/// **Recommended usage**:
+/// - `yieldEvery: 1` for bidi streams, compression, or large payloads
+///   (both directions compete for window space).
+/// - `yieldEvery: 5` to `yieldEvery: 10` for client-only streams with small
+///   messages.
+/// - Prefer [pacedStream] over manual [StreamController] loops in tests
+///   when the values are known upfront.
+Stream<T> pacedStream<T>(Iterable<T> values, {int yieldEvery = 10}) async* {
+  var count = 0;
+  for (final value in values) {
+    yield value;
+    count++;
+    if (count % yieldEvery == 0) {
+      await Future.delayed(Duration.zero);
+    }
+  }
+}
+
 // =============================================================================
 // Shared TestClientChannel (used by all end-to-end test files)
 // =============================================================================
@@ -62,9 +93,14 @@ TestClientChannel createTestChannel(
 }
 
 /// Test functionality for Unix domain socket.
-void testUds(String name, FutureOr<void> Function(InternetAddress) testCase) {
+void testUds(
+  String name,
+  FutureOr<void> Function(InternetAddress) testCase, {
+  Timeout? timeout,
+}) {
   test(
     name,
+    timeout: timeout,
     skip: Platform.isWindows
         ? 'Unix domain sockets are not supported on Windows'
         : null,
@@ -85,13 +121,14 @@ void testTcpAndUds(
   String name,
   FutureOr<void> Function(InternetAddress) testCase, {
   String host = 'localhost',
+  Timeout? udsTimeout,
 }) {
   test(name, () async {
     final address = await InternetAddress.lookup(host);
     await testCase(address.first);
   });
 
-  testUds('$name (over uds)', testCase);
+  testUds('$name (over uds)', testCase, timeout: udsTimeout);
 }
 
 /// Monotonically increasing counter used by [testNamedPipe] to guarantee

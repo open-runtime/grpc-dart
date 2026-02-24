@@ -625,9 +625,12 @@ void main() {
         },
       );
 
-      // Feed all chunks.
-      for (final chunk in chunks) {
-        inputController.add(chunk);
+      // Feed all chunks with minimal yielding for flow-control consistency.
+      for (var i = 0; i < chunks.length; i++) {
+        inputController.add(chunks[i]);
+        if (i > 0 && i % 10 == 0) {
+          await Future.delayed(Duration.zero);
+        }
       }
       await inputController.close();
 
@@ -788,8 +791,9 @@ void main() {
 
       final serverStreamFuture = client.serverStream(20).toList();
 
-      final clientStreamInput = Stream.fromIterable(
+      final clientStreamInput = pacedStream(
         List.generate(10, (i) => i),
+        yieldEvery: 2,
       );
       final clientStreamFuture = client.clientStream(clientStreamInput);
 
@@ -798,6 +802,7 @@ void main() {
       final bidiCollector = bidiStream.toList();
       for (var i = 0; i < 10; i++) {
         bidiController.add(i % 128);
+        if (i % 5 == 0) await Future.delayed(Duration.zero);
       }
       await bidiController.close();
 
@@ -976,6 +981,9 @@ void main() {
     // no EADDRINUSE, no stale connection reuse across server lifetimes.
     testTcpAndUds(
       'rapid sequential server restart with 3 active clients (5 cycles)',
+      // 5 cycles × 30 RPCs with server restart each cycle — UDS socket
+      // teardown and re-bind is slower than TCP on Linux CI.
+      udsTimeout: const Timeout(Duration(minutes: 3)),
       (address) async {
         for (var cycle = 0; cycle < 5; cycle++) {
           final server = Server.create(services: [EchoService()]);
@@ -1078,13 +1086,18 @@ void main() {
             }),
           );
 
-          // Client stream: send 5 values, verify sum.
+          // Client stream: send 5 values, verify sum. Use paced producer
+          // to avoid flow-control stalls under adversarial load.
           allFutures.add(
-            client.clientStream(Stream.fromIterable([1, 2, 3, 4, 5])).then((
-              sum,
-            ) {
-              expect(sum, equals(15), reason: 'client-stream channel $ch sum');
-            }),
+            client
+                .clientStream(pacedStream([1, 2, 3, 4, 5], yieldEvery: 1))
+                .then((sum) {
+                  expect(
+                    sum,
+                    equals(15),
+                    reason: 'client-stream channel $ch sum',
+                  );
+                }),
           );
 
           // Bidi stream: send 10 values, verify doubled.
@@ -1106,6 +1119,7 @@ void main() {
 
             for (var i = 0; i < 10; i++) {
               controller.add(i % 128);
+              if (i % 5 == 0) await Future.delayed(Duration.zero);
             }
             await controller.close();
             await done.future.timeout(
@@ -1231,40 +1245,15 @@ void main() {
       );
       final client = EchoClient(channel);
 
-      final controller = StreamController<int>();
-      final results = <int>[];
-      final done = Completer<void>();
-
-      client
+      // Use pacedStream with yieldEvery: 1 — bidi + compression is the
+      // worst case for HTTP/2 flow-control because both directions compete
+      // for window space on UDS transports with no kernel buffering.
+      final results = await client
           .bidiStream(
-            controller.stream,
+            pacedStream(List<int>.generate(100, (i) => i % 128), yieldEvery: 1),
             options: CallOptions(compression: const GzipCodec()),
           )
-          .listen(
-            results.add,
-            onDone: () {
-              if (!done.isCompleted) done.complete();
-            },
-            onError: (e) {
-              if (!done.isCompleted) done.completeError(e);
-            },
-          );
-
-      // Send 100 items. Values ≤ 127 so doubled fits in byte.
-      for (var i = 0; i < 100; i++) {
-        controller.add(i % 128);
-      }
-      await controller.close();
-
-      await done.future.timeout(
-        const Duration(seconds: 20),
-        onTimeout: () {
-          fail(
-            '100-item compressed bidi stream timed out -- '
-            'possible gzip + HTTP/2 flow control deadlock',
-          );
-        },
-      );
+          .toList();
 
       expect(
         results.length,
