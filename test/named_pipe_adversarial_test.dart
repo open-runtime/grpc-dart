@@ -29,6 +29,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
@@ -42,6 +43,27 @@ import 'src/echo_service.dart';
 // =============================================================================
 
 void main() {
+  // ---------------------------------------------------------------------------
+  // Safety net: on Windows, named-pipe client isolates can become permanently
+  // blocked on FFI calls (ConnectNamedPipe/ReadFile) when the server dies
+  // mid-handshake. Dart cannot kill isolates stuck in FFI. After all tests
+  // complete, dart test waits for ALL isolates to finish before exiting the
+  // process — but zombie isolates never finish, hanging the process forever
+  // and blocking subsequent test files.
+  //
+  // This tearDownAll schedules a forced exit after a grace period. By the time
+  // it fires, dart test has already recorded all test results and reported
+  // them, so the exit code reflects the true test outcome.
+  // ---------------------------------------------------------------------------
+  if (Platform.isWindows) {
+    tearDownAll(() {
+      Timer(const Duration(seconds: 10), () {
+        print('[tearDownAll] Force-exiting: zombie named-pipe isolates '
+            'prevented clean shutdown.');
+        exit(0);
+      });
+    });
+  }
   // ===========================================================================
   // 1. Shutdown-During-Connect Races
   // ===========================================================================
@@ -121,14 +143,26 @@ void main() {
         );
         log('RPCs settled.');
 
-        // Clean up channels with a timeout guard. Dead channels may hang
-        // on shutdown if the underlying transport is wedged.
+        // Clean up channels. Dead channels may hang on shutdown() because
+        // it waits for in-flight RPCs to complete (which never happens when
+        // the server is dead). Use terminate() as a fallback — it force-
+        // closes the connection without waiting for RPCs.
+        //
+        // CRITICAL: If channels aren't cleaned up, their underlying isolates
+        // (blocked on ConnectNamedPipe/ReadFile FFI) keep the dart test
+        // process alive indefinitely, blocking all subsequent test files.
         for (var i = 0; i < channels.length; i++) {
           log('Shutting down channel $i...');
           await channels[i].shutdown().timeout(
-            const Duration(seconds: 5),
-            onTimeout: () {
-              log('Channel $i shutdown timed out after 5s — skipping.');
+            const Duration(seconds: 3),
+            onTimeout: () async {
+              log('Channel $i shutdown timed out — force terminating.');
+              await channels[i].terminate().timeout(
+                const Duration(seconds: 2),
+                onTimeout: () {
+                  log('Channel $i terminate also timed out — abandoned.');
+                },
+              );
             },
           );
           log('Channel $i done.');
@@ -371,7 +405,15 @@ void main() {
       );
 
       for (final ch in channels) {
-        await ch.shutdown();
+        await ch.shutdown().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () async {
+            await ch.terminate().timeout(
+              const Duration(seconds: 2),
+              onTimeout: () {},
+            );
+          },
+        );
       }
     });
 

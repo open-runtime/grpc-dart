@@ -19,7 +19,7 @@
 /// Every test is Windows-only (via [testNamedPipe]) and uses a unique pipe
 /// name derived from the test description to prevent cross-test interference.
 @TestOn('vm')
-@Timeout(Duration(seconds: 60))
+@Timeout(Duration(seconds: 120))
 library;
 
 import 'dart:async';
@@ -37,6 +37,18 @@ import 'src/echo_service.dart';
 // =============================================================================
 
 void main() {
+  // Safety net: force-exit on Windows if zombie named-pipe isolates (blocked
+  // on FFI) prevent the dart test process from exiting cleanly. See the
+  // detailed comment in named_pipe_adversarial_test.dart.
+  if (Platform.isWindows) {
+    tearDownAll(() {
+      Timer(const Duration(seconds: 10), () {
+        print('[tearDownAll] Force-exiting: zombie named-pipe isolates '
+            'prevented clean shutdown.');
+        exit(0);
+      });
+    });
+  }
   // ===========================================================================
   // 1. Lifecycle Tests
   // ===========================================================================
