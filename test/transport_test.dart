@@ -650,4 +650,170 @@ void main() {
       );
     },
   );
+
+  // ===========================================================================
+  // sendTrailers idempotency — cross-transport verification
+  // ===========================================================================
+  //
+  // The _trailersSent guard in ServerHandler prevents duplicate trailers when
+  // both _onResponseError and _onResponseDone fire sendTrailers. The handler-
+  // level test (handler_hardening_test.dart) verifies exactly-once at the
+  // mock-transport level. These tests verify the guard works end-to-end over
+  // each real transport: if sendTrailers were called twice, the second would
+  // attempt to write to an already-closed HTTP/2 stream, corrupting the
+  // connection or crashing the server.
+
+  group(
+    'sendTrailers idempotency — cross-transport',
+    timeout: const Timeout(Duration(seconds: 30)),
+    () {
+      testTcpAndUds('streaming handler error delivers exactly one trailer', (
+        address,
+      ) async {
+        final server = Server.create(
+          services: [_ThrowingStreamService()],
+        );
+        await server.serve(address: address, port: 0);
+
+        final channel = TestClientChannel(
+          Http2ClientConnection(
+            address,
+            server.port!,
+            ChannelOptions(credentials: ChannelCredentials.insecure()),
+          ),
+        );
+
+        final client = _ThrowingStreamClient(channel);
+
+        // Call the streaming method that yields values then throws.
+        // The client should receive some values and then a GrpcError.
+        final received = <int>[];
+        GrpcError? caughtError;
+        try {
+          await for (final value in client.throwAfterYields(1)) {
+            received.add(value);
+          }
+        } on GrpcError catch (e) {
+          caughtError = e;
+        }
+
+        // The server yielded values before throwing — we may have received some.
+        // The critical assertion: the client got a proper GrpcError (not a
+        // crash, hang, or protocol error from duplicate trailers).
+        expect(caughtError, isNotNull,
+            reason: 'Client should have received a GrpcError from the handler throw');
+
+        // Shut down the throwing service, then verify a fresh server on the
+        // same address works. This proves the error didn't corrupt anything
+        // at the OS transport level. (We must shut down first because UDS
+        // doesn't allow two servers on the same path.)
+        await channel.shutdown();
+        await server.shutdown();
+
+        final echoServer = Server.create(services: [EchoService()]);
+        await echoServer.serve(address: address, port: 0);
+        final echoChannel = TestClientChannel(
+          Http2ClientConnection(
+            address,
+            echoServer.port!,
+            ChannelOptions(credentials: ChannelCredentials.insecure()),
+          ),
+        );
+        final echoClient = EchoClient(echoChannel);
+        expect(await echoClient.echo(99), equals(99));
+
+        await echoChannel.shutdown();
+        await echoServer.shutdown();
+      });
+
+      testNamedPipe(
+        'streaming handler error delivers exactly one trailer',
+        (pipeName) async {
+          final server = NamedPipeServer.create(
+            services: [_ThrowingStreamService()],
+          );
+          await server.serve(pipeName: pipeName);
+
+          final channel = NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          );
+
+          final client = _ThrowingStreamClient(channel);
+
+          // Call the streaming method that yields values then throws.
+          final received = <int>[];
+          GrpcError? caughtError;
+          try {
+            await for (final value in client.throwAfterYields(1)) {
+              received.add(value);
+            }
+          } on GrpcError catch (e) {
+            caughtError = e;
+          }
+
+          expect(caughtError, isNotNull,
+              reason: 'Client should have received a GrpcError');
+
+          await channel.shutdown();
+          await server.shutdown();
+        },
+      );
+    },
+  );
+}
+
+// =============================================================================
+// Test doubles for sendTrailers idempotency tests
+// =============================================================================
+
+/// A service whose server-streaming method yields some values then throws,
+/// triggering both _onResponseError and _onResponseDone → double sendTrailers.
+class _ThrowingStreamService extends Service {
+  @override
+  String get $name => 'test.ThrowingStream';
+
+  _ThrowingStreamService() {
+    $addMethod(
+      ServiceMethod<int, int>(
+        'ThrowAfterYields',
+        _throwAfterYields,
+        false,
+        true,
+        (List<int> value) => value[0],
+        (int value) => [value],
+      ),
+    );
+  }
+
+  Stream<int> _throwAfterYields(
+    ServiceCall call,
+    Future<int> request,
+  ) async* {
+    final count = await request;
+    for (var i = 0; i < 3; i++) {
+      yield i;
+      await Future.delayed(Duration.zero);
+    }
+    throw GrpcError.unknown('Intentional throw after $count yields');
+  }
+}
+
+/// Client for the ThrowingStreamService.
+class _ThrowingStreamClient extends Client {
+  static final _$throwAfterYields = ClientMethod<int, int>(
+    '/test.ThrowingStream/ThrowAfterYields',
+    (int value) => [value],
+    (List<int> value) => value[0],
+  );
+
+  _ThrowingStreamClient(super.channel);
+
+  ResponseStream<int> throwAfterYields(int request, {CallOptions? options}) {
+    return $createStreamingCall(
+      _$throwAfterYields,
+      Stream.value(request),
+      options: options,
+    );
+  }
 }

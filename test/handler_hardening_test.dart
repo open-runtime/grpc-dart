@@ -108,7 +108,8 @@ void main() {
       harness.tearDown();
     });
 
-    test('sendTrailers is idempotent - second call is a no-op', () async {
+    test('sendTrailers is idempotent - second call sends exactly one trailer',
+        () async {
       // A handler that throws a GrpcError. This triggers:
       //   _onResponseError -> _sendError -> sendTrailers (first call)
       //   The response stream ends -> _onResponseDone -> sendTrailers
@@ -122,11 +123,18 @@ void main() {
       }
 
       final responseCompleter = Completer<void>();
-      var messageCount = 0;
+      var trailerCount = 0;
+      var totalMessageCount = 0;
 
       harness.fromServer.stream.listen(
         (message) {
-          messageCount++;
+          totalMessageCount++;
+          if (message is HeadersStreamMessage) {
+            final headers = headersToMap(message.headers);
+            if (headers.containsKey('grpc-status')) {
+              trailerCount++;
+            }
+          }
         },
         onError: (error) {
           // The TestServerStream.terminate() sends 'TERMINATED' as an error
@@ -146,10 +154,15 @@ void main() {
         onTimeout: () => fail('Timed out waiting for response'),
       );
 
-      // The important assertion: no crash occurred. The server completed
-      // normally despite sendTrailers being reachable from two code paths.
-      // We should have received at least one message (the error trailers).
-      expect(messageCount, greaterThanOrEqualTo(1));
+      // The critical assertion: exactly ONE set of trailers was sent.
+      // The _trailersSent guard must prevent the second sendTrailers call
+      // from emitting a duplicate.
+      expect(trailerCount, equals(1),
+          reason: 'Expected exactly 1 trailer message with grpc-status, '
+              'got $trailerCount (totalMessages=$totalMessageCount). '
+              'The _trailersSent guard should prevent duplicate trailers.');
+      // At least 1 total message (the trailer itself)
+      expect(totalMessageCount, greaterThanOrEqualTo(1));
     });
 
     test('concurrent _onResponseDone and _sendError do not crash', () async {
@@ -168,14 +181,14 @@ void main() {
       }
 
       final responseCompleter = Completer<void>();
-      var sawGrpcStatus = false;
+      var trailerCount = 0;
 
       harness.fromServer.stream.listen(
         (message) {
           if (message is HeadersStreamMessage) {
             final headers = headersToMap(message.headers);
             if (headers.containsKey('grpc-status')) {
-              sawGrpcStatus = true;
+              trailerCount++;
             }
           }
         },
@@ -197,9 +210,11 @@ void main() {
         onTimeout: () => fail('Timed out waiting for response'),
       );
 
-      // Verify the server sent a proper gRPC status (not just silently survived)
-      expect(sawGrpcStatus, isTrue,
-          reason: 'Server should have sent grpc-status in trailers');
+      // Verify exactly one set of trailers was sent — the _trailersSent guard
+      // must prevent the _onResponseDone path from sending a second trailer
+      // after _onResponseError already sent one.
+      expect(trailerCount, equals(1),
+          reason: 'Expected exactly 1 trailer with grpc-status, got $trailerCount');
     });
   });
 

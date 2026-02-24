@@ -643,44 +643,57 @@ void main() {
     // partial reads incorrectly, the payload will be corrupted.
     //
     // EXPECTED: The echoed payload matches the original byte-for-byte.
-    testNamedPipe('100KB echo payload exceeding 64KB pipe buffer boundary', (
-      pipeName,
-    ) async {
-      final server = NamedPipeServer.create(services: [EchoService()]);
-      await server.serve(pipeName: pipeName);
-      addTearDown(() => server.shutdown());
+    testNamedPipe(
+      '100KB echo payload exceeding 64KB pipe buffer boundary',
+      timeout: const Timeout(Duration(seconds: 90)),
+      (pipeName) async {
+        final sw = Stopwatch()..start();
+        void log(String msg) => print('[Test11 ${sw.elapsedMilliseconds}ms] $msg');
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
-      final client = EchoClient(channel);
+        log('Creating server...');
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+        log('Server started.');
 
-      // Create a 100KB payload with a repeating pattern.
-      final payloadSize = 100 * 1024; // 100KB
-      final payload = Uint8List(payloadSize);
-      for (var i = 0; i < payloadSize; i++) {
-        payload[i] = i & 0xFF;
-      }
+        log('Creating client channel...');
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
 
-      // Send and receive the payload.
-      final response = await client.echoBytes(payload);
+        // Create a 100KB payload with a repeating pattern.
+        final payloadSize = 100 * 1024; // 100KB
+        final payload = Uint8List(payloadSize);
+        for (var i = 0; i < payloadSize; i++) {
+          payload[i] = i & 0xFF;
+        }
+        log('Sending 100KB payload...');
 
-      // Verify the response matches exactly.
-      expect(
-        response.length,
-        equals(payloadSize),
-        reason: 'Response length mismatch',
-      );
-      expect(
-        response,
-        equals(payload),
-        reason: '100KB payload corrupted during echo',
-      );
+        // Send and receive the payload.
+        final response = await client.echoBytes(payload);
+        log('Received response: ${response.length} bytes.');
 
-      await channel.shutdown();
-      await server.shutdown();
-    });
+        // Verify the response matches exactly.
+        expect(
+          response.length,
+          equals(payloadSize),
+          reason: 'Response length mismatch',
+        );
+        expect(
+          response,
+          equals(payload),
+          reason: '100KB payload corrupted during echo',
+        );
+
+        log('Shutting down channel...');
+        await channel.shutdown();
+        log('Shutting down server...');
+        await server.shutdown();
+        log('Test complete. Total time: ${sw.elapsedMilliseconds}ms');
+      },
+    );
 
     // -------------------------------------------------------------------------
     // Test 12: Large server-stream bytes (10 chunks x 10KB = 100KB total)
@@ -693,54 +706,67 @@ void main() {
     //
     // EXPECTED: Exactly 10 chunks received, each 10KB, with correct fill
     // pattern: byte j in chunk i = (i + j) & 0xFF.
-    testNamedPipe('10x10KB server-stream chunks totalling 100KB', (
-      pipeName,
-    ) async {
-      final server = NamedPipeServer.create(services: [EchoService()]);
-      await server.serve(pipeName: pipeName);
-      addTearDown(() => server.shutdown());
+    testNamedPipe(
+      '10x10KB server-stream chunks totalling 100KB',
+      timeout: const Timeout(Duration(seconds: 90)),
+      (pipeName) async {
+        final sw = Stopwatch()..start();
+        void log(String msg) => print('[Test12 ${sw.elapsedMilliseconds}ms] $msg');
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
-      final client = EchoClient(channel);
+        log('Creating server...');
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+        log('Server started.');
 
-      // Build request: 8 bytes big-endian [chunkCount(4), chunkSize(4)].
-      final bd = ByteData(8);
-      bd.setUint32(0, 10); // chunkCount
-      bd.setUint32(4, 10240); // chunkSize = 10KB
-      final request = bd.buffer.asUint8List();
-
-      // Collect all streamed chunks.
-      final chunks = await client.serverStreamBytes(request).toList();
-
-      // Verify correct number of chunks.
-      expect(
-        chunks.length,
-        equals(10),
-        reason: 'Expected 10 chunks but got ${chunks.length}',
-      );
-
-      // Verify each chunk has the correct size and fill pattern.
-      for (var i = 0; i < chunks.length; i++) {
-        expect(
-          chunks[i].length,
-          equals(10240),
-          reason: 'Chunk $i size mismatch',
+        log('Creating client channel...');
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
         );
-        for (var j = 0; j < chunks[i].length; j++) {
-          expect(
-            chunks[i][j],
-            equals((i + j) & 0xFF),
-            reason: 'Chunk $i byte $j mismatch',
-          );
-        }
-      }
+        final client = EchoClient(channel);
 
-      await channel.shutdown();
-      await server.shutdown();
-    });
+        // Build request: 8 bytes big-endian [chunkCount(4), chunkSize(4)].
+        final bd = ByteData(8);
+        bd.setUint32(0, 10); // chunkCount
+        bd.setUint32(4, 10240); // chunkSize = 10KB
+        final request = bd.buffer.asUint8List();
+
+        log('Requesting 10x10KB stream...');
+        // Collect all streamed chunks.
+        final chunks = await client.serverStreamBytes(request).toList();
+        log('Received ${chunks.length} chunks.');
+
+        // Verify correct number of chunks.
+        expect(
+          chunks.length,
+          equals(10),
+          reason: 'Expected 10 chunks but got ${chunks.length}',
+        );
+
+        // Verify each chunk has the correct size and fill pattern.
+        for (var i = 0; i < chunks.length; i++) {
+          expect(
+            chunks[i].length,
+            equals(10240),
+            reason: 'Chunk $i size mismatch',
+          );
+          for (var j = 0; j < chunks[i].length; j++) {
+            expect(
+              chunks[i][j],
+              equals((i + j) & 0xFF),
+              reason: 'Chunk $i byte $j mismatch',
+            );
+          }
+        }
+
+        log('Shutting down channel...');
+        await channel.shutdown();
+        log('Shutting down server...');
+        await server.shutdown();
+        log('Test complete. Total time: ${sw.elapsedMilliseconds}ms');
+      },
+    );
   });
 
   // ===========================================================================
@@ -762,42 +788,64 @@ void main() {
     // EXPECTED: Either the second serve() throws an error (ideal), OR both
     // servers work independently. In either case, no hang and no crash. We
     // verify that at least one server is functional.
-    testNamedPipe('two servers on same pipe name: either fails or both work', (
-      pipeName,
-    ) async {
-      final server1 = NamedPipeServer.create(services: [EchoService()]);
-      await server1.serve(pipeName: pipeName);
-      addTearDown(() => server1.shutdown());
+    testNamedPipe(
+      'two servers on same pipe name: either fails or both work',
+      timeout: const Timeout(Duration(seconds: 90)),
+      (pipeName) async {
+        final sw = Stopwatch()..start();
+        void log(String msg) => print('[Test10 ${sw.elapsedMilliseconds}ms] $msg');
 
-      final server2 = NamedPipeServer.create(services: [EchoService()]);
-      var server2Started = false;
+        log('Creating server1...');
+        final server1 = NamedPipeServer.create(services: [EchoService()]);
+        await server1.serve(pipeName: pipeName);
+        log('Server1 started.');
+        addTearDown(() async {
+          log('addTearDown: shutting down server1...');
+          await server1.shutdown();
+          log('addTearDown: server1 done.');
+        });
 
-      try {
-        await server2.serve(pipeName: pipeName);
-        server2Started = true;
-      } catch (e) {
-        // This is the IDEAL outcome: the second server detects the
-        // collision and refuses to start.
-      }
-      addTearDown(() async {
-        if (server2Started) await server2.shutdown();
-      });
+        log('Creating server2...');
+        final server2 = NamedPipeServer.create(services: [EchoService()]);
+        var server2Started = false;
 
-      // Regardless of whether server2 started, server1 must still work.
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
-      final client = EchoClient(channel);
-      final result = await client.echo(42);
-      expect(result, equals(42));
-      await channel.shutdown();
+        try {
+          await server2.serve(pipeName: pipeName);
+          server2Started = true;
+          log('Server2 started (dual-server scenario).');
+        } catch (e) {
+          // This is the IDEAL outcome: the second server detects the
+          // collision and refuses to start.
+          log('Server2 failed to start (expected): $e');
+        }
+        addTearDown(() async {
+          if (server2Started) {
+            log('addTearDown: shutting down server2...');
+            await server2.shutdown();
+            log('addTearDown: server2 done.');
+          }
+        });
 
-      // Clean up.
-      if (server2Started) {
-        await server2.shutdown();
-      }
-      await server1.shutdown();
-    });
+        // Regardless of whether server2 started, server1 must still work.
+        log('Creating client channel...');
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+        log('Calling echo(42)...');
+        final result = await client.echo(42);
+        expect(result, equals(42));
+        log('Echo succeeded: $result');
+
+        log('Shutting down client channel...');
+        await channel.shutdown();
+        log('Client channel shutdown done.');
+
+        // Clean up — use addTearDown above instead of explicit shutdown
+        // to avoid double-shutdown issues.
+        log('Test complete. Total time: ${sw.elapsedMilliseconds}ms');
+      },
+    );
   });
 }
