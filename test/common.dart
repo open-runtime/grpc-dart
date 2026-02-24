@@ -86,7 +86,7 @@ void testNamedPipe(
       final now = DateTime.now();
       final counter = _pipeNameCounter++;
       final uniquePipeName =
-          '$basePipeName-${now.microsecondsSinceEpoch}-${counter}-${pid}';
+          '$basePipeName-${now.microsecondsSinceEpoch}-$counter-$pid';
       await testCase(uniquePipeName);
     },
   );

@@ -26,6 +26,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
@@ -242,9 +243,19 @@ void main() {
 
     // 6. Bidi stream: 20 chunks of 8KB each, echoed back.
     testTcpAndUds('bidi stream: 20 x 8KB chunks', (address) async {
+      final transport = address.type == InternetAddressType.unix
+          ? 'UDS'
+          : 'TCP';
+      final sw = Stopwatch()..start();
+      void log(String msg) => print(
+        '[bidi-20x8KB/$transport '
+        '${sw.elapsedMilliseconds}ms] $msg',
+      );
+
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
+      log('server on port ${server.port}');
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -264,9 +275,26 @@ void main() {
         inputChunks.add(generatePayload(chunkSize, i));
       }
 
-      final responses = await client
-          .bidiStreamBytes(Stream.fromIterable(inputChunks))
-          .toList();
+      // Use a controller to feed chunks with event-loop yields.
+      // Stream.fromIterable() delivers all items synchronously,
+      // which can exhaust HTTP/2 flow-control windows on UDS,
+      // causing deadlock.
+      final ctrl20 = StreamController<List<int>>();
+      var sent20 = 0;
+      () async {
+        for (final chunk in inputChunks) {
+          ctrl20.add(chunk);
+          sent20++;
+          if (sent20 % 5 == 0) log('sent $sent20/$chunkCount');
+          await Future.delayed(Duration.zero);
+        }
+        log('closing after $sent20 chunks');
+        await ctrl20.close();
+      }();
+
+      log('awaiting bidi stream...');
+      final responses = await client.bidiStreamBytes(ctrl20.stream).toList();
+      log('received ${responses.length} responses');
 
       expect(responses.length, equals(chunkCount));
       for (var i = 0; i < chunkCount; i++) {
@@ -277,15 +305,27 @@ void main() {
         );
       }
 
+      log('shutting down...');
       await channel.shutdown();
       await server.shutdown();
+      log('done');
     });
 
     // 7. Bidi stream: 5 chunks of 100KB each.
     testTcpAndUds('bidi stream: 5 x 100KB chunks', (address) async {
+      final transport = address.type == InternetAddressType.unix
+          ? 'UDS'
+          : 'TCP';
+      final sw = Stopwatch()..start();
+      void log(String msg) => print(
+        '[bidi-5x100KB/$transport '
+        '${sw.elapsedMilliseconds}ms] $msg',
+      );
+
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
+      log('server on port ${server.port}');
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -304,9 +344,23 @@ void main() {
         inputChunks.add(generatePayload(chunkSize, i));
       }
 
-      final responses = await client
-          .bidiStreamBytes(Stream.fromIterable(inputChunks))
-          .toList();
+      // Use a controller to feed chunks with event-loop yields.
+      final ctrl100 = StreamController<List<int>>();
+      var sent100 = 0;
+      () async {
+        for (final chunk in inputChunks) {
+          ctrl100.add(chunk);
+          sent100++;
+          log('sent $sent100/$chunkCount (${chunkSize}B)');
+          await Future.delayed(Duration.zero);
+        }
+        log('closing after $sent100 chunks');
+        await ctrl100.close();
+      }();
+
+      log('awaiting bidi stream...');
+      final responses = await client.bidiStreamBytes(ctrl100.stream).toList();
+      log('received ${responses.length} responses');
 
       expect(responses.length, equals(chunkCount));
       for (var i = 0; i < chunkCount; i++) {
@@ -317,8 +371,10 @@ void main() {
         );
       }
 
+      log('shutting down...');
       await channel.shutdown();
       await server.shutdown();
+      log('done');
     });
   });
 

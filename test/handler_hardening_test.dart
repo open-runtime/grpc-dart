@@ -108,62 +108,71 @@ void main() {
       harness.tearDown();
     });
 
-    test('sendTrailers is idempotent - second call sends exactly one trailer',
-        () async {
-      // A handler that throws a GrpcError. This triggers:
-      //   _onResponseError -> _sendError -> sendTrailers (first call)
-      //   The response stream ends -> _onResponseDone -> sendTrailers
-      //     (second call, should be a no-op)
-      //
-      // Before the fix, the second sendTrailers would NPE on _customTrailers
-      // because it was set to null by the first call.
-      Stream<int> methodHandler(ServiceCall call, Future<int> request) async* {
-        await request;
-        throw GrpcError.internal('Intentional error');
-      }
+    test(
+      'sendTrailers is idempotent - second call sends exactly one trailer',
+      () async {
+        // A handler that throws a GrpcError. This triggers:
+        //   _onResponseError -> _sendError -> sendTrailers (first call)
+        //   The response stream ends -> _onResponseDone -> sendTrailers
+        //     (second call, should be a no-op)
+        //
+        // Before the fix, the second sendTrailers would NPE on _customTrailers
+        // because it was set to null by the first call.
+        Stream<int> methodHandler(
+          ServiceCall call,
+          Future<int> request,
+        ) async* {
+          await request;
+          throw GrpcError.internal('Intentional error');
+        }
 
-      final responseCompleter = Completer<void>();
-      var trailerCount = 0;
-      var totalMessageCount = 0;
+        final responseCompleter = Completer<void>();
+        var trailerCount = 0;
+        var totalMessageCount = 0;
 
-      harness.fromServer.stream.listen(
-        (message) {
-          totalMessageCount++;
-          if (message is HeadersStreamMessage) {
-            final headers = headersToMap(message.headers);
-            if (headers.containsKey('grpc-status')) {
-              trailerCount++;
+        harness.fromServer.stream.listen(
+          (message) {
+            totalMessageCount++;
+            if (message is HeadersStreamMessage) {
+              final headers = headersToMap(message.headers);
+              if (headers.containsKey('grpc-status')) {
+                trailerCount++;
+              }
             }
-          }
-        },
-        onError: (error) {
-          // The TestServerStream.terminate() sends 'TERMINATED' as an error
-        },
-        onDone: () {
-          responseCompleter.complete();
-        },
-      );
+          },
+          onError: (error) {
+            // The TestServerStream.terminate() sends 'TERMINATED' as an error
+          },
+          onDone: () {
+            responseCompleter.complete();
+          },
+        );
 
-      harness.service.serverStreamingHandler = methodHandler;
-      harness.sendRequestHeader('/Test/ServerStreaming');
-      harness.sendData(1);
-      harness.toServer.close();
+        harness.service.serverStreamingHandler = methodHandler;
+        harness.sendRequestHeader('/Test/ServerStreaming');
+        harness.sendData(1);
+        harness.toServer.close();
 
-      await responseCompleter.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => fail('Timed out waiting for response'),
-      );
+        await responseCompleter.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => fail('Timed out waiting for response'),
+        );
 
-      // The critical assertion: exactly ONE set of trailers was sent.
-      // The _trailersSent guard must prevent the second sendTrailers call
-      // from emitting a duplicate.
-      expect(trailerCount, equals(1),
-          reason: 'Expected exactly 1 trailer message with grpc-status, '
+        // The critical assertion: exactly ONE set of trailers was sent.
+        // The _trailersSent guard must prevent the second sendTrailers call
+        // from emitting a duplicate.
+        expect(
+          trailerCount,
+          equals(1),
+          reason:
+              'Expected exactly 1 trailer message with grpc-status, '
               'got $trailerCount (totalMessages=$totalMessageCount). '
-              'The _trailersSent guard should prevent duplicate trailers.');
-      // At least 1 total message (the trailer itself)
-      expect(totalMessageCount, greaterThanOrEqualTo(1));
-    });
+              'The _trailersSent guard should prevent duplicate trailers.',
+        );
+        // At least 1 total message (the trailer itself)
+        expect(totalMessageCount, greaterThanOrEqualTo(1));
+      },
+    );
 
     test('concurrent _onResponseDone and _sendError do not crash', () async {
       // A streaming handler that yields some values, then throws.
@@ -213,8 +222,12 @@ void main() {
       // Verify exactly one set of trailers was sent — the _trailersSent guard
       // must prevent the _onResponseDone path from sending a second trailer
       // after _onResponseError already sent one.
-      expect(trailerCount, equals(1),
-          reason: 'Expected exactly 1 trailer with grpc-status, got $trailerCount');
+      expect(
+        trailerCount,
+        equals(1),
+        reason:
+            'Expected exactly 1 trailer with grpc-status, got $trailerCount',
+      );
     });
   });
 
@@ -335,8 +348,12 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 100));
 
       // Verify the normal response completed successfully before the timer fired
-      expect(sawOkStatus, isTrue,
-          reason: 'Handler should have completed with OK status before timeout fired');
+      expect(
+        sawOkStatus,
+        isTrue,
+        reason:
+            'Handler should have completed with OK status before timeout fired',
+      );
     });
   });
 
@@ -472,8 +489,11 @@ void main() {
         onTimeout: () => fail('Timed out waiting for response'),
       );
 
-      expect(sawOkStatus, isTrue,
-          reason: 'Handler should have completed with OK status');
+      expect(
+        sawOkStatus,
+        isTrue,
+        reason: 'Handler should have completed with OK status',
+      );
 
       // Now exercise the double-terminate guard:
       // Server.shutdown() iterates over active handlers and calls cancel().
@@ -545,8 +565,11 @@ void main() {
         );
 
         // Verify the server sent an error status (not just silently survived)
-        expect(sawGrpcStatus, isTrue,
-            reason: 'Server should have sent grpc-status for serialization error');
+        expect(
+          sawGrpcStatus,
+          isTrue,
+          reason: 'Server should have sent grpc-status for serialization error',
+        );
       },
     );
   });

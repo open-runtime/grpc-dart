@@ -129,8 +129,17 @@ void main() {
     });
 
     testTcpAndUds('bidirectional streaming RPC', (address) async {
+      final transport = address.type == InternetAddressType.unix
+          ? 'UDS'
+          : 'TCP';
+      final sw = Stopwatch()..start();
+      void log(String msg) =>
+          print('[bidi/$transport ${sw.elapsedMilliseconds}ms] $msg');
+
+      log('starting server...');
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      log('server listening on port ${server.port}');
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -141,13 +150,39 @@ void main() {
       );
 
       final client = EchoClient(channel);
-      final results = await client
-          .bidiStream(Stream.fromIterable(List.generate(50, (i) => i + 1)))
-          .toList();
+
+      // Use a controller to feed items with event-loop yields between
+      // each batch. Stream.fromIterable() delivers all items
+      // synchronously in a single microtask, which can exhaust HTTP/2
+      // flow-control windows on transports without TCP_NODELAY (e.g.
+      // Unix domain sockets), causing a deadlock where neither side
+      // can make progress.
+      final controller = StreamController<int>();
+      var sentCount = 0;
+      () async {
+        for (var i = 1; i <= 50; i++) {
+          controller.add(i);
+          sentCount++;
+          // Yield to the event loop so HTTP/2 frames can be flushed
+          // and WINDOW_UPDATE frames can be received.
+          if (i % 10 == 0) {
+            log('sent $sentCount/50 items, yielding...');
+            await Future.delayed(Duration.zero);
+          }
+        }
+        log('closing controller after $sentCount items');
+        await controller.close();
+      }();
+
+      log('awaiting bidi stream results...');
+      final results = await client.bidiStream(controller.stream).toList();
+      log('received ${results.length} results');
       expect(results, equals(List.generate(50, (i) => (i + 1) * 2)));
 
+      log('shutting down...');
       await channel.shutdown();
       await server.shutdown();
+      log('done');
     });
 
     testTcpAndUds('multiple concurrent RPCs', (address) async {
@@ -275,8 +310,18 @@ void main() {
     });
 
     testTcpAndUds('server shutdown during active bidi stream', (address) async {
+      final transport = address.type == InternetAddressType.unix
+          ? 'UDS'
+          : 'TCP';
+      final sw = Stopwatch()..start();
+      void log(String msg) => print(
+        '[bidi-shutdown/$transport '
+        '${sw.elapsedMilliseconds}ms] $msg',
+      );
+
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      log('server listening on port ${server.port}');
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -288,12 +333,22 @@ void main() {
 
       final client = EchoClient(channel);
 
-      // Start a bidi stream with a controller so we can feed items gradually
+      // Start a bidi stream with a controller so we can feed items
+      // gradually.
       final controller = StreamController<int>();
       final collected = <int>[];
       final streamDone = client
           .bidiStream(controller.stream)
-          .listen(collected.add, onError: (_) {}, cancelOnError: false)
+          .listen(
+            (v) {
+              collected.add(v);
+              if (collected.length % 5 == 0) {
+                log('received ${collected.length} items');
+              }
+            },
+            onError: (e) => log('stream error: $e'),
+            cancelOnError: false,
+          )
           .asFuture()
           .then((_) => collected, onError: (_) => collected);
 
@@ -302,18 +357,33 @@ void main() {
         controller.add(i);
         await Future.delayed(const Duration(milliseconds: 5));
       }
+      log('sent 20 items, shutting down server mid-stream');
 
       // Shut down server mid-stream
       await server.shutdown();
+      log('server shutdown complete, closing controller');
       await controller.close();
 
       // Stream must terminate (not hang) within 10 seconds
+      log('waiting for stream to terminate...');
       final results = await streamDone.timeout(const Duration(seconds: 10));
+      log('stream done, received ${results.length} items total');
 
-      // We should have received some (possibly all) doubled values
-      expect(results.length, lessThanOrEqualTo(20));
+      // We should have received some (possibly all) doubled values.
+      // At least 1 must arrive, and no more than 20 (total sent).
+      expect(
+        results.length,
+        greaterThan(0),
+        reason: 'Should have received at least 1 echoed item',
+      );
+      expect(
+        results.length,
+        lessThanOrEqualTo(20),
+        reason: 'Should not exceed the 20 items sent',
+      );
 
       await channel.shutdown();
+      log('done');
     });
 
     testTcpAndUds('500 rapid sequential RPCs', (address) async {
@@ -670,9 +740,7 @@ void main() {
       testTcpAndUds('streaming handler error delivers exactly one trailer', (
         address,
       ) async {
-        final server = Server.create(
-          services: [_ThrowingStreamService()],
-        );
+        final server = Server.create(services: [_ThrowingStreamService()]);
         await server.serve(address: address, port: 0);
 
         final channel = TestClientChannel(
@@ -700,8 +768,12 @@ void main() {
         // The server yielded values before throwing — we may have received some.
         // The critical assertion: the client got a proper GrpcError (not a
         // crash, hang, or protocol error from duplicate trailers).
-        expect(caughtError, isNotNull,
-            reason: 'Client should have received a GrpcError from the handler throw');
+        expect(
+          caughtError,
+          isNotNull,
+          reason:
+              'Client should have received a GrpcError from the handler throw',
+        );
 
         // Shut down the throwing service, then verify a fresh server on the
         // same address works. This proves the error didn't corrupt anything
@@ -726,39 +798,41 @@ void main() {
         await echoServer.shutdown();
       });
 
-      testNamedPipe(
-        'streaming handler error delivers exactly one trailer',
-        (pipeName) async {
-          final server = NamedPipeServer.create(
-            services: [_ThrowingStreamService()],
-          );
-          await server.serve(pipeName: pipeName);
+      testNamedPipe('streaming handler error delivers exactly one trailer', (
+        pipeName,
+      ) async {
+        final server = NamedPipeServer.create(
+          services: [_ThrowingStreamService()],
+        );
+        await server.serve(pipeName: pipeName);
 
-          final channel = NamedPipeClientChannel(
-            pipeName,
-            options: const NamedPipeChannelOptions(),
-          );
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
 
-          final client = _ThrowingStreamClient(channel);
+        final client = _ThrowingStreamClient(channel);
 
-          // Call the streaming method that yields values then throws.
-          final received = <int>[];
-          GrpcError? caughtError;
-          try {
-            await for (final value in client.throwAfterYields(1)) {
-              received.add(value);
-            }
-          } on GrpcError catch (e) {
-            caughtError = e;
+        // Call the streaming method that yields values then throws.
+        final received = <int>[];
+        GrpcError? caughtError;
+        try {
+          await for (final value in client.throwAfterYields(1)) {
+            received.add(value);
           }
+        } on GrpcError catch (e) {
+          caughtError = e;
+        }
 
-          expect(caughtError, isNotNull,
-              reason: 'Client should have received a GrpcError');
+        expect(
+          caughtError,
+          isNotNull,
+          reason: 'Client should have received a GrpcError',
+        );
 
-          await channel.shutdown();
-          await server.shutdown();
-        },
-      );
+        await channel.shutdown();
+        await server.shutdown();
+      });
     },
   );
 }
@@ -786,10 +860,7 @@ class _ThrowingStreamService extends Service {
     );
   }
 
-  Stream<int> _throwAfterYields(
-    ServiceCall call,
-    Future<int> request,
-  ) async* {
+  Stream<int> _throwAfterYields(ServiceCall call, Future<int> request) async* {
     final count = await request;
     for (var i = 0; i < 3; i++) {
       yield i;

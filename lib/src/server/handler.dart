@@ -388,7 +388,12 @@ class ServerHandler extends ServiceCall {
   void sendHeaders() {
     if (_headersSent) throw GrpcError.internal('Headers already sent');
 
-    _customHeaders!
+    // Capture into non-nullable local before nulling the field.
+    // Prevents NPE if _customHeaders is ever null due to a code
+    // path change or concurrent teardown.
+    final customHeaders = _customHeaders ?? {};
+    _customHeaders = null;
+    customHeaders
       ..remove(':status')
       ..remove('content-type');
 
@@ -399,8 +404,7 @@ class ServerHandler extends ServiceCall {
       if (_callEncodingCodec != null) 'grpc-encoding': _callEncodingCodec!.encodingName,
     };
 
-    outgoingHeadersMap.addAll(_customHeaders!);
-    _customHeaders = null;
+    outgoingHeadersMap.addAll(customHeaders);
 
     final outgoingHeaders = <Header>[];
     outgoingHeadersMap.forEach((key, value) => outgoingHeaders.add(Header(ascii.encode(key), utf8.encode(value))));
@@ -420,18 +424,22 @@ class ServerHandler extends ServiceCall {
       outgoingTrailersMap[':status'] = '200';
       outgoingTrailersMap['content-type'] = 'application/grpc';
 
-      _customHeaders!
+      // Capture into non-nullable local before nulling the field.
+      final customHeaders = _customHeaders ?? {};
+      _customHeaders = null;
+      customHeaders
         ..remove(':status')
         ..remove('content-type');
-      outgoingTrailersMap.addAll(_customHeaders!);
-      _customHeaders = null;
+      outgoingTrailersMap.addAll(customHeaders);
       _headersSent = true;
     }
-    _customTrailers!
+    // Capture into non-nullable local before nulling the field.
+    final customTrailers = _customTrailers ?? {};
+    _customTrailers = null;
+    customTrailers
       ..remove(':status')
       ..remove('content-type');
-    outgoingTrailersMap.addAll(_customTrailers!);
-    _customTrailers = null;
+    outgoingTrailersMap.addAll(customTrailers);
     outgoingTrailersMap['grpc-status'] = status.toString();
     if (message != null) {
       outgoingTrailersMap['grpc-message'] = Uri.encodeFull(message).replaceAll('%20', ' ');
@@ -526,6 +534,20 @@ class ServerHandler extends ServiceCall {
   void cancel() {
     isCanceled = true;
     _timeoutTimer?.cancel();
+    // Close the request stream so that handler methods blocked on
+    // `await for (final request in requests)` are unblocked with a
+    // cancellation error. Every other termination path (_onError,
+    // _onTimedOut, _onDone) closes _requests — cancel() must too,
+    // otherwise Server.shutdown() can hang indefinitely.
+    if (_requests != null && !_requests!.isClosed) {
+      try {
+        _requests!
+          ..addError(GrpcError.cancelled('Cancelled'))
+          ..close();
+      } catch (e) {
+        logGrpcError('[gRPC] Failed to close request stream in cancel: $e');
+      }
+    }
     _cancelResponseSubscription();
     _terminateStream();
   }

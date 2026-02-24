@@ -85,7 +85,11 @@ class Http2ClientConnection implements connection.ClientConnection {
 
   ConnectionState get state => _state;
 
-  static const _estimatedRoundTripTime = Duration(milliseconds: 20);
+  /// Safety timeout for the initial SETTINGS frame from the peer.
+  /// If the peer's SETTINGS frame does not arrive within this window
+  /// (e.g., broken connection or non-HTTP/2 endpoint), fall through
+  /// and proceed. This prevents blocking indefinitely.
+  static const _settingsFrameTimeout = Duration(milliseconds: 100);
 
   Future<ClientTransportConnection> connectTransport() async {
     final connection = await _transportConnector.connect();
@@ -96,10 +100,16 @@ class Http2ClientConnection implements connection.ClientConnection {
       }
     });
 
-    // Give the settings settings-frame a bit of time to arrive.
-    // TODO(sigurdm): This is a hack. The http2 package should expose a way of
-    // waiting for the settings frame to arrive.
-    await Future.delayed(_estimatedRoundTripTime);
+    // Wait for the peer's initial SETTINGS frame rather than guessing
+    // with a fixed delay. The http2 package (v2.3.1+) exposes
+    // onInitialPeerSettingsReceived for this purpose.
+    try {
+      await connection.onInitialPeerSettingsReceived.timeout(_settingsFrameTimeout);
+    } on TimeoutException {
+      // Settings frame did not arrive within the safety window.
+      // Proceed anyway — the connection may still work if settings
+      // arrive later, or it will fail on the first RPC.
+    }
 
     if (_state == ConnectionState.shutdown) {
       _transportConnector.shutdown();

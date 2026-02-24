@@ -800,4 +800,180 @@ void main() {
       await server.shutdown();
     });
   });
+
+  // ===========================================================================
+  // Test 12-14: Additional Adversarial Coverage (Issues #34)
+  // ===========================================================================
+
+  group('Mixed RPC Shutdown + Channel Reuse', () {
+    // -------------------------------------------------------------------------
+    // Test 12: Mixed RPC types all active during server shutdown
+    // -------------------------------------------------------------------------
+    testTcpAndUds('mixed RPC types survive concurrent server shutdown', (
+      address,
+    ) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = _createChannel(address, server.port!);
+      final client = EchoClient(channel);
+
+      // Launch all four RPC patterns concurrently.
+      final unaryFuture = client.echo(42);
+
+      final serverStreamFuture = client.serverStream(20).toList();
+
+      final clientStreamInput = Stream.fromIterable(
+        List.generate(10, (i) => i),
+      );
+      final clientStreamFuture = client.clientStream(clientStreamInput);
+
+      final bidiController = StreamController<int>();
+      final bidiStream = client.bidiStream(bidiController.stream);
+      final bidiCollector = bidiStream.toList();
+      for (var i = 0; i < 10; i++) {
+        bidiController.add(i % 128);
+      }
+      await bidiController.close();
+
+      // Give RPCs a moment to make progress, then kill the server.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await server.shutdown();
+
+      // Each RPC should either complete successfully or fail with
+      // a gRPC error — never hang or throw an unhandled exception.
+      try {
+        await unaryFuture;
+      } on GrpcError {
+        // Expected if shutdown raced the unary call.
+      }
+      try {
+        await serverStreamFuture;
+      } on GrpcError {
+        // Expected if shutdown raced the server stream.
+      }
+      try {
+        await clientStreamFuture;
+      } on GrpcError {
+        // Expected if shutdown raced the client stream.
+      }
+      try {
+        await bidiCollector;
+      } on GrpcError {
+        // Expected if shutdown raced the bidi stream.
+      }
+
+      await channel.shutdown();
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 13: Channel reuse after server restart
+    // -------------------------------------------------------------------------
+    testTcpAndUds('new channel works after server restart on same port', (
+      address,
+    ) async {
+      // First lifecycle.
+      final server1 = Server.create(services: [EchoService()]);
+      await server1.serve(address: address, port: 0);
+      final port = server1.port!;
+
+      final channel1 = _createChannel(address, port);
+      final client1 = EchoClient(channel1);
+      expect(await client1.echo(42), equals(42));
+
+      await channel1.shutdown();
+      await server1.shutdown();
+
+      // Second lifecycle on the same address (different port is fine).
+      final server2 = Server.create(services: [EchoService()]);
+      await server2.serve(address: address, port: 0);
+      addTearDown(() => server2.shutdown());
+
+      final channel2 = _createChannel(address, server2.port!);
+      final client2 = EchoClient(channel2);
+      expect(await client2.echo(99), equals(99));
+
+      await channel2.shutdown();
+      await server2.shutdown();
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 14: Strengthened bidi shutdown with data integrity verification
+    // -------------------------------------------------------------------------
+    testTcpAndUds(
+      'bidi stream with 200 items verifies data integrity under shutdown',
+      (address) async {
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
+
+        final channel = _createChannel(address, server.port!);
+        final client = EchoClient(channel);
+
+        final inputController = StreamController<int>();
+        final responseStream = client.bidiStream(inputController.stream);
+
+        final received = <int>[];
+        final receivedFirst = Completer<void>();
+        final streamDone = Completer<void>();
+        responseStream.listen(
+          (value) {
+            received.add(value);
+            if (!receivedFirst.isCompleted) receivedFirst.complete();
+          },
+          onError: (_) {
+            if (!streamDone.isCompleted) streamDone.complete();
+          },
+          onDone: () {
+            if (!streamDone.isCompleted) streamDone.complete();
+          },
+        );
+
+        // Send 200 items (values kept <= 127 so doubled fits in byte).
+        for (var i = 0; i < 200; i++) {
+          inputController.add(i % 128);
+          if (i % 20 == 0) {
+            await Future<void>.delayed(const Duration(milliseconds: 2));
+          }
+        }
+
+        // Wait for at least one response before killing the server.
+        await receivedFirst.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => fail('no bidi response received'),
+        );
+        await server.shutdown();
+        await inputController.close();
+
+        await streamDone.future.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            fail('bidi stream did not terminate after shutdown');
+          },
+        );
+
+        // Verify data integrity of received items.
+        expect(
+          received.length,
+          greaterThan(0),
+          reason: 'Should have received at least 1 echoed item',
+        );
+        expect(
+          received.length,
+          lessThanOrEqualTo(200),
+          reason: 'Cannot receive more than 200 items',
+        );
+        for (var i = 0; i < received.length; i++) {
+          expect(
+            received[i],
+            equals(((i % 128) * 2) & 0xFF),
+            reason: 'item $i has wrong value',
+          );
+        }
+
+        await channel.shutdown();
+      },
+    );
+  });
 }

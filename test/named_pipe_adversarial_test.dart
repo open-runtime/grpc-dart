@@ -69,7 +69,8 @@ void main() {
       timeout: const Timeout(Duration(seconds: 90)),
       (pipeName) async {
         final sw = Stopwatch()..start();
-        void log(String msg) => print('[Test1 ${sw.elapsedMilliseconds}ms] $msg');
+        void log(String msg) =>
+            print('[Test1 ${sw.elapsedMilliseconds}ms] $msg');
 
         log('Creating server...');
         final server = NamedPipeServer.create(services: [EchoService()]);
@@ -95,10 +96,12 @@ void main() {
         final rpcFutures = <Future<void>>[];
         for (var i = 0; i < clients.length; i++) {
           rpcFutures.add(
-            clients[i].echo(i).then(
-              (_) => log('RPC $i succeeded'),
-              onError: (e) => log('RPC $i failed: $e'),
-            ),
+            clients[i]
+                .echo(i)
+                .then(
+                  (_) => log('RPC $i succeeded'),
+                  onError: (e) => log('RPC $i failed: $e'),
+                ),
           );
         }
         log('All RPCs fired.');
@@ -551,16 +554,17 @@ void main() {
       // not the encoding range.
       final results = await client.serverStream(1000).toList();
 
-      // On CI runners, named pipe I/O can be slower and the server's async*
-      // generator may not fully drain before the transport tears down. We
-      // require at least 100 items to prove the pipe is working, but accept
-      // that CI may not deliver all 1000 under heavy load.
+      // No server shutdown during this test — the client calls
+      // serverStream(1000).toList() and waits for normal completion.
+      // All 1000 items must arrive; anything less indicates a transport
+      // or framing bug. If CI flakes appear, the root cause should be
+      // investigated rather than loosening this assertion.
       expect(
         results.length,
-        greaterThan(100),
+        equals(1000),
         reason:
-            'Expected >100 items but got ${results.length}. '
-            'CI may not deliver all 1000 under heavy pipe I/O load.',
+            'Expected all 1000 items but got ${results.length}. '
+            'No shutdown racing this stream — full delivery required.',
       );
 
       // Verify every received item is correct and in order — the critical
@@ -668,7 +672,8 @@ void main() {
       timeout: const Timeout(Duration(seconds: 90)),
       (pipeName) async {
         final sw = Stopwatch()..start();
-        void log(String msg) => print('[Test11 ${sw.elapsedMilliseconds}ms] $msg');
+        void log(String msg) =>
+            print('[Test11 ${sw.elapsedMilliseconds}ms] $msg');
 
         log('Creating server...');
         final server = NamedPipeServer.create(services: [EchoService()]);
@@ -731,7 +736,8 @@ void main() {
       timeout: const Timeout(Duration(seconds: 90)),
       (pipeName) async {
         final sw = Stopwatch()..start();
-        void log(String msg) => print('[Test12 ${sw.elapsedMilliseconds}ms] $msg');
+        void log(String msg) =>
+            print('[Test12 ${sw.elapsedMilliseconds}ms] $msg');
 
         log('Creating server...');
         final server = NamedPipeServer.create(services: [EchoService()]);
@@ -813,7 +819,8 @@ void main() {
       timeout: const Timeout(Duration(seconds: 90)),
       (pipeName) async {
         final sw = Stopwatch()..start();
-        void log(String msg) => print('[Test10 ${sw.elapsedMilliseconds}ms] $msg');
+        void log(String msg) =>
+            print('[Test10 ${sw.elapsedMilliseconds}ms] $msg');
 
         log('Creating server1...');
         final server1 = NamedPipeServer.create(services: [EchoService()]);

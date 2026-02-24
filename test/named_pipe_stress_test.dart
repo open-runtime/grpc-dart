@@ -207,8 +207,20 @@ void main() {
 
       // The stream should have been cut short — 1000 items at 10ms each
       // would take ~10 seconds, but we shut down almost immediately after
-      // the first item.
-      expect(results.length, lessThan(1000));
+      // the first item. Verify we got at least 1 (confirmed by
+      // receivedFirst) and fewer than 1000 (confirmed by early shutdown).
+      expect(
+        results.length,
+        greaterThan(0),
+        reason:
+            'Should have received at least 1 item before '
+            'shutdown',
+      );
+      expect(
+        results.length,
+        lessThan(1000),
+        reason: 'Stream should be truncated by server shutdown',
+      );
 
       await channel.shutdown();
     });
@@ -626,23 +638,112 @@ void main() {
   });
 
   // ===========================================================================
-  // 5. Cross-Platform Skip Verification
+  // 5. Additional Coverage (Issues #33)
+  // ===========================================================================
+
+  group('Named Pipe Additional Coverage', () {
+    // 18. Five channels connecting simultaneously, all firing RPCs.
+    //     Exercises pipe contention and concurrent instance allocation.
+    testNamedPipe('concurrent multi-channel connect under contention', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      // Create 5 channels simultaneously.
+      final channels = List.generate(
+        5,
+        (_) => NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        ),
+      );
+      final clients = channels.map(EchoClient.new).toList();
+
+      // Fire RPCs from all channels in parallel.
+      final results = await Future.wait([
+        for (var i = 0; i < 5; i++) clients[i].echo(i),
+      ]);
+
+      for (var i = 0; i < 5; i++) {
+        expect(
+          results[i],
+          equals(i),
+          reason: 'channel $i returned wrong value',
+        );
+      }
+
+      // Shut down all channels, then server.
+      for (final ch in channels) {
+        await ch.shutdown();
+      }
+      await server.shutdown();
+    });
+
+    // 19. Same-channel reconnection after server restart.
+    //     Connect, do an RPC, shut down server, restart on same pipe name,
+    //     do another RPC on a new channel (same pipe name). Verifies the
+    //     server can be restarted cleanly and new clients can connect.
+    testNamedPipe('new channel works after server restart on same pipe name', (
+      pipeName,
+    ) async {
+      // First server lifecycle.
+      final server1 = NamedPipeServer.create(services: [EchoService()]);
+      await server1.serve(pipeName: pipeName);
+
+      final channel1 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client1 = EchoClient(channel1);
+      expect(await client1.echo(42), equals(42));
+
+      await channel1.shutdown();
+      await server1.shutdown();
+
+      // Brief pause to let OS release the pipe name.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      // Second server lifecycle on the SAME pipe name.
+      final server2 = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server2.shutdown());
+      await server2.serve(pipeName: pipeName);
+
+      final channel2 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client2 = EchoClient(channel2);
+      expect(await client2.echo(99), equals(99));
+
+      await channel2.shutdown();
+      await server2.shutdown();
+    });
+  });
+
+  // ===========================================================================
+  // 6. Cross-Platform Skip Verification
   // ===========================================================================
 
   group('Named Pipe Cross-Platform', () {
     // 17. On non-Windows platforms the testNamedPipe helper registers the
     //     test with skip: 'Named pipes are Windows-only'. We verify the
     //     underlying platform guard by running a plain `test()`.
-    test('NamedPipeServer.serve() throws UnsupportedError on non-Windows', () {
-      if (!Platform.isWindows) {
-        // On macOS/Linux, NamedPipeServer.serve() should throw since
-        // the Win32 API is unavailable.
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        expect(
-          () => server.serve(pipeName: 'irrelevant'),
-          throwsA(isA<UnsupportedError>()),
-        );
-      }
-    }, skip: Platform.isWindows ? 'Only applicable on non-Windows' : null);
+    test(
+      'NamedPipeServer.serve() throws UnsupportedError on non-Windows',
+      () {
+        if (!Platform.isWindows) {
+          // On macOS/Linux, NamedPipeServer.serve() should throw since
+          // the Win32 API is unavailable.
+          final server = NamedPipeServer.create(services: [EchoService()]);
+          expect(
+            () => server.serve(pipeName: 'irrelevant'),
+            throwsA(isA<UnsupportedError>()),
+          );
+        }
+      },
+      skip: Platform.isWindows ? 'Only applicable on non-Windows' : null,
+    );
   });
 }
