@@ -89,6 +89,10 @@ class NamedPipeServer extends ConnectionServer {
   /// Whether the server is currently running.
   bool _isRunning = false;
 
+  /// Completer that resolves when the server isolate has created the first
+  /// pipe instance and is ready to accept client connections.
+  Completer<void>? _readyCompleter;
+
   /// Create a named pipe server for the given [services].
   NamedPipeServer.create({
     required List<Service> services,
@@ -110,6 +114,10 @@ class NamedPipeServer extends ConnectionServer {
   /// [pipeName] is the name of the pipe (e.g., 'my-service-12345').
   /// The full path will be `\\.\pipe\{pipeName}`.
   ///
+  /// This method returns only after the pipe has been created in the Windows
+  /// namespace and is ready to accept client connections. This eliminates
+  /// race conditions where clients attempt to connect before the pipe exists.
+  ///
   /// Throws [UnsupportedError] if not running on Windows.
   /// Throws [StateError] if the server is already running.
   Future<void> serve({required String pipeName}) async {
@@ -126,6 +134,7 @@ class NamedPipeServer extends ConnectionServer {
 
     _pipeName = pipeName;
     _receivePort = ReceivePort();
+    _readyCompleter = Completer<void>();
 
     // Listen for incoming connections from the isolate
     _receivePortSubscription = _receivePort!.listen(_handleIsolateMessage);
@@ -136,15 +145,38 @@ class NamedPipeServer extends ConnectionServer {
       _AcceptLoopConfig(pipeName: pipeName, mainPort: _receivePort!.sendPort),
     );
 
+    // Wait for the isolate to confirm the pipe has been created.
+    // This guarantees the pipe exists in the Windows namespace and clients
+    // can successfully call CreateFile when serve() returns.
+    await _readyCompleter!.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => throw StateError(
+        'NamedPipeServer timed out waiting for pipe creation. '
+        'The server isolate may have crashed.',
+      ),
+    );
+
     _isRunning = true;
   }
 
   /// Handles messages from the server isolate.
   void _handleIsolateMessage(dynamic message) {
-    if (message is _PipeConnection) {
-      _handleNewConnection(message);
+    if (message is _ServerReady) {
+      // Pipe has been created — serve() can return.
+      if (!(_readyCompleter?.isCompleted ?? true)) {
+        _readyCompleter!.complete();
+      }
+    } else if (message is _PipeConnection) {
+      if (_isRunning) {
+        _handleNewConnection(message);
+      }
     } else if (message is _ServerError) {
-      stderr.writeln('NamedPipeServer error: ${message.error}');
+      // If we haven't signaled readiness yet, propagate the error to serve().
+      if (!(_readyCompleter?.isCompleted ?? true)) {
+        _readyCompleter!.completeError(StateError(message.error));
+      } else {
+        stderr.writeln('NamedPipeServer error: ${message.error}');
+      }
     }
   }
 
@@ -187,10 +219,17 @@ class NamedPipeServer extends ConnectionServer {
   }
 
   /// Shuts down the server gracefully.
+  ///
+  /// This method:
+  /// 1. Stops accepting new connections
+  /// 2. Opens a dummy client connection to unblock the server isolate's
+  ///    blocking ConnectNamedPipe call (Isolate.kill cannot interrupt FFI)
+  /// 3. Kills the server isolate
   Future<void> shutdown() async {
     if (!_isRunning) return;
 
     _isRunning = false;
+    final pipeName = _pipeName;
 
     // Cancel the receive port subscription
     await _receivePortSubscription?.cancel();
@@ -200,11 +239,36 @@ class NamedPipeServer extends ConnectionServer {
     _receivePort?.close();
     _receivePort = null;
 
-    // Kill the server isolate
-    _serverIsolate?.kill(priority: Isolate.beforeNextEvent);
+    // Unblock the server isolate's blocking ConnectNamedPipe call.
+    // ConnectNamedPipe is a synchronous Win32 call that blocks the isolate's
+    // thread — Isolate.kill() cannot interrupt it. Opening a dummy client
+    // connection satisfies ConnectNamedPipe, allowing the isolate to reach
+    // its next event-loop checkpoint where the kill can take effect.
+    if (pipeName != null) {
+      _connectDummyClient(pipeName);
+    }
+
+    // Kill the server isolate (now unblocked)
+    _serverIsolate?.kill(priority: Isolate.immediate);
     _serverIsolate = null;
 
     _pipeName = null;
+    _readyCompleter = null;
+  }
+
+  /// Opens and immediately closes a dummy client connection to unblock
+  /// a blocking ConnectNamedPipe call in the server isolate.
+  static void _connectDummyClient(String pipeName) {
+    final pipePath = r'\\.\pipe\' + pipeName;
+    final pipePathPtr = pipePath.toNativeUtf16();
+    try {
+      final hPipe = CreateFile(pipePathPtr, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, NULL);
+      if (hPipe != INVALID_HANDLE_VALUE) {
+        CloseHandle(hPipe);
+      }
+    } finally {
+      calloc.free(pipePathPtr);
+    }
   }
 }
 
@@ -219,6 +283,10 @@ class _AcceptLoopConfig {
 
   _AcceptLoopConfig({required this.pipeName, required this.mainPort});
 }
+
+/// Message indicating the server has created the first pipe instance and is
+/// ready to accept client connections.
+class _ServerReady {}
 
 /// Message indicating a new pipe connection.
 class _PipeConnection {
@@ -256,9 +324,14 @@ class _ServerError {
 // =============================================================================
 
 /// The accept loop running in a separate isolate.
+///
+/// Creates named pipe instances in a loop, waiting for client connections.
+/// Sends [_ServerReady] after the first pipe is created so the main isolate
+/// knows clients can connect.
 Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   final pipePath = r'\\.\pipe\' + config.pipeName;
   final pipePathPtr = pipePath.toNativeUtf16();
+  var readySent = false;
 
   try {
     while (true) {
@@ -280,7 +353,17 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         break;
       }
 
-      // Wait for a client to connect (blocking)
+      // Signal readiness after the first pipe instance is created.
+      // At this point the pipe exists in the Windows namespace and
+      // clients can successfully call CreateFile to connect.
+      if (!readySent) {
+        config.mainPort.send(_ServerReady());
+        readySent = true;
+      }
+
+      // Wait for a client to connect (blocking).
+      // This blocks the isolate thread until a client calls CreateFile on the
+      // pipe, or until the server shuts down (via dummy client connection).
       final connected = ConnectNamedPipe(hPipe, nullptr);
       if (connected == 0 && GetLastError() != ERROR_PIPE_CONNECTED) {
         CloseHandle(hPipe);

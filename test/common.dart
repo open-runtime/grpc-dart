@@ -51,6 +51,10 @@ void testTcpAndUds(
 ///
 /// [pipeName] is the base name for the pipe. A unique suffix will be added.
 /// Only runs on Windows.
+///
+/// Each test has a 30-second timeout to prevent CI hangs. Named pipe tests
+/// can hang indefinitely if the server isolate's blocking ConnectNamedPipe
+/// call is never satisfied (e.g., due to a race condition or resource leak).
 void testNamedPipe(
   String name,
   FutureOr<void> Function(String pipeName) testCase, {
@@ -60,11 +64,17 @@ void testNamedPipe(
     return;
   }
 
-  test('$name (over named pipe)', () async {
-    // Generate unique pipe name to avoid conflicts
-    final uniquePipeName = '$basePipeName-${DateTime.now().millisecondsSinceEpoch}';
-    await testCase(uniquePipeName);
-  });
+  test(
+    '$name (over named pipe)',
+    timeout: const Timeout(Duration(seconds: 30)),
+    () async {
+      // Generate unique pipe name to avoid conflicts between parallel tests.
+      // Include microseconds for sub-millisecond uniqueness on fast machines.
+      final uniquePipeName =
+          '$basePipeName-${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
+      await testCase(uniquePipeName);
+    },
+  );
 }
 
 /// Test functionality for all supported transports: TCP, Unix domain sockets, and named pipes.

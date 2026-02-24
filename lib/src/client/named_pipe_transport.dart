@@ -83,7 +83,9 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
     final pipePathPtr = pipePath.toNativeUtf16();
 
     try {
-      // Open the named pipe for reading and writing
+      // Open the named pipe for reading and writing.
+      // The server's serve() method guarantees the pipe exists in the Windows
+      // namespace before returning, so CreateFile should succeed immediately.
       final hPipe = CreateFile(
         pipePathPtr,
         GENERIC_READ | GENERIC_WRITE,
@@ -101,7 +103,7 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 
       _pipeHandle = hPipe;
 
-      // Set pipe mode to message mode for better framing
+      // Set pipe to byte-read mode for stream-oriented HTTP/2 framing
       final mode = calloc<DWORD>();
       mode.value = PIPE_READMODE_BYTE;
       final success = SetNamedPipeHandleState(hPipe, mode, nullptr, nullptr);

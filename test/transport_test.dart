@@ -499,7 +499,7 @@ void main() {
   // =============================================================================
 
   group('Transport Selection', () {
-    test('platform-appropriate transport works', () async {
+    test('platform-appropriate transport works', timeout: const Timeout(Duration(seconds: 30)), () async {
       if (Platform.isWindows) {
         // On Windows, test named pipe
         final pipeName = 'grpc-platform-test-${DateTime.now().millisecondsSinceEpoch}';
