@@ -15,7 +15,7 @@
 
 import 'dart:async';
 import 'dart:ffi';
-import 'dart:io' show Platform, stderr;
+import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
@@ -23,6 +23,7 @@ import 'package:http2/transport.dart';
 import 'package:win32/win32.dart';
 
 import '../shared/codec_registry.dart';
+import '../shared/logging/logging.dart' show logGrpcError;
 import '../shared/named_pipe_io.dart';
 import 'handler.dart';
 import 'interceptor.dart';
@@ -216,7 +217,7 @@ class NamedPipeServer extends ConnectionServer {
       if (!(_readyCompleter?.isCompleted ?? true)) {
         _readyCompleter!.completeError(StateError(message.error));
       } else {
-        stderr.writeln('NamedPipeServer error: ${message.error}');
+        logGrpcError('[gRPC] NamedPipeServer error: ${message.error}');
       }
     }
   }
@@ -245,10 +246,13 @@ class NamedPipeServer extends ConnectionServer {
   ///
   /// This method:
   /// 1. Stops accepting new connections (`_isRunning = false`)
-  /// 2. Closes all active pipe streams (breaking their PeekNamedPipe read
-  ///    loops and cleaning up Win32 handles)
-  /// 3. Opens a dummy client connection to unblock the server isolate's
-  ///    blocking ConnectNamedPipe call (Isolate.kill cannot interrupt FFI)
+  /// 1.5. Cancels all active gRPC handlers and finishes HTTP/2
+  ///    connections (via [ConnectionServer.shutdownActiveConnections])
+  /// 2. Closes all active pipe streams (breaking their PeekNamedPipe
+  ///    read loops and cleaning up Win32 handles)
+  /// 3. Opens a dummy client connection to unblock the server
+  ///    isolate's blocking ConnectNamedPipe call (Isolate.kill cannot
+  ///    interrupt FFI)
   /// 4. Kills the server isolate
   /// 5. Cleans up the receive port
   Future<void> shutdown() async {
@@ -259,6 +263,16 @@ class NamedPipeServer extends ConnectionServer {
     // messages from the isolate are safely ignored.
     _isRunning = false;
     final pipeName = _pipeName;
+
+    // Step 1.5: Cancel all active gRPC handlers and finish HTTP/2
+    // connections. Must happen BEFORE closing pipe streams (step 2) so
+    // that in-flight RPCs are terminated first, preventing the HTTP/2
+    // transport from waiting indefinitely for streams that will never
+    // complete.
+    //
+    // Uses the shared shutdownActiveConnections() from ConnectionServer,
+    // which mirrors the Server.shutdown() pattern from server.dart.
+    await shutdownActiveConnections();
 
     // Step 2: Force-close all active pipe streams. Using force: true
     // calls DisconnectNamedPipe to immediately terminate connections,
@@ -413,7 +427,7 @@ class _ServerPipeStream {
         if (peekResult == 0) {
           final error = GetLastError();
           if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
-            stderr.writeln('Server pipe peek error: $error');
+            logGrpcError('[gRPC] Server pipe peek error: $error');
           }
           break;
         }
@@ -431,7 +445,7 @@ class _ServerPipeStream {
         if (success == 0) {
           final error = GetLastError();
           if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
-            stderr.writeln('Server pipe read error: $error');
+            logGrpcError('[gRPC] Server pipe read error: $error');
           }
           break;
         }
@@ -481,13 +495,13 @@ class _ServerPipeStream {
 
         if (success == 0) {
           final error = GetLastError();
-          stderr.writeln('Server pipe write error: $error');
+          logGrpcError('[gRPC] Server pipe write error: $error');
           close(force: true);
           return;
         }
 
         if (bytesWritten.value == 0) {
-          stderr.writeln('Server pipe write stalled: 0 bytes written');
+          logGrpcError('[gRPC] Server pipe write stalled: 0 bytes written');
           close(force: true);
           return;
         }

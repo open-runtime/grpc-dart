@@ -57,6 +57,7 @@ class ServerHandler extends ServiceCall {
   late Stream _responses;
   StreamSubscription? _responseSubscription;
   bool _headersSent = false;
+  bool _trailersSent = false;
 
   Map<String, String>? _customHeaders = {};
   Map<String, String>? _customTrailers = {};
@@ -262,31 +263,49 @@ class ServerHandler extends ServiceCall {
     isCanceled = true;
     final error = GrpcError.deadlineExceeded('Deadline exceeded');
     _sendError(error);
-    if (!_requests!.isClosed) {
-      _requests!
-        ..addError(error)
-        ..close();
+    if (_requests != null && !_requests!.isClosed) {
+      try {
+        _requests!
+          ..addError(error)
+          ..close();
+      } catch (e) {
+        logGrpcError('[gRPC] Stream closed during _onTimedOut: $e');
+      }
     }
   }
 
   // -- Active state, incoming data --
 
   void _onDataActive(GrpcMessage message) {
+    if (_requests == null) return;
+
     if (message is! GrpcData) {
       final error = GrpcError.unimplemented('Expected request');
       _sendError(error);
-      _requests!
-        ..addError(error)
-        ..close();
+      if (!_requests!.isClosed) {
+        try {
+          _requests!
+            ..addError(error)
+            ..close();
+        } catch (e) {
+          logGrpcError('[gRPC] Stream closed during _onDataActive (bad message): $e');
+        }
+      }
       return;
     }
 
     if (_hasReceivedRequest && !_descriptor.streamingRequest) {
       final error = GrpcError.unimplemented('Too many requests');
       _sendError(error);
-      _requests!
-        ..addError(error)
-        ..close();
+      if (!_requests!.isClosed) {
+        try {
+          _requests!
+            ..addError(error)
+            ..close();
+        } catch (e) {
+          logGrpcError('[gRPC] Stream closed during _onDataActive (too many requests): $e');
+        }
+      }
       return;
     }
 
@@ -298,12 +317,25 @@ class ServerHandler extends ServiceCall {
     } catch (error, trace) {
       final grpcError = GrpcError.internal('Error deserializing request: $error');
       _sendError(grpcError, trace);
-      _requests!
-        ..addError(grpcError, trace)
-        ..close();
+      if (!_requests!.isClosed) {
+        try {
+          _requests!
+            ..addError(grpcError, trace)
+            ..close();
+        } catch (e) {
+          logGrpcError('[gRPC] Stream closed during _onDataActive (deserialize): $e');
+        }
+      }
       return;
     }
-    _requests!.add(request);
+    if (!_requests!.isClosed) {
+      try {
+        _requests!.add(request);
+      } catch (e) {
+        logGrpcError('[gRPC] Stream closed during _onDataActive (add request): $e');
+        return;
+      }
+    }
     _hasReceivedRequest = true;
   }
 
@@ -374,6 +406,8 @@ class ServerHandler extends ServiceCall {
 
   @override
   void sendTrailers({int? status = 0, String? message, Map<String, String>? errorTrailers}) {
+    if (_trailersSent) return;
+    _trailersSent = true;
     _timeoutTimer?.cancel();
 
     final outgoingTrailersMap = <String, String>{};

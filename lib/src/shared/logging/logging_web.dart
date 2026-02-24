@@ -13,8 +13,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// Platform-specific logging for web/browser environments
-/// Uses print since dart:io is unavailable in web
-void logGrpcError(String message) {
+/// Callback type for gRPC internal error logging.
+///
+/// Replace [grpcErrorLogger] to integrate with your application's logging
+/// framework.
+typedef GrpcErrorLogger = void Function(String message);
+
+/// The active gRPC error logger. Defaults to print for web environments.
+///
+/// Override this to capture gRPC internal errors in your logging framework:
+/// ```dart
+/// grpcErrorLogger = (message) => myLogger.warning(message);
+/// ```
+GrpcErrorLogger grpcErrorLogger = _defaultLogger;
+
+void _defaultLogger(String message) {
   print(message);
+}
+
+/// Logs a gRPC internal error using the configured [grpcErrorLogger].
+void logGrpcError(String message) {
+  grpcErrorLogger(message);
 }

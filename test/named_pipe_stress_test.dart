@@ -24,6 +24,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
 import 'package:test/test.dart';
@@ -133,7 +134,7 @@ void main() {
       NamedPipeServer? lastServer;
       addTearDown(() => lastServer?.shutdown());
 
-      for (var cycle = 0; cycle < 4; cycle++) {
+      for (var cycle = 0; cycle < 8; cycle++) {
         final server = NamedPipeServer.create(services: [EchoService()]);
         lastServer = server;
         await server.serve(pipeName: pipeName);
@@ -143,7 +144,8 @@ void main() {
           options: const NamedPipeChannelOptions(),
         );
         final client = EchoClient(channel);
-        expect(await client.echo(cycle), equals(cycle), reason: 'cycle $cycle');
+        final value = cycle % 256;
+        expect(await client.echo(value), equals(value), reason: 'cycle $cycle');
 
         await channel.shutdown();
         await server.shutdown();
@@ -179,20 +181,22 @@ void main() {
       final receivedFirst = Completer<void>();
       final results = <int>[];
 
-      final subscription = client.serverStream(1000).listen(
-        (value) {
-          results.add(value);
-          if (!receivedFirst.isCompleted) {
-            receivedFirst.complete();
-          }
-        },
-        onError: (_) {
-          // Expected: GrpcError when server shuts down mid-stream.
-          if (!receivedFirst.isCompleted) {
-            receivedFirst.complete();
-          }
-        },
-      );
+      final subscription = client
+          .serverStream(1000)
+          .listen(
+            (value) {
+              results.add(value);
+              if (!receivedFirst.isCompleted) {
+                receivedFirst.complete();
+              }
+            },
+            onError: (_) {
+              // Expected: GrpcError when server shuts down mid-stream.
+              if (!receivedFirst.isCompleted) {
+                receivedFirst.complete();
+              }
+            },
+          );
 
       // Wait until the stream is provably active before shutting down.
       await receivedFirst.future;
@@ -208,15 +212,13 @@ void main() {
 
       await channel.shutdown();
     });
-  });
 
-  // ===========================================================================
-  // 2. Concurrency & Stress Tests
-  // ===========================================================================
-
-  group('Named Pipe Concurrency & Stress', () {
-    // 6. 50 concurrent unary RPCs on the same channel
-    testNamedPipe('50 concurrent unary RPCs on same channel', (pipeName) async {
+    // 5b. Large payload exceeding pipe buffer boundary (100KB unary)
+    testNamedPipe('large payload exceeding pipe buffer boundary', (
+      pipeName,
+    ) async {
+      // Tests sending a payload larger than kNamedPipeBufferSize (65536 bytes)
+      // to verify the transport handles fragmentation/reassembly correctly.
       final server = NamedPipeServer.create(services: [EchoService()]);
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
@@ -227,29 +229,108 @@ void main() {
       );
       final client = EchoClient(channel);
 
-      final futures = List.generate(50, (i) => client.echo(i));
-      final results = await Future.wait(futures);
-      expect(results, equals(List.generate(50, (i) => i)));
+      // Create a 100KB payload filled with a repeating byte pattern.
+      final payload = Uint8List(102400);
+      for (var i = 0; i < payload.length; i++) {
+        payload[i] = i & 0xFF;
+      }
+
+      final response = await client.echoBytes(payload);
+      expect(response, equals(payload));
 
       await channel.shutdown();
       await server.shutdown();
     });
 
-    // 7. 10 sequential channel connect/disconnect cycles
-    testNamedPipe('10 sequential channel connect/disconnect cycles', (
+    // 5c. Large server-stream chunks exceeding pipe buffer
+    testNamedPipe('large server-stream chunks exceeding pipe buffer', (
+      pipeName,
+    ) async {
+      // Tests that server-streamed chunks larger than the pipe buffer
+      // are correctly fragmented and reassembled.
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
+
+      // Request 5 chunks of 20KB each (100KB total).
+      // Request format: 8 bytes big-endian [chunkCount(4), chunkSize(4)].
+      const chunkCount = 5;
+      const chunkSize = 20480; // 20KB
+      final request = Uint8List(8);
+      final bd = ByteData.sublistView(request);
+      bd.setUint32(0, chunkCount);
+      bd.setUint32(4, chunkSize);
+
+      final chunks = await client.serverStreamBytes(request).toList();
+
+      expect(chunks.length, equals(chunkCount));
+
+      for (var i = 0; i < chunkCount; i++) {
+        expect(chunks[i].length, equals(chunkSize), reason: 'chunk $i length');
+        // Verify fill pattern: byte at position j in chunk i = (i+j) & 0xFF.
+        for (var j = 0; j < chunkSize; j++) {
+          expect(
+            chunks[i][j],
+            equals((i + j) & 0xFF),
+            reason: 'chunk $i byte $j',
+          );
+        }
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+  });
+
+  // ===========================================================================
+  // 2. Concurrency & Stress Tests
+  // ===========================================================================
+
+  group('Named Pipe Concurrency & Stress', () {
+    // 6. 100 concurrent unary RPCs on the same channel
+    testNamedPipe('100 concurrent unary RPCs on same channel', (
       pipeName,
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      for (var i = 0; i < 10; i++) {
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
+
+      final futures = List.generate(100, (i) => client.echo(i));
+      final results = await Future.wait(futures);
+      expect(results, equals(List.generate(100, (i) => i)));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // 7. 20 sequential channel connect/disconnect cycles
+    testNamedPipe('20 sequential channel connect/disconnect cycles', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      for (var i = 0; i < 20; i++) {
         final channel = NamedPipeClientChannel(
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
         final client = EchoClient(channel);
-        expect(await client.echo(i), equals(i), reason: 'cycle $i');
+        final value = i % 256;
+        expect(await client.echo(value), equals(value), reason: 'cycle $i');
         await channel.shutdown();
       }
 
@@ -300,8 +381,8 @@ void main() {
       await server.shutdown();
     });
 
-    // 9. Rapid fire: 100 echo RPCs as fast as possible
-    testNamedPipe('rapid fire 100 sequential echo RPCs', (pipeName) async {
+    // 9. Rapid fire: 500 echo RPCs as fast as possible
+    testNamedPipe('rapid fire 500 sequential echo RPCs', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
@@ -314,23 +395,64 @@ void main() {
 
       final stopwatch = Stopwatch()..start();
 
-      for (var i = 0; i < 100; i++) {
-        final result = await client.echo(i);
-        expect(result, equals(i), reason: 'RPC #$i');
+      for (var i = 0; i < 500; i++) {
+        final value = i % 256;
+        final result = await client.echo(value);
+        expect(result, equals(value), reason: 'RPC #$i');
       }
 
       stopwatch.stop();
 
-      // All 100 RPCs must have succeeded (we already asserted above).
+      // All 500 RPCs must have succeeded (we already asserted above).
       // Log elapsed time for manual perf analysis, but do not assert on
       // timing because CI machines vary widely.
       // ignore: avoid_print
       print(
-        'Named pipe: 100 sequential echo RPCs in '
+        'Named pipe: 500 sequential echo RPCs in '
         '${stopwatch.elapsedMilliseconds}ms',
       );
 
       await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // 10. Sustained concurrent load: 5 channels, 20 RPCs each
+    testNamedPipe('100 concurrent RPCs across 5 channels', (pipeName) async {
+      // Stress test: 5 independent channels, 20 RPCs each, all concurrent.
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channels = List.generate(
+        5,
+        (_) => NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        ),
+      );
+      final clients = channels.map(EchoClient.new).toList();
+
+      // Fire 20 concurrent RPCs per client (100 total).
+      final allFutures = <Future<int>>[];
+      for (var ch = 0; ch < 5; ch++) {
+        for (var rpc = 0; rpc < 20; rpc++) {
+          final value = (ch * 20 + rpc) % 256;
+          allFutures.add(clients[ch].echo(value));
+        }
+      }
+
+      final results = await Future.wait(allFutures);
+
+      // Verify all 100 results are correct.
+      for (var idx = 0; idx < 100; idx++) {
+        final expected = (idx) % 256;
+        expect(results[idx], equals(expected), reason: 'RPC #$idx');
+      }
+
+      // Clean up all channels, then server.
+      for (final ch in channels) {
+        await ch.shutdown();
+      }
       await server.shutdown();
     });
   });

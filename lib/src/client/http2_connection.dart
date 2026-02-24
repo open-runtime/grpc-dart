@@ -21,6 +21,7 @@ import 'dart:typed_data';
 import 'package:http2/transport.dart';
 
 import '../shared/codec.dart';
+import '../shared/status.dart';
 import '../shared/timeout.dart';
 import 'call.dart';
 import 'client_keepalive.dart';
@@ -61,6 +62,14 @@ class Http2ClientConnection implements connection.ClientConnection {
 
   ClientKeepAlive? keepAliveManager;
 
+  /// Generation counter to prevent stale socket.done callbacks from
+  /// abandoning a newer connection.
+  int _connectionGeneration = 0;
+
+  /// Subscription to [ClientTransportConnection.onFrameReceived], cancelled
+  /// in [_disconnect] to avoid leaks.
+  StreamSubscription? _frameReceivedSubscription;
+
   Http2ClientConnection(Object host, int port, this.options)
     : _transportConnector = SocketTransportConnector(host, port, options);
 
@@ -80,7 +89,12 @@ class Http2ClientConnection implements connection.ClientConnection {
 
   Future<ClientTransportConnection> connectTransport() async {
     final connection = await _transportConnector.connect();
-    _transportConnector.done.then((_) => _abandonConnection());
+    final generation = ++_connectionGeneration;
+    _transportConnector.done.then((_) {
+      if (generation == _connectionGeneration) {
+        _abandonConnection();
+      }
+    });
 
     // Give the settings settings-frame a bit of time to arrive.
     // TODO(sigurdm): This is a hack. The http2 package should expose a way of
@@ -113,7 +127,7 @@ class Http2ClientConnection implements connection.ClientConnection {
               },
               onPingTimeout: () => transport.finish(),
             );
-            transport.onFrameReceived.listen((_) => keepAliveManager?.onFrameReceived());
+            _frameReceivedSubscription = transport.onFrameReceived.listen((_) => keepAliveManager?.onFrameReceived());
           }
           _connectionLifeTimer
             ..reset()
@@ -189,7 +203,7 @@ class Http2ClientConnection implements connection.ClientConnection {
     );
     if (_transportConnection == null) {
       _connect();
-      throw ArgumentError('Trying to make request on null connection');
+      throw GrpcError.unavailable('Connection not ready');
     }
     final stream = _transportConnection!.makeRequest(headers);
     return Http2TransportStream(stream, onRequestFailure, options.codecRegistry, compressionCodec);
@@ -214,14 +228,14 @@ class Http2ClientConnection implements connection.ClientConnection {
     if (_state == ConnectionState.shutdown) return;
     _setShutdownState();
     await _transportConnection?.finish();
-    keepAliveManager?.onTransportTermination();
+    _disconnect();
   }
 
   @override
   Future<void> terminate() async {
     _setShutdownState();
     await _transportConnection?.terminate();
-    keepAliveManager?.onTransportTermination();
+    _disconnect();
   }
 
   void _setShutdownState() {
@@ -279,7 +293,6 @@ class Http2ClientConnection implements connection.ClientConnection {
       _failCall(call, error);
     }
     _pendingCalls.clear();
-    keepAliveManager?.onTransportIdle();
     _setState(ConnectionState.idle);
   }
 
@@ -291,6 +304,9 @@ class Http2ClientConnection implements connection.ClientConnection {
 
   void _disconnect() {
     _transportConnection = null;
+    _frameReceivedSubscription?.cancel();
+    _frameReceivedSubscription = null;
+    _connectionLifeTimer.stop();
     keepAliveManager?.onTransportTermination();
     keepAliveManager = null;
   }
@@ -307,7 +323,6 @@ class Http2ClientConnection implements connection.ClientConnection {
     // We were not planning to close the socket.
     if (!_hasPendingCalls()) {
       // No pending calls. Just hop to idle, and wait for a new RPC.
-      keepAliveManager?.onTransportIdle();
       _setState(ConnectionState.idle);
       return;
     }

@@ -15,8 +15,25 @@
 
 import 'dart:io' show stderr;
 
-/// Platform-specific logging for VM/IO environments
-/// Uses stderr for proper error stream routing
-void logGrpcError(String message) {
+/// Callback type for gRPC internal error logging.
+///
+/// Replace [grpcErrorLogger] to integrate with your application's logging
+/// framework (e.g., `package:logging`, Sentry, etc.).
+typedef GrpcErrorLogger = void Function(String message);
+
+/// The active gRPC error logger. Defaults to writing to stderr.
+///
+/// Override this to capture gRPC internal errors in your logging framework:
+/// ```dart
+/// grpcErrorLogger = (message) => myLogger.warning(message);
+/// ```
+GrpcErrorLogger grpcErrorLogger = _defaultLogger;
+
+void _defaultLogger(String message) {
   stderr.writeln(message);
+}
+
+/// Logs a gRPC internal error using the configured [grpcErrorLogger].
+void logGrpcError(String message) {
+  grpcErrorLogger(message);
 }

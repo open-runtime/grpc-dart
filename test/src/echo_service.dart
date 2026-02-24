@@ -18,6 +18,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
 
@@ -50,6 +51,26 @@ class EchoClient extends Client {
     (List<int> value) => value[0],
   );
 
+  // -- Large payload methods (identity serialization) --
+
+  static final _$echoBytes = ClientMethod<List<int>, List<int>>(
+    '/test.EchoService/EchoBytes',
+    (List<int> value) => value,
+    (List<int> value) => value,
+  );
+
+  static final _$serverStreamBytes = ClientMethod<List<int>, List<int>>(
+    '/test.EchoService/ServerStreamBytes',
+    (List<int> value) => value,
+    (List<int> value) => value,
+  );
+
+  static final _$bidiStreamBytes = ClientMethod<List<int>, List<int>>(
+    '/test.EchoService/BidiStreamBytes',
+    (List<int> value) => value,
+    (List<int> value) => value,
+  );
+
   EchoClient(super.channel);
 
   ResponseFuture<int> echo(int request, {CallOptions? options}) {
@@ -77,6 +98,36 @@ class EchoClient extends Client {
 
   ResponseStream<int> bidiStream(Stream<int> requests, {CallOptions? options}) {
     return $createStreamingCall(_$bidiStream, requests, options: options);
+  }
+
+  /// Echoes raw bytes back. Use for large payload testing (>64KB).
+  ResponseFuture<List<int>> echoBytes(
+    List<int> request, {
+    CallOptions? options,
+  }) {
+    return $createUnaryCall(_$echoBytes, request, options: options);
+  }
+
+  /// Server-streams byte chunks. Request: 8 bytes big-endian
+  /// [chunkCount(4), chunkSize(4)]. Each response is chunkSize bytes
+  /// filled with (chunkIndex & 0xFF).
+  ResponseStream<List<int>> serverStreamBytes(
+    List<int> request, {
+    CallOptions? options,
+  }) {
+    return $createStreamingCall(
+      _$serverStreamBytes,
+      Stream.value(request),
+      options: options,
+    );
+  }
+
+  /// Bidirectional byte echo — each received chunk is echoed back.
+  ResponseStream<List<int>> bidiStreamBytes(
+    Stream<List<int>> requests, {
+    CallOptions? options,
+  }) {
+    return $createStreamingCall(_$bidiStreamBytes, requests, options: options);
   }
 }
 
@@ -129,6 +180,38 @@ class EchoService extends Service {
         (int value) => [value],
       ),
     );
+
+    // -- Large payload methods (identity serialization) --
+    $addMethod(
+      ServiceMethod<List<int>, List<int>>(
+        'EchoBytes',
+        _echoBytes,
+        false,
+        false,
+        (List<int> value) => value,
+        (List<int> value) => value,
+      ),
+    );
+    $addMethod(
+      ServiceMethod<List<int>, List<int>>(
+        'ServerStreamBytes',
+        _serverStreamBytes,
+        false,
+        true,
+        (List<int> value) => value,
+        (List<int> value) => value,
+      ),
+    );
+    $addMethod(
+      ServiceMethod<List<int>, List<int>>(
+        'BidiStreamBytes',
+        _bidiStreamBytes,
+        true,
+        true,
+        (List<int> value) => value,
+        (List<int> value) => value,
+      ),
+    );
   }
 
   Future<int> _echo(ServiceCall call, Future<int> request) async {
@@ -154,6 +237,45 @@ class EchoService extends Service {
   Stream<int> _bidiStream(ServiceCall call, Stream<int> requests) async* {
     await for (final value in requests) {
       yield value * 2;
+    }
+  }
+
+  /// Echoes raw bytes back unchanged.
+  Future<List<int>> _echoBytes(
+    ServiceCall call,
+    Future<List<int>> request,
+  ) async {
+    return await request;
+  }
+
+  /// Server-streams byte chunks. Request: 8 bytes big-endian
+  /// [chunkCount(4), chunkSize(4)]. Each response chunk is chunkSize bytes
+  /// filled with (chunkIndex & 0xFF) for integrity verification.
+  Stream<List<int>> _serverStreamBytes(
+    ServiceCall call,
+    Future<List<int>> request,
+  ) async* {
+    final req = await request;
+    final bd = ByteData.sublistView(Uint8List.fromList(req));
+    final chunkCount = bd.getUint32(0);
+    final chunkSize = bd.getUint32(4);
+    for (var i = 0; i < chunkCount; i++) {
+      final chunk = Uint8List(chunkSize);
+      // Fill with repeating pattern for integrity verification.
+      for (var j = 0; j < chunkSize; j++) {
+        chunk[j] = (i + j) & 0xFF;
+      }
+      yield chunk;
+    }
+  }
+
+  /// Bidirectional byte echo — returns each received chunk unchanged.
+  Stream<List<int>> _bidiStreamBytes(
+    ServiceCall call,
+    Stream<List<int>> requests,
+  ) async* {
+    await for (final chunk in requests) {
+      yield chunk;
     }
   }
 }

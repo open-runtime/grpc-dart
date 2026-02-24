@@ -158,6 +158,33 @@ class ConnectionServer {
     );
   }
 
+  /// Cancels all active gRPC handlers and finishes all HTTP/2 connections.
+  ///
+  /// This is the core cleanup logic shared by [Server.shutdown] and
+  /// [NamedPipeServer.shutdown]. Handlers must be cancelled BEFORE
+  /// connections are finished to avoid deadlock: `connection.finish()`
+  /// waits for all HTTP/2 streams to close, but active response streams
+  /// (e.g. server-side streaming RPCs) won't close on their own.
+  /// Cancelling handlers first terminates in-flight streams so
+  /// `connection.finish()` can complete.
+  ///
+  /// Snapshots [_connections] before iterating because finishing a
+  /// connection triggers the `onDone` callback in [serveConnection],
+  /// which removes the connection from the list.
+  @protected
+  Future<void> shutdownActiveConnections() async {
+    final activeConnections = List.of(_connections);
+    for (final connection in activeConnections) {
+      final connectionHandlers = handlers[connection];
+      if (connectionHandlers != null) {
+        for (final handler in connectionHandlers) {
+          handler.cancel();
+        }
+      }
+    }
+    await Future.wait([for (final connection in activeConnections) connection.finish()]);
+  }
+
   @visibleForTesting
   ServerHandler serveStream_({
     required ServerTransportStream stream,
@@ -329,22 +356,8 @@ class Server extends ConnectionServer {
   }
 
   Future<void> shutdown() async {
-    // Cancel all active handlers before finishing connections to avoid
-    // deadlock: connection.finish() waits for all HTTP/2 streams to close,
-    // but active response streams (e.g. server-side streaming RPCs) won't
-    // close on their own. Cancelling handlers first terminates in-flight
-    // streams so connection.finish() can complete.
-    for (final connection in _connections) {
-      final connectionHandlers = handlers[connection];
-      if (connectionHandlers != null) {
-        for (final handler in connectionHandlers) {
-          handler.cancel();
-        }
-      }
-    }
-
+    await shutdownActiveConnections();
     await Future.wait([
-      for (var connection in _connections) connection.finish(),
       if (_insecureServer != null) _insecureServer!.close(),
       if (_secureServer != null) _secureServer!.close(),
     ]);

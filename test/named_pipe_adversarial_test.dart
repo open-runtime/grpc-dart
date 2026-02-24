@@ -29,6 +29,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
 import 'package:test/test.dart';
@@ -78,9 +79,7 @@ void main() {
         // Fire RPCs without awaiting -- they race against shutdown.
         final rpcFutures = <Future<void>>[];
         for (var i = 0; i < clients.length; i++) {
-          rpcFutures.add(
-            clients[i].echo(i).then((_) {}, onError: (_) {}),
-          );
+          rpcFutures.add(clients[i].echo(i).then((_) {}, onError: (_) {}));
         }
 
         // Immediately shut down the server while clients are connecting.
@@ -107,35 +106,31 @@ void main() {
     // assign _pipeHandle AFTER shutdown() already checked it.
     //
     // EXPECTED: No hang, no double-close, no unhandled exception.
-    testNamedPipe(
-      'channel shutdown concurrent with first RPC connect',
-      (pipeName) async {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        await server.serve(pipeName: pipeName);
-        addTearDown(() => server.shutdown());
+    testNamedPipe('channel shutdown concurrent with first RPC connect', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        final client = EchoClient(channel);
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
 
-        // Fire the RPC (triggers lazy connect) and immediately shut down.
-        final rpcFuture = client.echo(42).then(
-          (v) => v,
-          onError: (_) => -1,
-        );
+      // Fire the RPC (triggers lazy connect) and immediately shut down.
+      final rpcFuture = client.echo(42).then((v) => v, onError: (_) => -1);
 
-        // Race: shut down while the RPC is in-flight.
-        await channel.shutdown();
+      // Race: shut down while the RPC is in-flight.
+      await channel.shutdown();
 
-        // The RPC either succeeded or failed gracefully.
-        final result = await rpcFuture;
-        expect(result, anyOf(equals(42), equals(-1)));
+      // The RPC either succeeded or failed gracefully.
+      final result = await rpcFuture;
+      expect(result, anyOf(equals(42), equals(-1)));
 
-        await server.shutdown();
-      },
-    );
+      await server.shutdown();
+    });
   });
 
   // ===========================================================================
@@ -187,8 +182,9 @@ void main() {
         );
 
         // Send a burst of data to saturate the pipe's read/write interleave.
-        for (var i = 0; i < 20; i++) {
-          inputController.add(i);
+        // Values stay ≤127 so that doubled bidi results fit in a single byte.
+        for (var i = 0; i < 100; i++) {
+          inputController.add(i % 128);
           // Tiny delay so writes interleave with reads on the server side.
           await Future.delayed(const Duration(milliseconds: 5));
         }
@@ -289,56 +285,54 @@ void main() {
     //
     // EXPECTED: All RPCs either succeed or fail with GrpcError. The server
     // shuts down without unhandled async exceptions. No hang.
-    testNamedPipe(
-      'server shutdown racing 50 concurrent RPCs from 3 clients',
-      (pipeName) async {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        await server.serve(pipeName: pipeName);
-        addTearDown(() => server.shutdown());
+    testNamedPipe('server shutdown racing 100 concurrent RPCs from 3 clients', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
 
-        // Spin up 3 independent channels.
-        final channels = List.generate(
-          3,
-          (_) => NamedPipeClientChannel(
-            pipeName,
-            options: const NamedPipeChannelOptions(),
-          ),
-        );
-        final clients = channels.map(EchoClient.new).toList();
+      // Spin up 3 independent channels.
+      final channels = List.generate(
+        3,
+        (_) => NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        ),
+      );
+      final clients = channels.map(EchoClient.new).toList();
 
-        // Warm up: ensure all 3 channels are connected.
-        await Future.wait([
-          clients[0].echo(0),
-          clients[1].echo(0),
-          clients[2].echo(0),
-        ]);
+      // Warm up: ensure all 3 channels are connected.
+      await Future.wait([
+        clients[0].echo(0),
+        clients[1].echo(0),
+        clients[2].echo(0),
+      ]);
 
-        // Fire 50 RPCs spread across all 3 clients, without awaiting.
-        final rpcFutures = <Future<void>>[];
-        for (var i = 0; i < 50; i++) {
-          final client = clients[i % 3];
-          rpcFutures.add(
-            client.echo(i).then((_) {}, onError: (_) {}),
-          );
-        }
+      // Fire 100 RPCs spread across all 3 clients, without awaiting.
+      // Values are i & 0xFF to stay within single-byte echo encoding.
+      final rpcFutures = <Future<void>>[];
+      for (var i = 0; i < 100; i++) {
+        final client = clients[i % 3];
+        rpcFutures.add(client.echo(i & 0xFF).then((_) {}, onError: (_) {}));
+      }
 
-        // After a tiny delay (to let some RPCs be mid-processing), shut down.
-        await Future.delayed(const Duration(milliseconds: 10));
-        await server.shutdown();
+      // After a tiny delay (to let some RPCs be mid-processing), shut down.
+      await Future.delayed(const Duration(milliseconds: 10));
+      await server.shutdown();
 
-        // All RPCs must settle.
-        await Future.wait(rpcFutures).timeout(
-          const Duration(seconds: 15),
-          onTimeout: () {
-            fail('RPCs hung after server.shutdown()');
-          },
-        );
+      // All RPCs must settle.
+      await Future.wait(rpcFutures).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          fail('RPCs hung after server.shutdown()');
+        },
+      );
 
-        for (final ch in channels) {
-          await ch.shutdown();
-        }
-      },
-    );
+      for (final ch in channels) {
+        await ch.shutdown();
+      }
+    });
 
     // -------------------------------------------------------------------------
     // Test 6: Channel shutdown while server-streaming RPC is yielding
@@ -413,34 +407,33 @@ void main() {
     //
     // EXPECTED: After a brief delay, the new server starts successfully and
     // the new client connects and completes RPCs. 8 cycles with no failures.
-    testNamedPipe(
-      '8 rapid server restart cycles with fresh client each time',
-      (pipeName) async {
-        for (var cycle = 0; cycle < 8; cycle++) {
-          final server = NamedPipeServer.create(services: [EchoService()]);
-          await server.serve(pipeName: pipeName);
+    testNamedPipe('8 rapid server restart cycles with fresh client each time', (
+      pipeName,
+    ) async {
+      for (var cycle = 0; cycle < 8; cycle++) {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
 
-          final channel = NamedPipeClientChannel(
-            pipeName,
-            options: const NamedPipeChannelOptions(),
-          );
-          final client = EchoClient(channel);
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
 
-          // Verify the cycle works. Values must be ≤255 because the echo
-          // service serializes int as a single byte ([value]).
-          final result = await client.echo(cycle * 25);
-          expect(result, equals(cycle * 25), reason: 'cycle $cycle');
+        // Verify the cycle works. Values must be ≤255 because the echo
+        // service serializes int as a single byte ([value]).
+        final result = await client.echo(cycle * 25);
+        expect(result, equals(cycle * 25), reason: 'cycle $cycle');
 
-          await channel.shutdown();
-          await server.shutdown();
+        await channel.shutdown();
+        await server.shutdown();
 
-          // Minimal delay -- we WANT to stress the OS pipe cleanup.
-          // 100ms is tight enough to catch race conditions but enough
-          // for the OS to reclaim the pipe name most of the time.
-          await Future.delayed(const Duration(milliseconds: 100));
-        }
-      },
-    );
+        // Minimal delay -- we WANT to stress the OS pipe cleanup.
+        // 100ms is tight enough to catch race conditions but enough
+        // for the OS to reclaim the pipe name most of the time.
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    });
   });
 
   // ===========================================================================
@@ -466,64 +459,57 @@ void main() {
     // EXPECTED: Items arrive in correct order with correct values. No data
     // corruption. No deadlock.
     //
-    // In this test, server and client share the same Dart isolate. The
-    // server's synchronous WriteFile and the client's PeekNamedPipe polling
-    // loop both compete for the single event loop thread. Additionally,
-    // HTTP/2 flow control requires the client to send WINDOW_UPDATE frames
-    // back to the server — but this round-trip goes through the same event
-    // loop. The exact number of items delivered before the stream terminates
-    // depends on OS scheduling, pipe buffer state, HTTP/2 internal buffering,
-    // and flow control window exhaustion. In production (separate processes),
-    // all 1000 items would arrive.
+    // With the deferred-close bug fixed, the server now fully drains its
+    // async* generator before closing the pipe handle, so all 1000 items
+    // should arrive even in same-process testing. We assert equals(1000).
     //
     // The test verifies:
-    // 1. Enough items arrive to prove high-throughput streaming works (>100)
+    // 1. All 1000 items arrive (full delivery after deferred-close fix)
     // 2. All received items have correct values in correct order (integrity)
     // 3. The stream terminates cleanly without deadlocking (no timeout)
-    testNamedPipe(
-      'high-throughput server stream saturating pipe buffer',
-      (pipeName) async {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        await server.serve(pipeName: pipeName);
-        addTearDown(() => server.shutdown());
+    testNamedPipe('high-throughput server stream saturating pipe buffer', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        final client = EchoClient(channel);
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
 
-        // Request 1000 items. Each item is a small gRPC frame, but 1000
-        // of them back-to-back will fill and overflow the 65536-byte pipe
-        // buffer multiple times, exercising partial reads.
-        //
-        // The echo service serializes int as a single byte ([value]), so
-        // server-stream values >255 wrap around (value & 0xFF). This is
-        // expected — the test validates frame ordering and data integrity,
-        // not the encoding range.
-        final results = await client.serverStream(1000).toList();
+      // Request 1000 items. Each item is a small gRPC frame, but 1000
+      // of them back-to-back will fill and overflow the 65536-byte pipe
+      // buffer multiple times, exercising partial reads.
+      //
+      // The echo service serializes int as a single byte ([value]), so
+      // server-stream values >255 wrap around (value & 0xFF). This is
+      // expected — the test validates frame ordering and data integrity,
+      // not the encoding range.
+      final results = await client.serverStream(1000).toList();
 
-        // Verify a significant number of items arrived, proving the transport
-        // handles high throughput without deadlocking. The exact count varies
-        // in same-process tests due to single-threaded event loop contention.
-        expect(
-          results.length,
-          greaterThan(100),
-          reason: 'Expected >100 items but got ${results.length}. '
-              'The transport may be deadlocking under load.',
-        );
+      // With the deferred-close fix, all 1000 items should arrive. If this
+      // proves flaky in same-process testing, fall back to greaterThan(900).
+      expect(
+        results.length,
+        equals(1000),
+        reason:
+            'Expected all 1000 items but got ${results.length}. '
+            'The deferred-close fix should ensure full delivery.',
+      );
 
-        // Verify every received item is correct and in order — the critical
-        // data integrity check. Under pipe buffer pressure, no frames should
-        // be corrupted, reordered, or duplicated.
-        for (var i = 0; i < results.length; i++) {
-          expect(results[i], equals((i + 1) & 0xFF), reason: 'item $i');
-        }
+      // Verify every received item is correct and in order — the critical
+      // data integrity check. Under pipe buffer pressure, no frames should
+      // be corrupted, reordered, or duplicated.
+      for (var i = 0; i < results.length; i++) {
+        expect(results[i], equals((i + 1) & 0xFF), reason: 'item $i');
+      }
 
-        await channel.shutdown();
-        await server.shutdown();
-      },
-    );
+      await channel.shutdown();
+      await server.shutdown();
+    });
 
     // -------------------------------------------------------------------------
     // Test 9: Many concurrent bidi streams saturating the pipe
@@ -549,7 +535,7 @@ void main() {
         );
         final client = EchoClient(channel);
 
-        // Launch 5 bidi streams in parallel, each sending 20 items.
+        // Launch 5 bidi streams in parallel, each sending 100 items.
         final streamFutures = <Future<List<int>>>[];
         final controllers = <StreamController<int>>[];
 
@@ -565,11 +551,12 @@ void main() {
         }
 
         // Feed data into all 5 streams concurrently.
-        for (var i = 0; i < 20; i++) {
+        for (var i = 0; i < 100; i++) {
           for (var s = 0; s < 5; s++) {
             // Each stream gets unique values ≤127 so that doubled results
             // are still ≤254 (single-byte echo encoding).
-            controllers[s].add(s * 20 + i);
+            // Formula: (s * 100 + i) % 128 ensures all values are in [0,127].
+            controllers[s].add((s * 100 + i) % 128);
           }
           // Tiny yield so writes interleave across streams.
           await Future.delayed(Duration.zero);
@@ -585,7 +572,7 @@ void main() {
 
         // Verify each stream got its own data back, doubled.
         for (var s = 0; s < 5; s++) {
-          final expected = List.generate(20, (i) => (s * 20 + i) * 2);
+          final expected = List.generate(100, (i) => ((s * 100 + i) % 128) * 2);
           expect(
             results[s],
             equals(expected),
@@ -600,7 +587,121 @@ void main() {
   });
 
   // ===========================================================================
-  // 6. Pipe Name Collision
+  // 6. Large Payload Integrity
+  // ===========================================================================
+
+  group('Large Payload Integrity', () {
+    // -------------------------------------------------------------------------
+    // Test 11: 100KB echo via named pipe (exceeds 64KB pipe buffer)
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: A 100KB payload exceeds the 64KB default pipe buffer,
+    // forcing the transport to handle partial writes and reads at the OS
+    // level. If the HTTP/2 framing or pipe buffer management reassembles
+    // partial reads incorrectly, the payload will be corrupted.
+    //
+    // EXPECTED: The echoed payload matches the original byte-for-byte.
+    testNamedPipe('100KB echo payload exceeding 64KB pipe buffer boundary', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
+
+      // Create a 100KB payload with a repeating pattern.
+      final payloadSize = 100 * 1024; // 100KB
+      final payload = Uint8List(payloadSize);
+      for (var i = 0; i < payloadSize; i++) {
+        payload[i] = i & 0xFF;
+      }
+
+      // Send and receive the payload.
+      final response = await client.echoBytes(payload);
+
+      // Verify the response matches exactly.
+      expect(
+        response.length,
+        equals(payloadSize),
+        reason: 'Response length mismatch',
+      );
+      expect(
+        response,
+        equals(payload),
+        reason: '100KB payload corrupted during echo',
+      );
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 12: Large server-stream bytes (10 chunks x 10KB = 100KB total)
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: The server streams 10 chunks of 10KB each. Each chunk
+    // is a separate gRPC message, but the combined 100KB exceeds the pipe
+    // buffer. This exercises the transport's ability to handle many
+    // back-to-back large frames without corrupting, reordering, or dropping
+    // any chunks.
+    //
+    // EXPECTED: Exactly 10 chunks received, each 10KB, with correct fill
+    // pattern: byte j in chunk i = (i + j) & 0xFF.
+    testNamedPipe('10x10KB server-stream chunks totalling 100KB', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
+
+      // Build request: 8 bytes big-endian [chunkCount(4), chunkSize(4)].
+      final bd = ByteData(8);
+      bd.setUint32(0, 10); // chunkCount
+      bd.setUint32(4, 10240); // chunkSize = 10KB
+      final request = bd.buffer.asUint8List();
+
+      // Collect all streamed chunks.
+      final chunks = await client.serverStreamBytes(request).toList();
+
+      // Verify correct number of chunks.
+      expect(
+        chunks.length,
+        equals(10),
+        reason: 'Expected 10 chunks but got ${chunks.length}',
+      );
+
+      // Verify each chunk has the correct size and fill pattern.
+      for (var i = 0; i < chunks.length; i++) {
+        expect(
+          chunks[i].length,
+          equals(10240),
+          reason: 'Chunk $i size mismatch',
+        );
+        for (var j = 0; j < chunks[i].length; j++) {
+          expect(
+            chunks[i][j],
+            equals((i + j) & 0xFF),
+            reason: 'Chunk $i byte $j mismatch',
+          );
+        }
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+  });
+
+  // ===========================================================================
+  // 7. Pipe Name Collision
   // ===========================================================================
 
   group('Pipe Name Collision', () {
@@ -618,43 +719,42 @@ void main() {
     // EXPECTED: Either the second serve() throws an error (ideal), OR both
     // servers work independently. In either case, no hang and no crash. We
     // verify that at least one server is functional.
-    testNamedPipe(
-      'two servers on same pipe name: either fails or both work',
-      (pipeName) async {
-        final server1 = NamedPipeServer.create(services: [EchoService()]);
-        await server1.serve(pipeName: pipeName);
-        addTearDown(() => server1.shutdown());
+    testNamedPipe('two servers on same pipe name: either fails or both work', (
+      pipeName,
+    ) async {
+      final server1 = NamedPipeServer.create(services: [EchoService()]);
+      await server1.serve(pipeName: pipeName);
+      addTearDown(() => server1.shutdown());
 
-        final server2 = NamedPipeServer.create(services: [EchoService()]);
-        var server2Started = false;
+      final server2 = NamedPipeServer.create(services: [EchoService()]);
+      var server2Started = false;
 
-        try {
-          await server2.serve(pipeName: pipeName);
-          server2Started = true;
-        } catch (e) {
-          // This is the IDEAL outcome: the second server detects the
-          // collision and refuses to start.
-        }
-        addTearDown(() async {
-          if (server2Started) await server2.shutdown();
-        });
+      try {
+        await server2.serve(pipeName: pipeName);
+        server2Started = true;
+      } catch (e) {
+        // This is the IDEAL outcome: the second server detects the
+        // collision and refuses to start.
+      }
+      addTearDown(() async {
+        if (server2Started) await server2.shutdown();
+      });
 
-        // Regardless of whether server2 started, server1 must still work.
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        final client = EchoClient(channel);
-        final result = await client.echo(42);
-        expect(result, equals(42));
-        await channel.shutdown();
+      // Regardless of whether server2 started, server1 must still work.
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
+      final result = await client.echo(42);
+      expect(result, equals(42));
+      await channel.shutdown();
 
-        // Clean up.
-        if (server2Started) {
-          await server2.shutdown();
-        }
-        await server1.shutdown();
-      },
-    );
+      // Clean up.
+      if (server2Started) {
+        await server2.shutdown();
+      }
+      await server1.shutdown();
+    });
   });
 }
