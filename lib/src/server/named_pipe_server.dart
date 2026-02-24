@@ -260,11 +260,13 @@ class NamedPipeServer extends ConnectionServer {
     _isRunning = false;
     final pipeName = _pipeName;
 
-    // Step 2: Close all active pipe streams. This causes PeekNamedPipe to
-    // fail in active read loops (the handle becomes invalid), and cleans up
-    // Win32 handles via DisconnectNamedPipe + CloseHandle.
+    // Step 2: Force-close all active pipe streams. Using force: true
+    // calls DisconnectNamedPipe to immediately terminate connections,
+    // discarding any unread data in the pipe buffer. This is necessary
+    // during shutdown because FlushFileBuffers would block the event loop
+    // and normal close (just CloseHandle) could leave resources dangling.
     for (final stream in _activeStreams.toList()) {
-      stream.close();
+      stream.close(force: true);
     }
     _activeStreams.clear();
 
@@ -489,11 +491,30 @@ class _ServerPipeStream {
 
   /// Closes the pipe stream and cleans up the Win32 handle.
   ///
-  /// This method is safe to call from any context — including during active
-  /// HTTP/2 `addStream()` operations. The HTTP/2 transport pipes frames into
-  /// [outgoingSink] via `addStream()`, which locks the [StreamController].
+  /// When [force] is `false` (the default, used by normal HTTP/2 connection
+  /// close), only [CloseHandle] is called. This preserves unread data in the
+  /// kernel pipe buffer so the client can drain it before seeing
+  /// `ERROR_BROKEN_PIPE`. This is critical for high-throughput streaming:
+  /// without it, the client loses any buffered data that hasn't been read yet.
   ///
-  /// By cancelling [_outgoingSubscription] first, we trigger the cascade:
+  /// When [force] is `true` (used by [NamedPipeServer.shutdown]),
+  /// [DisconnectNamedPipe] is called first to immediately terminate the
+  /// connection and discard any unread data. This prevents resource leaks
+  /// during forced shutdown.
+  ///
+  /// **FlushFileBuffers is intentionally omitted.** It is a synchronous FFI
+  /// call that blocks until the client reads ALL pending data. In our
+  /// architecture, server and client pipe I/O share the same Dart event loop
+  /// (two-isolate model: accept loop in separate isolate, data I/O in main).
+  /// FlushFileBuffers would block the event loop, preventing the client's
+  /// `PeekNamedPipe` polling from running — a guaranteed deadlock for any
+  /// response larger than the pipe buffer. Even in production (separate
+  /// processes), it blocks the server's event loop, starving other
+  /// connections.
+  ///
+  /// This method is safe to call from any context — including during active
+  /// HTTP/2 `addStream()` operations. By cancelling [_outgoingSubscription]
+  /// first, we trigger the cascade:
   ///  1. The single-subscription controller detects no listeners
   ///  2. The active `addStream()` cancels its source subscription
   ///  3. The `addStream()` Future completes, unlocking the controller
@@ -502,7 +523,7 @@ class _ServerPipeStream {
   /// Without this explicit cancellation, the subscription keeps the event
   /// loop alive indefinitely — causing the test process to hang for 20+
   /// minutes until the CI timeout kills it.
-  void close() {
+  void close({bool force = false}) {
     if (_isClosed) return;
     _isClosed = true;
 
@@ -524,21 +545,16 @@ class _ServerPipeStream {
     }
 
     // Clean up the Win32 pipe handle.
-    //
-    // IMPORTANT: Do NOT call FlushFileBuffers here. It is a synchronous FFI
-    // call that blocks until the client reads ALL pending data from the pipe
-    // buffer. During server shutdown, the client may not be reading (e.g.,
-    // it's waiting for the shutdown to complete, or has itself shut down).
-    // In that case FlushFileBuffers blocks the entire Dart isolate thread
-    // indefinitely — preventing test timeouts, async work, and process exit.
-    //
-    // With synchronous (non-overlapped) pipe mode, WriteFile already copies
-    // data to the pipe buffer before returning. DisconnectNamedPipe marks
-    // the connection as terminated so the client gets ERROR_PIPE_NOT_CONNECTED
-    // on its next read/write, and CloseHandle releases the kernel object.
-    // Any unread data in the pipe buffer is discarded — which is acceptable
-    // during server-initiated shutdown.
-    DisconnectNamedPipe(_handle);
+    if (force) {
+      // Forced shutdown: DisconnectNamedPipe immediately terminates the
+      // connection and discards unread data in the pipe buffer. This is
+      // acceptable during server.shutdown() where we prioritize fast
+      // resource cleanup over data delivery.
+      DisconnectNamedPipe(_handle);
+    }
+    // In both cases, close the handle. Without prior DisconnectNamedPipe,
+    // data in the pipe buffer is preserved for the client to read. The
+    // client sees ERROR_BROKEN_PIPE only after draining the buffer.
     CloseHandle(_handle);
 
     if (!_closeCompleter.isCompleted) {
