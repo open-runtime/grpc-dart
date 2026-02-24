@@ -112,15 +112,12 @@ void main() {
         await server.shutdown();
         log('Server shutdown complete.');
 
-        // Wait for all RPCs to settle (succeed or fail), but don't wait
-        // forever — a stuck client is acceptable as long as nothing crashes.
+        // Wait for all RPCs to settle (succeed or fail). A stuck client is a
+        // regression and must fail this test.
         log('Waiting for RPCs to settle (10s timeout)...');
         await Future.wait(rpcFutures).timeout(
           const Duration(seconds: 10),
-          onTimeout: () {
-            log('RPCs did not all settle within 10s — proceeding to cleanup.');
-            return <void>[];
-          },
+          onTimeout: () => fail('RPCs did not settle within 10s'),
         );
         log('RPCs settled.');
 
@@ -140,9 +137,8 @@ void main() {
               log('Channel $i shutdown timed out — force terminating.');
               await channels[i].terminate().timeout(
                 const Duration(seconds: 2),
-                onTimeout: () {
-                  log('Channel $i terminate also timed out — abandoned.');
-                },
+                onTimeout: () =>
+                    fail('Channel $i terminate timed out during cleanup'),
               );
             },
           );
@@ -391,7 +387,8 @@ void main() {
           onTimeout: () async {
             await ch.terminate().timeout(
               const Duration(seconds: 2),
-              onTimeout: () {},
+              onTimeout: () =>
+                  fail('Channel terminate timed out after shutdown timeout'),
             );
           },
         );

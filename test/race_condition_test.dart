@@ -177,7 +177,8 @@ void main() {
           // Wait for everything to complete
           await responseCompleter.future.timeout(
             Duration(seconds: 2),
-            onTimeout: () {},
+            onTimeout: () =>
+                fail('Response stream did not settle after client close'),
           );
 
           // At least the initial headers should have been sent
@@ -297,6 +298,7 @@ void main() {
       test('timeout and serialization error fire simultaneously', () async {
         // Creates a scenario where both _onTimedOut and _onResponseError
         // try to close the same stream controller
+        var completedIterations = 0;
         for (var i = 0; i < 20; i++) {
           final harness = RaceConditionHarness();
           harness.setUp();
@@ -318,15 +320,18 @@ void main() {
 
           await responseComplete.future.timeout(
             const Duration(seconds: 2),
-            onTimeout: () {},
+            onTimeout: () => fail(
+              'Response stream did not settle in timeout/serialization race',
+            ),
           );
 
           // No crash = success
           harness.tearDown();
+          completedIterations++;
         }
 
-        // All 20 iterations completed without unhandled exceptions
-        expect(true, isTrue);
+        // If we reached here, all 20 iterations completed without hangs.
+        expect(completedIterations, equals(20));
       });
     },
   );

@@ -466,7 +466,9 @@ class ClientCall<Q, R> implements Response {
   Future<void> _safeTerminate() async {
     try {
       await _terminate();
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      log('ClientCall termination threw unexpectedly', name: 'grpc.client.call', error: error, stackTrace: stackTrace);
+    }
   }
 }
 

@@ -349,6 +349,15 @@ class NamedPipeServer extends ConnectionServer {
       final hPipe = CreateFile(pipePathPtr, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, NULL);
       if (hPipe != INVALID_HANDLE_VALUE) {
         CloseHandle(hPipe);
+      } else {
+        final error = GetLastError();
+        logGrpcEvent(
+          '[gRPC] Dummy pipe connect failed during shutdown: Win32 error $error',
+          component: 'NamedPipeServer',
+          event: 'dummy_connect_failed',
+          context: '_connectDummyClient',
+          error: error,
+        );
       }
     } finally {
       calloc.free(pipePathPtr);
@@ -747,6 +756,7 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   // Use calloc allocator so the matching calloc.free() is correct.
   final pipePathPtr = pipePath.toNativeUtf16(allocator: calloc);
   var readySent = false;
+  var pipeBusyBackoffMs = 1;
 
   try {
     while (true) {
@@ -768,12 +778,18 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         // CreateNamedPipe can transiently fail with ERROR_PIPE_BUSY while all
         // current instances are connected. Retry instead of failing the server.
         if (error == ERROR_PIPE_BUSY) {
-          await Future<void>.delayed(const Duration(milliseconds: 1));
+          await Future<void>.delayed(Duration(milliseconds: pipeBusyBackoffMs));
+          if (pipeBusyBackoffMs < 50) {
+            pipeBusyBackoffMs = (pipeBusyBackoffMs * 2).clamp(1, 50);
+          }
           continue;
         }
         config.mainPort.send(_ServerError('CreateNamedPipe failed: $error'));
         break;
       }
+
+      // Reset backoff once CreateNamedPipe succeeds.
+      pipeBusyBackoffMs = 1;
 
       // Signal readiness after the first pipe instance is created.
       // At this point the pipe exists in the Windows namespace and

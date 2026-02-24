@@ -300,9 +300,13 @@ void main() {
 
       final client = EchoClient(channel);
       final results = await client
-          .serverStream(5, options: CallOptions(compression: const GzipCodec()))
+          .serverStream(
+            100,
+            options: CallOptions(compression: const GzipCodec()),
+          )
           .toList();
-      expect(results, equals([1, 2, 3, 4, 5]));
+      expect(results.length, equals(100));
+      expect(results, equals(List.generate(100, (i) => i + 1)));
 
       await channel.shutdown();
       await server.shutdown();
@@ -327,11 +331,13 @@ void main() {
       );
 
       final client = EchoClient(channel);
+      // 50 items with values cycling 1..5. Sum = 15 × 10 = 150.
+      // Stays within single-byte encoding (≤ 255).
       final result = await client.clientStream(
-        Stream.fromIterable([1, 2, 3, 4, 5]),
+        Stream.fromIterable(List.generate(50, (i) => (i % 5) + 1)),
         options: CallOptions(compression: const GzipCodec()),
       );
-      expect(result, equals(15));
+      expect(result, equals(150));
 
       await channel.shutdown();
       await server.shutdown();
@@ -359,9 +365,9 @@ void main() {
 
       final controller = StreamController<int>();
       () async {
-        for (var i = 1; i <= 10; i++) {
-          controller.add(i);
-          if (i % 5 == 0) {
+        for (var i = 0; i < 100; i++) {
+          controller.add(i % 128);
+          if (i % 20 == 0) {
             await Future.delayed(Duration.zero);
           }
         }
@@ -374,7 +380,81 @@ void main() {
             options: CallOptions(compression: const GzipCodec()),
           )
           .toList();
-      expect(results, equals(List.generate(10, (i) => (i + 1) * 2)));
+      expect(results.length, equals(100));
+      for (var i = 0; i < 100; i++) {
+        expect(results[i], equals((i % 128) * 2), reason: 'bidi item $i');
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testTcpAndUds('100KB compressed unary payload with gzip', (address) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+          ),
+        ),
+      );
+
+      final client = EchoClient(channel);
+
+      // 100KB payload with repeating pattern.
+      final payload = Uint8List(100 * 1024);
+      for (var i = 0; i < payload.length; i++) {
+        payload[i] = i & 0xFF;
+      }
+
+      final result = await client.echoBytes(
+        payload,
+        options: CallOptions(compression: const GzipCodec()),
+      );
+      expect(result.length, equals(payload.length));
+      expect(result, equals(payload));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testTcpAndUds('500 rapid sequential RPCs with compression', (
+      address,
+    ) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+          ),
+        ),
+      );
+
+      final client = EchoClient(channel);
+
+      for (var i = 0; i < 500; i++) {
+        final result = await client.echo(
+          i % 256,
+          options: CallOptions(compression: const GzipCodec()),
+        );
+        expect(result, equals(i % 256), reason: 'RPC $i');
+      }
 
       await channel.shutdown();
       await server.shutdown();

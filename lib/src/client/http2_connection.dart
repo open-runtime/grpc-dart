@@ -477,7 +477,9 @@ class SocketTransportConnector implements ClientTransportConnector {
 
   @override
   Future get done {
-    ArgumentError.checkNotNull(socket);
+    if (!_socketInitialized) {
+      throw StateError('SocketTransportConnector.done accessed before connect()');
+    }
     return socket.done;
   }
 
@@ -532,7 +534,6 @@ class SocketTransportConnector implements ClientTransportConnector {
   /// acknowledgement with a 200 status code.
   void _waitForResponse(Uint8List chunk, Completer<void> completer) {
     final response = ascii.decode(chunk);
-    print(response);
     if (response.startsWith('HTTP/1.1 200')) {
       completer.complete();
     } else {

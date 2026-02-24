@@ -976,4 +976,458 @@ void main() {
       },
     );
   });
+
+  // ===========================================================================
+  // 6. Hardcore Stress + Compression
+  // ===========================================================================
+
+  group('Hardcore Stress + Compression', () {
+    // -------------------------------------------------------------------------
+    // Test 15: Rapid sequential server restart with active clients (5 cycles)
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: Unlike Test 7 (rapid connect/disconnect of CHANNELS
+    // against a single server), this test restarts the SERVER itself on
+    // each cycle. Each cycle: start server, connect 3 clients, fire 10
+    // RPCs each (30 total), verify all results, then shut down everything
+    // and repeat. This stresses the OS's TCP/UDS socket teardown, TIME_WAIT
+    // behavior, and the server's ability to re-bind the listen socket.
+    // A leaked socket, FD, or lingering HTTP/2 session from a prior cycle
+    // causes the next cycle to fail with EADDRINUSE or a stale connection.
+    //
+    // EXPECTED: All 5 cycles complete with correct RPC results. No hangs,
+    // no EADDRINUSE, no stale connection reuse across server lifetimes.
+    testTcpAndUds(
+      'rapid sequential server restart with 3 active clients (5 cycles)',
+      (address) async {
+        for (var cycle = 0; cycle < 5; cycle++) {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
+
+          final channels = List.generate(
+            3,
+            (_) => _createChannel(address, server.port!),
+          );
+          final clients = channels.map(EchoClient.new).toList();
+
+          // Fire 10 RPCs per client = 30 total, all concurrently.
+          final futures = <Future<int>>[];
+          for (var c = 0; c < 3; c++) {
+            for (var r = 0; r < 10; r++) {
+              final value = (cycle * 30 + c * 10 + r) % 256;
+              futures.add(
+                clients[c]
+                    .echo(value)
+                    .timeout(
+                      const Duration(seconds: 5),
+                      onTimeout: () {
+                        fail(
+                          'cycle $cycle client $c rpc $r timed out '
+                          '-- server restart may have leaked state',
+                        );
+                      },
+                    ),
+              );
+            }
+          }
+
+          final results = await Future.wait(futures);
+
+          // Verify every result.
+          for (var i = 0; i < results.length; i++) {
+            final expected = (cycle * 30 + i) % 256;
+            expect(results[i], equals(expected), reason: 'cycle $cycle rpc $i');
+          }
+
+          // Tear down everything before next cycle.
+          for (final ch in channels) {
+            await ch.shutdown();
+          }
+          await server.shutdown();
+        }
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 16: 5 concurrent channels with mixed RPC types (20 RPCs)
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: 5 independent channels each fire all 4 RPC types
+    // simultaneously (unary, server-stream, client-stream, bidi) = 20
+    // concurrent RPCs. This tests the server's ability to multiplex
+    // streams across 5 HTTP/2 connections with mixed stream types.
+    // Cross-channel contamination, stream ID confusion, or a global lock
+    // that serializes all connections would cause failures or deadlocks.
+    //
+    // EXPECTED: All 20 RPCs complete with correct results. No cross-
+    // channel contamination or hangs.
+    testTcpAndUds(
+      '5 concurrent channels with mixed RPC types (20 concurrent RPCs)',
+      (address) async {
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
+
+        final channels = List.generate(
+          5,
+          (_) => _createChannel(address, server.port!),
+        );
+        final clients = channels.map(EchoClient.new).toList();
+
+        // Warm up all 5 connections.
+        await Future.wait(clients.map((c) => c.echo(0)));
+
+        // Fire all 4 RPC types on each of 5 channels concurrently.
+        final allFutures = <Future<void>>[];
+
+        for (var ch = 0; ch < 5; ch++) {
+          final client = clients[ch];
+          final tag = ch; // unique per-channel for verification
+
+          // Unary.
+          allFutures.add(
+            client.echo(tag).then((result) {
+              expect(result, equals(tag), reason: 'unary channel $ch');
+            }),
+          );
+
+          // Server stream: request 20 items, verify count and
+          // first/last values.
+          allFutures.add(
+            client.serverStream(20).toList().then((items) {
+              expect(
+                items.length,
+                equals(20),
+                reason: 'server-stream channel $ch item count',
+              );
+              expect(items.first, equals(1));
+              expect(items.last, equals(20));
+            }),
+          );
+
+          // Client stream: send 5 values, verify sum.
+          allFutures.add(
+            client.clientStream(Stream.fromIterable([1, 2, 3, 4, 5])).then((
+              sum,
+            ) {
+              expect(sum, equals(15), reason: 'client-stream channel $ch sum');
+            }),
+          );
+
+          // Bidi stream: send 10 values, verify doubled.
+          allFutures.add(() async {
+            final controller = StreamController<int>();
+            final results = <int>[];
+            final done = Completer<void>();
+            client
+                .bidiStream(controller.stream)
+                .listen(
+                  results.add,
+                  onDone: () {
+                    if (!done.isCompleted) done.complete();
+                  },
+                  onError: (e) {
+                    if (!done.isCompleted) done.completeError(e);
+                  },
+                );
+
+            for (var i = 0; i < 10; i++) {
+              controller.add(i % 128);
+            }
+            await controller.close();
+            await done.future.timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                fail('bidi stream channel $ch timed out');
+              },
+            );
+
+            expect(
+              results.length,
+              equals(10),
+              reason: 'bidi channel $ch item count',
+            );
+            for (var i = 0; i < 10; i++) {
+              expect(
+                results[i],
+                equals((i % 128) * 2),
+                reason: 'bidi channel $ch item $i',
+              );
+            }
+          }());
+        }
+
+        await Future.wait(allFutures).timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            fail(
+              '20 concurrent mixed RPCs did not complete '
+              'within 30s -- possible cross-channel deadlock',
+            );
+          },
+        );
+
+        for (final ch in channels) {
+          await ch.shutdown();
+        }
+        await server.shutdown();
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 17: 255-item server stream with full data integrity
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: The maximum single-byte count (255) creates a
+    // server stream that yields items at 10ms intervals for ~2.5 seconds.
+    // This is 255 gRPC messages on a single HTTP/2 stream, testing
+    // stream ID lifecycle, flow control WINDOW_UPDATE accumulation, and
+    // message framing over a sustained period. If the client fails to
+    // send WINDOW_UPDATEs promptly, the server stalls and the stream
+    // times out. If the HTTP/2 framer corrupts message boundaries,
+    // values arrive out of order or duplicated.
+    //
+    // EXPECTED: Exactly 255 items, item[i] == i + 1 for all i.
+    testTcpAndUds('255-item server stream with full data integrity', (
+      address,
+    ) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = _createChannel(address, server.port!);
+      final client = EchoClient(channel);
+
+      final results = await client
+          .serverStream(255)
+          .toList()
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              fail(
+                '255-item server stream timed out -- likely HTTP/2 '
+                'flow control stall or WINDOW_UPDATE failure',
+              );
+            },
+          );
+
+      expect(
+        results.length,
+        equals(255),
+        reason: 'must receive all 255 server-stream items',
+      );
+
+      for (var i = 0; i < results.length; i++) {
+        expect(
+          results[i],
+          equals(i + 1),
+          reason:
+              'server stream item $i: expected ${i + 1}, '
+              'got ${results[i]}',
+        );
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 18: 100-item compressed bidi stream with gzip
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: gzip compression adds a transform layer between
+    // the gRPC framing and the HTTP/2 DATA frames. With 100 bidi items,
+    // the compressor must handle rapid alternation between compress
+    // (request) and decompress (response) on the same stream. If the
+    // zlib context is shared or corrupted between directions, data is
+    // silently corrupted. Additionally, compressed payloads change size,
+    // which can break HTTP/2 flow control assumptions (compressed size
+    // differs from decompressed size).
+    //
+    // EXPECTED: All 100 items round-trip correctly through gzip.
+    testTcpAndUds('100-item compressed bidi stream with gzip', (address) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = _createChannel(address, server.port!);
+      final client = EchoClient(channel);
+
+      final controller = StreamController<int>();
+      final results = <int>[];
+      final done = Completer<void>();
+
+      client
+          .bidiStream(
+            controller.stream,
+            options: CallOptions(compression: const GzipCodec()),
+          )
+          .listen(
+            results.add,
+            onDone: () {
+              if (!done.isCompleted) done.complete();
+            },
+            onError: (e) {
+              if (!done.isCompleted) done.completeError(e);
+            },
+          );
+
+      // Send 100 items. Values ≤ 127 so doubled fits in byte.
+      for (var i = 0; i < 100; i++) {
+        controller.add(i % 128);
+      }
+      await controller.close();
+
+      await done.future.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () {
+          fail(
+            '100-item compressed bidi stream timed out -- '
+            'possible gzip + HTTP/2 flow control deadlock',
+          );
+        },
+      );
+
+      expect(
+        results.length,
+        equals(100),
+        reason: 'must receive all 100 compressed bidi items',
+      );
+
+      for (var i = 0; i < results.length; i++) {
+        expect(
+          results[i],
+          equals((i % 128) * 2),
+          reason:
+              'compressed bidi item $i: expected '
+              '${(i % 128) * 2}, got ${results[i]}',
+        );
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 19: 255-item compressed server stream with gzip
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: Combines the 255-item server stream (Test 17) with
+    // gzip compression. 255 gzip-compressed gRPC messages stress the
+    // decompressor's ability to handle rapid sequential decompressions
+    // without leaking zlib contexts or corrupting the inflate state.
+    // Each compressed message is small (1 byte payload), so the gzip
+    // overhead dominates — testing that the framing layer handles the
+    // compression header + trailer correctly for minimal payloads.
+    //
+    // EXPECTED: Exactly 255 items, item[i] == i + 1 for all i.
+    testTcpAndUds('255-item compressed server stream with gzip', (
+      address,
+    ) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = _createChannel(address, server.port!);
+      final client = EchoClient(channel);
+
+      final results = await client
+          .serverStream(
+            255,
+            options: CallOptions(compression: const GzipCodec()),
+          )
+          .toList()
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              fail(
+                '255-item compressed server stream timed out '
+                '-- possible gzip decompression stall',
+              );
+            },
+          );
+
+      expect(
+        results.length,
+        equals(255),
+        reason: 'must receive all 255 compressed server-stream items',
+      );
+
+      for (var i = 0; i < results.length; i++) {
+        expect(
+          results[i],
+          equals(i + 1),
+          reason:
+              'compressed server stream item $i: expected '
+              '${i + 1}, got ${results[i]}',
+        );
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 20: 500KB compressed unary payload with gzip
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: A 500KB payload exceeds the default HTTP/2 flow
+    // control window (65535 bytes) by ~7.6x BEFORE compression. Gzip
+    // will shrink the repeating-pattern payload significantly, but the
+    // decompressed response is still 500KB, requiring multiple
+    // WINDOW_UPDATE exchanges. This tests the full stack: gzip compress
+    // on send → HTTP/2 framing → flow control → gzip decompress on
+    // receive. If the flow control logic uses compressed or decompressed
+    // sizes inconsistently, the stream deadlocks.
+    //
+    // EXPECTED: The echoed payload matches the original exactly.
+    testTcpAndUds('500KB compressed unary payload with gzip', (address) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = _createChannel(address, server.port!);
+      final client = EchoClient(channel);
+
+      // Create a 500KB payload with a repeating pattern.
+      final payload = Uint8List(500 * 1024);
+      for (var i = 0; i < payload.length; i++) {
+        payload[i] = i & 0xFF;
+      }
+
+      final result = await client
+          .echoBytes(
+            payload,
+            options: CallOptions(compression: const GzipCodec()),
+          )
+          .timeout(
+            const Duration(seconds: 20),
+            onTimeout: () {
+              fail(
+                '500KB compressed echoBytes timed out -- '
+                'gzip + HTTP/2 flow control deadlock',
+              );
+            },
+          );
+
+      expect(
+        result.length,
+        equals(payload.length),
+        reason: '500KB payload length mismatch',
+      );
+      expect(
+        result,
+        equals(payload),
+        reason:
+            '500KB payload data mismatch after gzip '
+            'round-trip',
+      );
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+  });
 }

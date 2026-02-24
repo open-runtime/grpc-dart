@@ -379,4 +379,193 @@ void main() {
       await server.shutdown();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Generation counter stress
+  // ---------------------------------------------------------------------------
+  group('Generation counter stress', () {
+    // 20 rapid reconnection cycles force the generation counter far
+    // beyond 2. Each cycle: RPC succeeds → connection ages out →
+    // next RPC triggers a new generation. If the generation guard in
+    // _handleSocketDone is wrong (e.g., uses == instead of <, or
+    // wraps around), a stale socket.done callback from an early
+    // generation will corrupt a much later connection.
+    testTcpAndUds('rapid reconnection forces generation counter to 20+', (
+      address,
+    ) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            // Very short timeout forces reconnection each cycle.
+            connectionTimeout: const Duration(milliseconds: 20),
+          ),
+        ),
+      );
+
+      final client = EchoClient(channel);
+
+      // 20 cycles: RPC + wait for connection to age out.
+      for (var i = 0; i < 20; i++) {
+        final result = await client
+            .echo(i % 256)
+            .timeout(
+              const Duration(seconds: 5),
+              onTimeout: () {
+                fail(
+                  'echo hung at cycle $i -- stale generation '
+                  'callback may have corrupted connection',
+                );
+              },
+            );
+        expect(result, equals(i % 256), reason: 'cycle $i');
+        // Wait for connection timeout to expire.
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      // Verify we had many ready states (one per reconnection).
+      final readyCount = channel.states
+          .where((s) => s == ConnectionState.ready)
+          .length;
+      expect(
+        readyCount,
+        greaterThanOrEqualTo(10),
+        reason:
+            'Should have reconnected at least 10 times '
+            'across 20 cycles (got $readyCount)',
+      );
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // After 5 full connection cycles, each with a real RPC, verify
+    // the final RPC on a 6th connection succeeds. This confirms that
+    // stale socket.done callbacks from ALL 5 prior generations are
+    // properly ignored and do not poison the active connection.
+    testTcpAndUds('stale callbacks from all prior generations are ignored', (
+      address,
+    ) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            connectionTimeout: const Duration(milliseconds: 30),
+          ),
+        ),
+      );
+
+      final client = EchoClient(channel);
+
+      // 5 full cycles to build up stale callbacks.
+      for (var i = 0; i < 5; i++) {
+        expect(await client.echo(i), equals(i), reason: 'setup cycle $i');
+        await Future.delayed(const Duration(milliseconds: 80));
+      }
+
+      // The final verification RPC: by now, 5 stale socket.done
+      // callbacks exist. If any of them fires and resets the
+      // connection, this RPC will fail or hang.
+      final finalResult = await client
+          .echo(99)
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              fail(
+                'final echo hung -- stale socket.done callback '
+                'likely poisoned the active connection',
+              );
+            },
+          );
+      expect(finalResult, equals(99));
+
+      // Verify the connection is still healthy: no unexpected
+      // shutdown or idle state at the end.
+      expect(
+        channel.states.last,
+        isNot(equals(ConnectionState.shutdown)),
+        reason: 'connection should not be shut down',
+      );
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // 10 RPCs fired simultaneously on a brand-new channel. All 10
+    // trigger the lazy connect path concurrently. The channel must
+    // coalesce all 10 into a single connection attempt (not 10
+    // parallel TCP connects). If the channel creates multiple
+    // connections, stream IDs may collide or the server may see
+    // unexpected sessions.
+    testTcpAndUds(
+      '10 concurrent RPCs on fresh channel converge to single connection',
+      (address) async {
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
+
+        final channel = TestClientChannel(
+          Http2ClientConnection(
+            address,
+            server.port!,
+            ChannelOptions(credentials: ChannelCredentials.insecure()),
+          ),
+        );
+
+        final client = EchoClient(channel);
+
+        // Fire 10 RPCs simultaneously on the fresh (unconnected)
+        // channel. All 10 hit the lazy-connect path at the same
+        // time.
+        final futures = List.generate(
+          10,
+          (i) => client
+              .echo(i)
+              .timeout(
+                const Duration(seconds: 10),
+                onTimeout: () {
+                  fail(
+                    'concurrent lazy-connect RPC $i timed out '
+                    '-- possible duplicate connection deadlock',
+                  );
+                },
+              ),
+        );
+
+        final results = await Future.wait(futures);
+
+        for (var i = 0; i < results.length; i++) {
+          expect(results[i], equals(i), reason: 'concurrent RPC $i');
+        }
+
+        // Verify only 1 ready state transition occurred (all 10
+        // RPCs shared the same connection).
+        final readyCount = channel.states
+            .where((s) => s == ConnectionState.ready)
+            .length;
+        expect(
+          readyCount,
+          equals(1),
+          reason:
+              'All 10 concurrent RPCs should share a single '
+              'connection (got $readyCount ready transitions)',
+        );
+
+        await channel.shutdown();
+        await server.shutdown();
+      },
+    );
+  });
 }
