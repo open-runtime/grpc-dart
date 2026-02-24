@@ -46,6 +46,7 @@ void main() {
       'server start -> client connect -> RPC -> disconnect -> shutdown',
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
+        addTearDown(() => server.shutdown());
         await server.serve(pipeName: pipeName);
         expect(server.isRunning, isTrue);
 
@@ -72,6 +73,7 @@ void main() {
     // 2. Server start -> immediate shutdown (no clients ever connect)
     testNamedPipe('server start -> shutdown with no clients', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
       expect(server.isRunning, isTrue);
 
@@ -85,6 +87,7 @@ void main() {
       pipeName,
     ) async {
       final server1 = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server1.shutdown());
       await server1.serve(pipeName: pipeName);
       expect(server1.isRunning, isTrue);
 
@@ -105,6 +108,7 @@ void main() {
 
       // Second session: new server instance, same pipe name.
       final server2 = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server2.shutdown());
       await server2.serve(pipeName: pipeName);
       expect(server2.isRunning, isTrue);
 
@@ -124,8 +128,14 @@ void main() {
     testNamedPipe('multiple sequential server start/shutdown cycles', (
       pipeName,
     ) async {
+      // Track the most recent server so addTearDown can clean up if the
+      // test fails mid-cycle. Double-shutdown is a safe no-op.
+      NamedPipeServer? lastServer;
+      addTearDown(() => lastServer?.shutdown());
+
       for (var cycle = 0; cycle < 4; cycle++) {
         final server = NamedPipeServer.create(services: [EchoService()]);
+        lastServer = server;
         await server.serve(pipeName: pipeName);
 
         final channel = NamedPipeClientChannel(
@@ -148,6 +158,7 @@ void main() {
       pipeName,
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
@@ -207,6 +218,7 @@ void main() {
     // 6. 50 concurrent unary RPCs on the same channel
     testNamedPipe('50 concurrent unary RPCs on same channel', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
@@ -228,6 +240,7 @@ void main() {
       pipeName,
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       for (var i = 0; i < 10; i++) {
@@ -248,6 +261,7 @@ void main() {
       pipeName,
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       // Create three independent channels.
@@ -269,12 +283,15 @@ void main() {
       expect(results, equals([10, 20, 30]));
 
       // Fire a second round to confirm all channels remain healthy.
+      // Note: Values must stay ≤255 because the echo service serializes
+      // int as a single byte ([value]) — values >255 are truncated
+      // (e.g., 300 % 256 = 44).
       final results2 = await Future.wait([
         clients[0].echo(100),
         clients[1].echo(200),
-        clients[2].echo(300),
+        clients[2].echo(250),
       ]);
-      expect(results2, equals([100, 200, 300]));
+      expect(results2, equals([100, 200, 250]));
 
       // Clean up all channels, then server.
       for (final ch in channels) {
@@ -286,6 +303,7 @@ void main() {
     // 9. Rapid fire: 100 echo RPCs as fast as possible
     testNamedPipe('rapid fire 100 sequential echo RPCs', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
@@ -357,6 +375,7 @@ void main() {
       // An empty pipe name or one with embedded NUL bytes should cause a
       // failure when CreateNamedPipe is called.
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
 
       // Try to serve on an absurdly long / malformed pipe name.
       // Windows pipe names have practical limits and reserved characters.
@@ -384,6 +403,7 @@ void main() {
       pipeName,
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       // Verify it works before shutdown.
@@ -427,6 +447,7 @@ void main() {
     // 14. Double shutdown safety — second call is a no-op.
     testNamedPipe('server double shutdown is a safe no-op', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
       expect(server.isRunning, isTrue);
 
@@ -442,6 +463,7 @@ void main() {
     // 15. Double serve() throws StateError.
     testNamedPipe('server double serve() throws StateError', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
       expect(server.isRunning, isTrue);
 
@@ -459,6 +481,7 @@ void main() {
       pipeName,
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final channel = NamedPipeClientChannel(
