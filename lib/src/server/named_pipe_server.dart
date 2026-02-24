@@ -440,32 +440,46 @@ void _spawnConnectionHandler(int hPipe, SendPort mainPort) {
 
 /// Starts reading from a pipe and sending data to the response port.
 ///
-/// **Threading model**: This function runs in the server isolate and calls
-/// [ReadFile] with `nullptr` for lpOverlapped (synchronous / blocking mode).
-/// Because [ReadFile] blocks the isolate thread, the isolate's event loop
-/// cannot process incoming [_PipeData] write messages (from
-/// [_spawnConnectionHandler]'s `connectionPort.listen`) until [ReadFile]
-/// returns. This creates a **half-duplex** pattern: reads and writes
-/// alternate rather than executing concurrently.
+/// Uses [PeekNamedPipe] to poll for data availability before calling
+/// [ReadFile]. This enables **full-duplex** communication: the isolate's
+/// event loop can process incoming write messages (from the main isolate)
+/// between read polls, rather than being blocked indefinitely by ReadFile.
 ///
-/// In practice this works because:
-///  - HTTP/2 framing over the pipe naturally alternates request/response.
-///  - The main isolate buffers outgoing data in its [StreamController] until
-///    the server isolate's event loop drains it.
-///  - Write messages simply queue in the [ReceivePort] and execute as soon as
-///    [ReadFile] yields (either with data or a zero-byte result).
-///
-/// If true full-duplex pipe I/O is needed in the future, the read loop should
-/// be moved to a dedicated isolate (separate from the connection handler) or
-/// use overlapped I/O with an event-based completion model.
+/// Without PeekNamedPipe, ReadFile blocks the isolate thread, preventing
+/// the event loop from processing _PipeData write messages. This created
+/// a half-duplex pattern where reads and writes had to alternate. With
+/// polling, both directions can proceed whenever data is available.
 Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
   final buffer = calloc<Uint8>(kNamedPipeBufferSize);
   final bytesRead = calloc<DWORD>();
+  final peekAvail = calloc<DWORD>();
 
   try {
     while (true) {
-      bytesRead.value = 0;
+      // Non-blocking check for available data. PeekNamedPipe returns
+      // immediately, allowing the isolate's event loop to process
+      // incoming write messages between polls.
+      peekAvail.value = 0;
+      final peekResult = PeekNamedPipe(hPipe, nullptr, 0, nullptr, peekAvail, nullptr);
 
+      if (peekResult == 0) {
+        final error = GetLastError();
+        if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
+          stderr.writeln('Pipe peek error: $error');
+        }
+        break;
+      }
+
+      if (peekAvail.value == 0) {
+        // No data yet — yield to event loop so write messages can be
+        // processed. 1ms delay yields to the full event queue (timers,
+        // I/O callbacks), not just microtasks.
+        await Future.delayed(const Duration(milliseconds: 1));
+        continue;
+      }
+
+      // Data confirmed available — ReadFile returns immediately.
+      bytesRead.value = 0;
       final success = ReadFile(hPipe, buffer, kNamedPipeBufferSize, bytesRead, nullptr);
 
       if (success == 0) {
@@ -478,21 +492,15 @@ Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
       }
 
       final count = bytesRead.value;
-      if (count == 0) {
-        // Use a 1ms delay to yield to the event loop without busy-waiting.
-        // Duration.zero only yields to microtasks, causing a CPU-wasting
-        // spin loop.
-        await Future.delayed(const Duration(milliseconds: 1));
-        continue;
+      if (count > 0) {
+        final data = copyFromNativeBuffer(buffer, count);
+        responsePort.send(_PipeData(data));
       }
-
-      // Copy and send data
-      final data = copyFromNativeBuffer(buffer, count);
-      responsePort.send(_PipeData(data));
     }
   } finally {
     calloc.free(buffer);
     calloc.free(bytesRead);
+    calloc.free(peekAvail);
     responsePort.send(_PipeClosed());
   }
 }

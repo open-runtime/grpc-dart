@@ -247,6 +247,13 @@ class _NamedPipeStream {
 
   /// Continuously reads from the pipe and adds to incoming stream.
   ///
+  /// Uses [PeekNamedPipe] to poll for data availability before calling
+  /// [ReadFile]. This is critical because ReadFile with a synchronous pipe
+  /// handle is a **blocking FFI call** that freezes the Dart event loop —
+  /// preventing HTTP/2 writes, test timeouts, and all other async work.
+  /// By only calling ReadFile when data is confirmed available, the event
+  /// loop remains responsive between reads.
+  ///
   /// **Error propagation**: When [ReadFile] fails with an unexpected Win32
   /// error (not BROKEN_PIPE / NO_DATA), a [NamedPipeException] is added to
   /// [_incomingController] as a stream error. This error propagates through:
@@ -265,18 +272,58 @@ class _NamedPipeStream {
   Future<void> _readLoop() async {
     final buffer = calloc<Uint8>(kNamedPipeBufferSize);
     final bytesRead = calloc<DWORD>();
+    final peekAvail = calloc<DWORD>();
 
     try {
       while (!_isClosed) {
-        bytesRead.value = 0;
+        // Non-blocking check: is there data available on the pipe?
+        //
+        // PeekNamedPipe returns immediately without blocking the thread.
+        // This is essential because ReadFile with a synchronous pipe handle
+        // blocks the entire Dart isolate thread (FFI calls cannot be
+        // interrupted), which would prevent:
+        //  - HTTP/2 outgoing writes (request/response framing)
+        //  - dart:test timeout timers
+        //  - Any other scheduled async work
+        //
+        // Without this check, the first ReadFile call would deadlock: the
+        // client blocks waiting for server data, but the server is waiting
+        // for the client's HTTP/2 connection preface that can never be sent.
+        peekAvail.value = 0;
+        final peekResult = PeekNamedPipe(
+          _handle,
+          nullptr, // Don't read data, just check availability
+          0,
+          nullptr,
+          peekAvail,
+          nullptr,
+        );
 
-        // Read from pipe (blocking call)
+        if (peekResult == 0) {
+          // PeekNamedPipe failed — pipe is closed or broken.
+          final error = GetLastError();
+          if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
+            _incomingController.addError(NamedPipeException('Peek failed: Win32 error $error', error));
+          }
+          break;
+        }
+
+        if (peekAvail.value == 0) {
+          // No data available yet. Yield to the event loop so HTTP/2
+          // writes and other async work can proceed. Use 1ms delay
+          // instead of Duration.zero to yield to the full event queue
+          // (not just microtasks).
+          await Future.delayed(const Duration(milliseconds: 1));
+          continue;
+        }
+
+        // Data confirmed available — ReadFile will return immediately.
+        bytesRead.value = 0;
         final success = ReadFile(_handle, buffer, kNamedPipeBufferSize, bytesRead, nullptr);
 
         if (success == 0) {
           final error = GetLastError();
           if (error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA) {
-            // Pipe closed gracefully
             break;
           }
           _incomingController.addError(NamedPipeException('Read failed: Win32 error $error', error));
@@ -284,22 +331,15 @@ class _NamedPipeStream {
         }
 
         final count = bytesRead.value;
-        if (count == 0) {
-          // No data available yet. Use a 1ms delay to yield to the event
-          // loop without busy-waiting. Duration.zero would cause a CPU-
-          // wasting spin loop since it only yields to microtasks, not
-          // timers or I/O callbacks.
-          await Future.delayed(const Duration(milliseconds: 1));
-          continue;
+        if (count > 0) {
+          final data = copyFromNativeBuffer(buffer, count);
+          _incomingController.add(data);
         }
-
-        // Copy bytes and add to stream
-        final data = copyFromNativeBuffer(buffer, count);
-        _incomingController.add(data);
       }
     } finally {
       calloc.free(buffer);
       calloc.free(bytesRead);
+      calloc.free(peekAvail);
       close();
     }
   }
