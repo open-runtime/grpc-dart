@@ -30,39 +30,10 @@ library;
 import 'dart:async';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc/src/client/channel.dart' hide ClientChannel;
-import 'package:grpc/src/client/connection.dart';
-import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
 import 'src/echo_service.dart';
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-class TestClientChannel extends ClientChannelBase {
-  final Http2ClientConnection clientConnection;
-  final List<ConnectionState> states = [];
-
-  TestClientChannel(this.clientConnection) {
-    onConnectionStateChanged.listen((state) => states.add(state));
-  }
-
-  @override
-  ClientConnection createConnection() => clientConnection;
-}
-
-TestClientChannel _createChannel(dynamic address, int port) {
-  return TestClientChannel(
-    Http2ClientConnection(
-      address,
-      port,
-      ChannelOptions(credentials: ChannelCredentials.insecure()),
-    ),
-  );
-}
 
 // =============================================================================
 // Tests
@@ -79,24 +50,48 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Start 10 concurrent server-streaming RPCs. Each streams 255
-      // items at 10ms/item = ~2.5 seconds. We'll kill the server after
-      // 100ms, well before any stream finishes naturally.
-      final streamFutures = <Future<List<int>>>[];
+      // items at 10ms/item = ~2.5 seconds. We manually collect items
+      // per-stream so we can use a concrete "first item arrived"
+      // signal instead of a flaky time-based delay.
+      final collectors = <List<int>>[];
+      final doneCompleters = <Completer<void>>[];
+      final firstItemSeen = Completer<void>();
+
       for (var i = 0; i < 10; i++) {
-        streamFutures.add(
-          client
-              .serverStream(255)
-              .toList()
-              .then((r) => r, onError: (_) => <int>[]),
-        );
+        final items = <int>[];
+        collectors.add(items);
+        final done = Completer<void>();
+        doneCompleters.add(done);
+
+        client
+            .serverStream(255)
+            .listen(
+              (value) {
+                items.add(value);
+                if (!firstItemSeen.isCompleted) firstItemSeen.complete();
+              },
+              onError: (e) {
+                expect(e, isA<GrpcError>());
+                if (!done.isCompleted) done.complete();
+              },
+              onDone: () {
+                if (!done.isCompleted) done.complete();
+              },
+            );
       }
 
-      // Let some data flow.
-      await Future.delayed(const Duration(milliseconds: 100));
+      // Concrete signal: wait until at least one stream has received
+      // its first item. This proves handlers are active and data is
+      // flowing — no time-based guessing.
+      await firstItemSeen.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () =>
+            fail('No stream received any data — handlers may not have started'),
+      );
 
       // Shutdown must cancel all 10 handlers and complete.
       await server.shutdown().timeout(
@@ -106,17 +101,33 @@ void main() {
       );
 
       // All 10 streams must have terminated (not hung).
-      final results = await Future.wait(streamFutures).timeout(
+      await Future.wait(doneCompleters.map((c) => c.future)).timeout(
         const Duration(seconds: 5),
         onTimeout: () => fail('streams still active after shutdown'),
       );
-      for (var i = 0; i < results.length; i++) {
+
+      // Verify truncation: each stream must have fewer than 255 items.
+      for (var i = 0; i < collectors.length; i++) {
         expect(
-          results[i].length,
+          collectors[i].length,
           lessThan(255),
-          reason: 'stream $i should have been truncated by shutdown',
+          reason:
+              'stream $i should have been truncated by shutdown '
+              '(0 items is valid if shutdown won the race)',
         );
       }
+
+      // Guard against vacuous truth: the firstItemSeen completer
+      // already proved at least 1 item arrived. Verify it's reflected.
+      final totalItems = collectors.fold<int>(
+        0,
+        (sum, items) => sum + items.length,
+      );
+      expect(
+        totalItems,
+        greaterThan(0),
+        reason: 'firstItemSeen completed, so at least 1 item must exist',
+      );
 
       await channel.shutdown();
     });
@@ -127,7 +138,7 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Start 5 concurrent streaming RPCs.
@@ -181,7 +192,7 @@ void main() {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);
 
-        final channel = _createChannel(address, server.port!);
+        final channel = createTestChannel(address, server.port!);
         final client = EchoClient(channel);
 
         // (1) Completed unary — already done by the time we shutdown.
@@ -242,7 +253,6 @@ void main() {
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       await server.serve(pipeName: pipeName);
-      addTearDown(() => server.shutdown());
 
       final channel = NamedPipeClientChannel(
         pipeName,
@@ -251,18 +261,48 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      final streamFutures = <Future<List<int>>>[];
+      // Use manual collectors with a concrete signal instead of
+      // time-based delay. This prevents the vacuous-truth scenario
+      // where shutdown wins the race and all streams get 0 items.
+      final collectors = <List<int>>[];
+      final doneCompleters = <Completer<void>>[];
+      final firstItemSeen = Completer<void>();
+
       for (var i = 0; i < 10; i++) {
-        streamFutures.add(
-          client
-              .serverStream(255)
-              .toList()
-              .then((r) => r, onError: (_) => <int>[]),
-        );
+        final items = <int>[];
+        collectors.add(items);
+        final done = Completer<void>();
+        doneCompleters.add(done);
+
+        client
+            .serverStream(255)
+            .listen(
+              (value) {
+                items.add(value);
+                if (!firstItemSeen.isCompleted) firstItemSeen.complete();
+              },
+              onError: (e) {
+                expect(e, isA<GrpcError>());
+                if (!done.isCompleted) done.complete();
+              },
+              onDone: () {
+                if (!done.isCompleted) done.complete();
+              },
+            );
       }
 
-      await Future.delayed(const Duration(milliseconds: 100));
+      // Concrete signal: wait until at least one stream has received
+      // its first item. This proves handlers are active and data is
+      // flowing — no time-based guessing.
+      await firstItemSeen.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail(
+          'No named-pipe stream received any data — '
+          'handlers may not have started',
+        ),
+      );
 
+      // Shutdown must cancel all 10 handlers and complete.
       await server.shutdown().timeout(
         const Duration(seconds: 10),
         onTimeout: () => fail(
@@ -271,17 +311,34 @@ void main() {
         ),
       );
 
-      final results = await Future.wait(streamFutures).timeout(
+      // All 10 streams must have terminated (not hung).
+      await Future.wait(doneCompleters.map((c) => c.future)).timeout(
         const Duration(seconds: 5),
         onTimeout: () => fail('streams still active after shutdown'),
       );
-      for (var i = 0; i < results.length; i++) {
+
+      // Verify truncation: each stream must have fewer than 255 items.
+      for (var i = 0; i < collectors.length; i++) {
         expect(
-          results[i].length,
+          collectors[i].length,
           lessThan(255),
-          reason: 'stream $i should have been truncated by shutdown',
+          reason:
+              'stream $i should have been truncated by shutdown '
+              '(0 items is valid if shutdown won the race)',
         );
       }
+
+      // Guard against vacuous truth: the firstItemSeen completer
+      // already proved at least 1 item arrived. Verify it's reflected.
+      final totalItems = collectors.fold<int>(
+        0,
+        (sum, items) => sum + items.length,
+      );
+      expect(
+        totalItems,
+        greaterThan(0),
+        reason: 'firstItemSeen completed, so at least 1 item must exist',
+      );
 
       await channel.shutdown();
     });
@@ -291,7 +348,6 @@ void main() {
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       await server.serve(pipeName: pipeName);
-      addTearDown(() => server.shutdown());
 
       final channel = NamedPipeClientChannel(
         pipeName,
@@ -311,6 +367,14 @@ void main() {
       }
 
       await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        server.handlers.isNotEmpty,
+        isTrue,
+        reason:
+            'Handlers map must have entries before shutdown '
+            '(otherwise the test proves nothing)',
+      );
 
       await server.shutdown().timeout(
         const Duration(seconds: 10),
@@ -335,7 +399,6 @@ void main() {
       (pipeName) async {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
-        addTearDown(() => server.shutdown());
 
         final channel = NamedPipeClientChannel(
           pipeName,
@@ -399,7 +462,7 @@ void main() {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);
 
-        final channel = _createChannel(address, server.port!);
+        final channel = createTestChannel(address, server.port!);
         final client = EchoClient(channel);
 
         final result = await client
@@ -430,7 +493,7 @@ void main() {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Start an active stream so shutdown has work to do.

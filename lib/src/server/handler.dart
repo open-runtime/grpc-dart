@@ -608,6 +608,7 @@ class ServerHandler extends ServiceCall {
   }
 
   void cancel() {
+    if (_streamTerminated) return;
     isCanceled = true;
     _timeoutTimer?.cancel();
     // Close the request stream so that handler methods blocked on
@@ -631,6 +632,7 @@ class ServerHandler extends ServiceCall {
       }
     }
     _cancelResponseSubscription();
+    _incomingSubscription?.cancel();
     _terminateStream();
   }
 

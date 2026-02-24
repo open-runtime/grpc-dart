@@ -133,6 +133,11 @@ class NamedPipeServer extends ConnectionServer {
   /// Whether the server is running.
   bool get isRunning => _isRunning;
 
+  /// Number of active named-pipe stream wrappers currently tracked.
+  ///
+  /// Exposed for transport lifecycle tests that verify stream cleanup.
+  int get activePipeStreamCount => _activeStreams.length;
+
   /// Starts the named pipe server.
   ///
   /// [pipeName] is the name of the pipe (e.g., 'my-service-12345').
@@ -381,6 +386,8 @@ class NamedPipeServer extends ConnectionServer {
 /// returns immediately, ReadFile only runs when data is confirmed available),
 /// so polling, timeouts, and concurrent connections all work correctly.
 class _ServerPipeStream {
+  static const Duration _deferredCloseTimeout = Duration(seconds: 5);
+
   final int _handle;
 
   final StreamController<List<int>> _incomingController = StreamController<List<int>>();
@@ -400,6 +407,13 @@ class _ServerPipeStream {
 
   /// Completes when this stream is closed (for external tracking).
   final Completer<void> _closeCompleter = Completer<void>();
+
+  /// Safety-net timer for deferred normal-close cleanup.
+  ///
+  /// Armed when normal close defers handle cleanup to [_onOutgoingDone].
+  /// If the outgoing subscription never completes, this timer force-closes
+  /// resources so the isolate does not stay alive indefinitely.
+  Timer? _deferredCloseTimer;
 
   /// Future that completes when this stream closes.
   Future<void> get _closeFuture => _closeCompleter.future;
@@ -576,11 +590,41 @@ class _ServerPipeStream {
   /// frames that haven't been written yet (causing 232/1000 item failures
   /// in tests).
   void _onOutgoingDone() {
+    _cancelDeferredCloseTimer();
     _outgoingSubscription = null;
     _closeHandle(disconnect: false);
     if (!_isClosed) {
       close();
     }
+  }
+
+  void _cancelDeferredCloseTimer() {
+    _deferredCloseTimer?.cancel();
+    _deferredCloseTimer = null;
+  }
+
+  void _armDeferredCloseTimer() {
+    _cancelDeferredCloseTimer();
+    _deferredCloseTimer = Timer(_deferredCloseTimeout, () {
+      // Timer can race with _onOutgoingDone/forced close. Re-check state.
+      if (_handleClosed || _outgoingSubscription == null) {
+        return;
+      }
+
+      logGrpcEvent(
+        '[gRPC] Deferred pipe close timed out; forcing cleanup',
+        component: 'NamedPipeServer',
+        event: 'deferred_close_timeout',
+        context: '_ServerPipeStream.close',
+      );
+
+      _outgoingSubscription?.cancel();
+      _outgoingSubscription = null;
+      try {
+        _outgoingController.close();
+      } catch (_) {}
+      _closeHandle(disconnect: false);
+    });
   }
 
   /// Closes the pipe stream and cleans up resources.
@@ -633,6 +677,7 @@ class _ServerPipeStream {
       // where normal close deferred handle cleanup to _onOutgoingDone, but
       // the server is shutting down before the transport finishes writing.
       if (force) {
+        _cancelDeferredCloseTimer();
         _outgoingSubscription?.cancel();
         _outgoingSubscription = null;
         try {
@@ -648,6 +693,7 @@ class _ServerPipeStream {
     _incomingController.close();
 
     if (force) {
+      _cancelDeferredCloseTimer();
       // Forced shutdown: cancel outgoing subscription immediately.
       // This triggers the addStream() cascade (see doc above) that unlocks
       // the controller so close() succeeds.
@@ -671,6 +717,10 @@ class _ServerPipeStream {
     // close the handle now since _onOutgoingDone won't fire.
     else if (_outgoingSubscription == null) {
       _closeHandle(disconnect: false);
+    } else {
+      // Deferred cleanup path: allow normal drain, but force-close if it
+      // does not complete within the safety window.
+      _armDeferredCloseTimer();
     }
   }
 
@@ -684,6 +734,7 @@ class _ServerPipeStream {
   /// for the client to drain.
   void _closeHandle({required bool disconnect}) {
     if (_handleClosed) return;
+    _cancelDeferredCloseTimer();
     _handleClosed = true;
 
     if (disconnect) {

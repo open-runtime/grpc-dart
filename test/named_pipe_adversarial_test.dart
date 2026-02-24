@@ -790,6 +790,83 @@ void main() {
         log('Test complete. Total time: ${sw.elapsedMilliseconds}ms');
       },
     );
+
+    // -------------------------------------------------------------------------
+    // Test 13: Deferred close safety net cleans up stalled outgoing stream
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: Start a large server-stream response, then abruptly
+    // terminate the client channel before consuming any response frames.
+    // This drives normal close down the deferred path where _onOutgoingDone
+    // may never fire if outgoing transport drain stalls.
+    //
+    // EXPECTED: activePipeStreamCount returns to 0 within the deferred-close
+    // safety window (5s + buffer), and the server remains usable.
+    testNamedPipe(
+      'deferred close timeout cleans up stalled stream after abrupt disconnect',
+      timeout: const Timeout(Duration(seconds: 90)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        // Request a large server-stream and intentionally do not listen to
+        // the response stream. This can stall flow control on the outgoing
+        // transport when the client is later terminated.
+        final bd = ByteData(8)
+          ..setUint32(0, 256) // chunkCount
+          ..setUint32(4, 65536); // chunkSize (64KB)
+        client.serverStreamBytes(bd.buffer.asUint8List());
+
+        Future<void> waitForActiveStreams({
+          required int expected,
+          required Duration timeout,
+          required String onTimeoutMessage,
+        }) async {
+          final deadline = DateTime.now().add(timeout);
+          while (DateTime.now().isBefore(deadline)) {
+            if (server.activePipeStreamCount == expected) return;
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+          }
+          fail(
+            '$onTimeoutMessage (activePipeStreamCount='
+            '${server.activePipeStreamCount})',
+          );
+        }
+
+        await waitForActiveStreams(
+          expected: 1,
+          timeout: const Duration(seconds: 3),
+          onTimeoutMessage: 'Server never observed active stream',
+        );
+
+        // Abrupt client teardown (RST-like) while server may still be writing.
+        await channel.terminate();
+
+        await waitForActiveStreams(
+          expected: 0,
+          timeout: const Duration(seconds: 8),
+          onTimeoutMessage:
+              'Deferred close safety net failed to clean up stalled stream',
+        );
+
+        // Verify server remains healthy for new clients after cleanup.
+        final recoveryChannel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final recoveryClient = EchoClient(recoveryChannel);
+        expect(await recoveryClient.echo(7), equals(7));
+
+        await recoveryChannel.shutdown();
+        await server.shutdown();
+      },
+    );
   });
 
   // ===========================================================================

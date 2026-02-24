@@ -775,7 +775,122 @@ void main() {
       },
     );
 
-    // 21. Force ERROR_PIPE_BUSY and verify connector retry behavior.
+    // 21. Single connector done future must be per-connection lifecycle.
+    //
+    // Regression targeted: A reused completer made connector.done already
+    // completed on reconnect, which immediately triggered abandonment of the
+    // freshly established connection.
+    testNamedPipe('connector done future resets across reconnect generations', (
+      pipeName,
+    ) async {
+      var server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+
+      final connector = NamedPipeTransportConnector(pipeName);
+      addTearDown(() => connector.shutdown());
+
+      await connector.connect();
+      final firstDone = connector.done;
+      var firstDoneCompleted = false;
+      firstDone.then((_) => firstDoneCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        firstDoneCompleted,
+        isFalse,
+        reason: 'done must be pending while first connection is active',
+      );
+
+      await server.shutdown();
+      await firstDone.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('first connector.done did not complete'),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+
+      await connector.connect();
+      final secondDone = connector.done;
+      expect(
+        identical(firstDone, secondDone),
+        isFalse,
+        reason: 'connector.done must be a fresh Future on reconnect',
+      );
+
+      var secondDoneCompleted = false;
+      secondDone.then((_) => secondDoneCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        secondDoneCompleted,
+        isFalse,
+        reason: 'new connector.done should not be pre-completed',
+      );
+
+      await server.shutdown();
+      await secondDone.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('second connector.done did not complete'),
+      );
+    });
+
+    // 22. Same channel recovery must remain stable across many restarts.
+    //
+    // Regression targeted: reconnect path degradation from stale connector
+    // state (including stale handles) causing increasing recovery failures.
+    testNamedPipe(
+      'same channel remains stable across repeated server restarts',
+      (pipeName) async {
+        var server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+
+        expect(await client.echo(0), equals(0));
+
+        for (var cycle = 1; cycle <= 8; cycle++) {
+          await server.shutdown();
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+
+          server = NamedPipeServer.create(services: [EchoService()]);
+          await server.serve(pipeName: pipeName);
+
+          Object? lastError;
+          var recovered = false;
+          for (var attempt = 0; attempt < 3; attempt++) {
+            try {
+              final result = await client
+                  .echo(cycle)
+                  .timeout(const Duration(milliseconds: 1000));
+              expect(result, equals(cycle));
+              recovered = true;
+              break;
+            } catch (e) {
+              lastError = e;
+              await Future<void>.delayed(const Duration(milliseconds: 80));
+            }
+          }
+
+          expect(
+            recovered,
+            isTrue,
+            reason:
+                'Channel failed to recover on cycle $cycle. '
+                'Last error: $lastError',
+          );
+        }
+
+        await channel.shutdown();
+        await server.shutdown();
+      },
+    );
+
+    // 23. Force ERROR_PIPE_BUSY and verify connector retry behavior.
     //     With maxInstances=1, channel2 cannot connect while channel1 holds
     //     the only active pipe instance. channel2 should retry and then
     //     succeed once channel1 disconnects.

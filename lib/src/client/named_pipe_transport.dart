@@ -62,8 +62,11 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   /// The name of the pipe (without the `\\.\pipe\` prefix).
   final String pipeName;
 
-  /// Completer that signals when the connection is closed.
-  final Completer<void> _doneCompleter = Completer<void>();
+  /// Completer that signals when the active connection is closed.
+  ///
+  /// This is reset at the start of every [connect] call so each logical
+  /// transport generation has its own done Future.
+  Completer<void> _doneCompleter = Completer<void>();
 
   /// The underlying pipe handle (valid only after connect).
   int? _pipeHandle;
@@ -91,6 +94,12 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
         'Use Unix domain sockets on macOS/Linux.',
       );
     }
+
+    // Reconnection path safety: if a previous stream/handle is still tracked
+    // in this connector instance, dispose it before creating a new transport.
+    // This prevents stale handle retention across reconnect generations.
+    _disposeCurrentPipeResources();
+    _doneCompleter = Completer<void>();
 
     // Use calloc allocator so the matching calloc.free() is correct.
     // toNativeUtf16() defaults to malloc — passing calloc explicitly
@@ -196,24 +205,32 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 
   @override
   void shutdown() {
+    _disposeCurrentPipeResources();
+    if (!_doneCompleter.isCompleted) {
+      _doneCompleter.complete();
+    }
+  }
+
+  /// Disposes current stream and OS handle tracked by this connector.
+  ///
+  /// Safe to call repeatedly — both stream close and handle close paths
+  /// are idempotent in this connector.
+  void _disposeCurrentPipeResources() {
     _pipeStream?.close();
+    _pipeStream = null;
+
     final handle = _pipeHandle;
     if (handle != null && handle != INVALID_HANDLE_VALUE) {
       // IMPORTANT: Do NOT call FlushFileBuffers here. It is a synchronous
       // FFI call that blocks until the server reads ALL pending data from
-      // the pipe buffer. During shutdown, the server may not be reading
-      // (e.g., it's also shutting down). In that case FlushFileBuffers
-      // blocks the Dart isolate thread indefinitely — freezing the event
-      // loop and preventing process exit.
+      // the pipe buffer. During shutdown/reconnect cleanup, the peer may not
+      // be reading. A blocking flush can freeze the isolate event loop.
       //
       // With synchronous pipe mode, WriteFile already ensures data is in
-      // the pipe buffer before returning. CloseHandle releases the handle
-      // and any unread data is discarded — acceptable during shutdown.
+      // the pipe buffer before returning. CloseHandle releases the handle,
+      // and unread data may be discarded as part of teardown.
       CloseHandle(handle);
       _pipeHandle = null;
-    }
-    if (!_doneCompleter.isCompleted) {
-      _doneCompleter.complete();
     }
   }
 }
@@ -422,8 +439,8 @@ class _NamedPipeStream {
   /// minutes until the CI timeout kills it.
   ///
   /// Note: This does NOT close the underlying Win32 handle. The handle is
-  /// owned by [NamedPipeTransportConnector] and closed in its [shutdown()]
-  /// method, which closes the Win32 handle via CloseHandle.
+  /// owned by [NamedPipeTransportConnector] and closed by connector-level
+  /// teardown (shutdown and reconnect cleanup).
   void close() {
     if (_isClosed) return;
     _isClosed = true;

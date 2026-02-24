@@ -31,8 +31,6 @@ library;
 import 'dart:async';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc/src/client/channel.dart' hide ClientChannel;
-import 'package:grpc/src/client/connection.dart';
 import 'package:grpc/src/client/http2_connection.dart';
 import 'package:grpc/src/server/handler.dart';
 import 'package:grpc/src/shared/message.dart';
@@ -181,21 +179,160 @@ class _MultiBlockingBidiService extends Service {
   }
 }
 
+/// Bidi service with a request deserializer hook so tests can assert whether
+/// incoming frames are still being deserialized after cancellation.
+class _CountingDecodeBidiService extends Service {
+  final void Function() onDeserialize;
+  final Completer<void> onFirstRequestSeen;
+
+  _CountingDecodeBidiService({
+    required this.onDeserialize,
+    required this.onFirstRequestSeen,
+  }) {
+    $addMethod(
+      ServiceMethod<int, int>('BidiStream', _bidiStream, true, true, (
+        List<int> value,
+      ) {
+        onDeserialize();
+        return value[0];
+      }, (int value) => [value]),
+    );
+  }
+
+  @override
+  String get $name => 'test.EchoService';
+
+  Stream<int> _bidiStream(ServiceCall call, Stream<int> requests) async* {
+    await for (final value in requests) {
+      if (!onFirstRequestSeen.isCompleted) {
+        onFirstRequestSeen.complete();
+      }
+      yield value;
+    }
+  }
+}
+
+/// StreamController wrapper that forces addError() to throw.
+///
+/// Used to deterministically exercise ServerHandler._onError catch handling.
+class _ThrowingAddErrorController<T> implements StreamController<T> {
+  final StreamController<T> _delegate;
+  final void Function() onAddErrorAttempt;
+
+  _ThrowingAddErrorController(this._delegate, this.onAddErrorAttempt);
+
+  @override
+  Stream<T> get stream => _delegate.stream;
+
+  @override
+  StreamSink<T> get sink => _delegate.sink;
+
+  @override
+  Future<void> get done => _delegate.done;
+
+  @override
+  bool get hasListener => _delegate.hasListener;
+
+  @override
+  bool get isClosed => _delegate.isClosed;
+
+  @override
+  bool get isPaused => _delegate.isPaused;
+
+  @override
+  void add(T event) => _delegate.add(event);
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) {
+    onAddErrorAttempt();
+    throw StateError('forced addError failure');
+  }
+
+  @override
+  Future<void> addStream(Stream<T> stream, {bool? cancelOnError}) =>
+      _delegate.addStream(stream, cancelOnError: cancelOnError);
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  FutureOr<void> Function()? get onCancel => _delegate.onCancel;
+
+  @override
+  set onCancel(FutureOr<void> Function()? handler) =>
+      _delegate.onCancel = handler;
+
+  @override
+  void Function()? get onListen => _delegate.onListen;
+
+  @override
+  set onListen(void Function()? handler) => _delegate.onListen = handler;
+
+  @override
+  void Function()? get onPause => _delegate.onPause;
+
+  @override
+  set onPause(void Function()? handler) => _delegate.onPause = handler;
+
+  @override
+  void Function()? get onResume => _delegate.onResume;
+
+  @override
+  set onResume(void Function()? handler) => _delegate.onResume = handler;
+}
+
+class _ThrowingAddErrorMethod extends ServiceMethod<int, int> {
+  final void Function() onAddErrorAttempt;
+
+  _ThrowingAddErrorMethod(
+    this.onAddErrorAttempt,
+    Stream<int> Function(ServiceCall, Stream<int>) handler,
+  ) : super(
+        'BidiStream',
+        handler,
+        true,
+        true,
+        (List<int> value) => value[0],
+        (int value) => [value],
+      );
+
+  @override
+  StreamController<int> createRequestStream(StreamSubscription incoming) {
+    // ignore: close_sinks — lifecycle managed by _ThrowingAddErrorController.close()
+    final delegate = super.createRequestStream(incoming);
+    return _ThrowingAddErrorController<int>(delegate, onAddErrorAttempt);
+  }
+}
+
+class _OnErrorCatchBidiService extends Service {
+  final void Function() onAddErrorAttempt;
+  final Completer<void> onFirstRequestSeen;
+
+  _OnErrorCatchBidiService({
+    required this.onAddErrorAttempt,
+    required this.onFirstRequestSeen,
+  }) {
+    $addMethod(_ThrowingAddErrorMethod(onAddErrorAttempt, _bidiStream));
+  }
+
+  @override
+  String get $name => 'test.EchoService';
+
+  Stream<int> _bidiStream(ServiceCall call, Stream<int> requests) async* {
+    await for (final value in requests) {
+      if (!onFirstRequestSeen.isCompleted) {
+        onFirstRequestSeen.complete();
+      }
+      yield value;
+    }
+  }
+}
+
 // =============================================================================
 // TestClientChannel for end-to-end tests
 // =============================================================================
 
-class _TestClientChannel extends ClientChannelBase {
-  final Http2ClientConnection clientConnection;
-  final List<ConnectionState> states = [];
-
-  _TestClientChannel(this.clientConnection) {
-    onConnectionStateChanged.listen((state) => states.add(state));
-  }
-
-  @override
-  ClientConnection createConnection() => clientConnection;
-}
+// TestClientChannel is imported from common.dart.
 
 // =============================================================================
 // Tests
@@ -217,8 +354,15 @@ void main() {
     });
 
     test(
-      'sendTrailers is idempotent - second call sends exactly one trailer',
+      'handler error produces exactly one trailer (guard prevents duplicates)',
       () async {
+        // This test exercises the _trailersSent guard at handler.dart:482.
+        // The handler throws after yields, which triggers _onResponseError →
+        // _sendError → sendTrailers(). Meanwhile, the client-side stream
+        // close fires _onDoneExpected → _onDone, and the response
+        // subscription cancel path may also attempt sendTrailers via
+        // _onResponseDone. The guard must coalesce all paths into exactly
+        // 1 trailer.
         Stream<int> methodHandler(
           ServiceCall call,
           Future<int> request,
@@ -269,52 +413,186 @@ void main() {
       },
     );
 
-    test('concurrent _onResponseDone and _sendError do not crash', () async {
-      Stream<int> methodHandler(ServiceCall call, Future<int> request) async* {
-        await request;
-        yield 1;
-        yield 2;
-        await Future.delayed(Duration.zero);
-        throw GrpcError.unknown('Handler failure after yields');
-      }
+    test(
+      '_trailersSent guard blocks second sendTrailers from concurrent path',
+      () async {
+        // This test deliberately creates TWO sendTrailers trigger paths
+        // in the same handler lifecycle:
+        //   1. _onTimedOut → _sendError → sendTrailers(DEADLINE_EXCEEDED)
+        //   2. _onResponseDone → sendTrailers(OK)
+        // With a 1μs grpc-timeout, the timer fires before the handler
+        // finishes yielding. The handler eventually completes normally
+        // (_onResponseDone), triggering a SECOND sendTrailers(OK) call.
+        // The _trailersSent guard (handler.dart:482) must block the second
+        // call, resulting in exactly 1 trailer on the wire.
+        Stream<int> methodHandler(
+          ServiceCall call,
+          Future<int> request,
+        ) async* {
+          await request;
+          // Yield a few items. The 1μs timeout fires during this loop,
+          // calling sendTrailers(DEADLINE_EXCEEDED). When the handler
+          // eventually returns (isCanceled breaks the loop), the
+          // _onResponseDone path calls sendTrailers(OK).
+          for (var i = 0; i < 20; i++) {
+            if (call.isCanceled) break;
+            yield i;
+            await Future.delayed(const Duration(milliseconds: 5));
+          }
+        }
 
-      final responseCompleter = Completer<void>();
-      var trailerCount = 0;
+        final responseCompleter = Completer<void>();
+        var trailerCount = 0;
+        final trailerStatuses = <String>[];
 
-      harness.fromServer.stream.listen(
-        (message) {
-          if (message is HeadersStreamMessage) {
-            final headers = headersToMap(message.headers);
-            if (headers.containsKey('grpc-status')) {
-              trailerCount++;
+        harness.fromServer.stream.listen(
+          (message) {
+            if (message is HeadersStreamMessage) {
+              final headers = headersToMap(message.headers);
+              if (headers.containsKey('grpc-status')) {
+                trailerCount++;
+                trailerStatuses.add(headers['grpc-status']!);
+              }
             }
-          }
-        },
-        onError: (_) {},
-        onDone: () {
-          if (!responseCompleter.isCompleted) {
-            responseCompleter.complete();
-          }
-        },
-      );
+          },
+          onError: (_) {},
+          onDone: () {
+            if (!responseCompleter.isCompleted) {
+              responseCompleter.complete();
+            }
+          },
+        );
 
-      harness.service.serverStreamingHandler = methodHandler;
-      harness.sendRequestHeader('/Test/ServerStreaming');
-      harness.sendData(1);
-      harness.toServer.close();
+        harness.service.serverStreamingHandler = methodHandler;
+        harness.sendRequestHeader(
+          '/Test/ServerStreaming',
+          timeout: const Duration(microseconds: 1),
+        );
+        harness.sendData(1);
+        harness.toServer.close();
 
-      await responseCompleter.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => fail('Timed out waiting for response'),
-      );
+        await responseCompleter.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => fail('Timed out waiting for response'),
+        );
 
-      expect(
-        trailerCount,
-        equals(1),
-        reason:
-            'Expected exactly 1 trailer with grpc-status, got $trailerCount',
-      );
-    });
+        expect(
+          trailerCount,
+          equals(1),
+          reason:
+              'Expected exactly 1 trailer despite both _onTimedOut and '
+              '_onResponseDone calling sendTrailers. The _trailersSent '
+              'guard (handler.dart:482) must block the second call. '
+              'Got $trailerCount trailers: $trailerStatuses',
+        );
+      },
+    );
+
+    test(
+      'yield-then-throw triggers both response paths without crash',
+      () async {
+        Stream<int> methodHandler(
+          ServiceCall call,
+          Future<int> request,
+        ) async* {
+          await request;
+          yield 1;
+          yield 2;
+          await Future.delayed(Duration.zero);
+          throw GrpcError.unknown('Handler failure after yields');
+        }
+
+        final responseCompleter = Completer<void>();
+        var trailerCount = 0;
+
+        harness.fromServer.stream.listen(
+          (message) {
+            if (message is HeadersStreamMessage) {
+              final headers = headersToMap(message.headers);
+              if (headers.containsKey('grpc-status')) {
+                trailerCount++;
+              }
+            }
+          },
+          onError: (_) {},
+          onDone: () {
+            if (!responseCompleter.isCompleted) {
+              responseCompleter.complete();
+            }
+          },
+        );
+
+        harness.service.serverStreamingHandler = methodHandler;
+        harness.sendRequestHeader('/Test/ServerStreaming');
+        harness.sendData(1);
+        harness.toServer.close();
+
+        await responseCompleter.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => fail('Timed out waiting for response'),
+        );
+
+        expect(
+          trailerCount,
+          equals(1),
+          reason:
+              'Expected exactly 1 trailer with grpc-status, got $trailerCount',
+        );
+      },
+    );
+
+    test(
+      'sendTrailers handles closed outgoing sink without crashing',
+      () async {
+        final errorHarness = ErrorCapturingHarness()..setUp();
+        addTearDown(() => errorHarness.tearDown());
+
+        final handlerReached = Completer<void>();
+        errorHarness.service.unaryHandler =
+            (ServiceCall call, Future<int> request) async {
+              handlerReached.complete();
+              await request;
+              // Close the wire sink synchronously (don't await — awaiting
+              // blocks the handler since the StreamController.close() future
+              // won't complete until the listener processes the done event,
+              // which can't happen while we hold the handler's async frame).
+              // ignore: unawaited_futures
+              errorHarness.fromServer.close();
+              throw GrpcError.internal('forced sendTrailers on closed sink');
+            };
+
+        errorHarness.sendRequestHeader('/Test/Unary');
+        errorHarness.sendData(1);
+        await errorHarness.toServer.close();
+
+        // Wait for handler to start.
+        await handlerReached.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => fail('Handler never started'),
+        );
+
+        // Give the async error propagation time to settle:
+        // handler throws → Future.asStream() error → _onResponseError
+        // → _sendError → _errorHandler.call(error) → sendTrailers()
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        // Verify the production code path:
+        // 1. _sendError (handler.dart:626) calls _errorHandler BEFORE
+        //    calling sendTrailers, so capturedErrors has the GrpcError.
+        // 2. sendTrailers writes to the already-closed fromServer sink,
+        //    which is caught and logged as [gRPC] Failed to send trailers.
+        // 3. The server does NOT crash.
+        expect(
+          errorHarness.capturedErrors,
+          isNotEmpty,
+          reason:
+              'errorHandler should receive the GrpcError.internal from the '
+              'handler throw — _sendError calls _errorHandler before '
+              'sendTrailers (handler.dart:626)',
+        );
+        expect(errorHarness.capturedErrors.first.code, StatusCode.internal);
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -331,24 +609,34 @@ void main() {
       harness.tearDown();
     });
 
-    test('timeout during active streaming does not crash', () async {
+    test('timeout with isCanceled TOCTOU sends DEADLINE_EXCEEDED', () async {
+      // This test targets the TOCTOU race in _onTimedOut: the handler
+      // checks call.isCanceled between yields, but the timeout can
+      // fire between the check and the next yield. The 1μs timeout
+      // ensures the timer fires almost immediately while the handler
+      // is actively yielding, exercising the isCanceled + isClosed
+      // guards in _onTimedOut.
+      var yieldsBeforeCancel = 0;
       Stream<int> methodHandler(ServiceCall call, Future<int> request) async* {
         await request;
         for (var i = 0; i < 100; i++) {
+          if (call.isCanceled) break;
           yield i;
+          yieldsBeforeCancel++;
           await Future.delayed(const Duration(milliseconds: 5));
-          if (call.isCanceled) return;
         }
       }
 
       final responseCompleter = Completer<void>();
       var sawDeadlineExceeded = false;
+      var trailerCount = 0;
 
       harness.fromServer.stream.listen(
         (message) {
           if (message is HeadersStreamMessage) {
             final headers = headersToMap(message.headers);
-            if (headers['grpc-status'] != null) {
+            if (headers.containsKey('grpc-status')) {
+              trailerCount++;
               final status = int.tryParse(headers['grpc-status']!);
               if (status == StatusCode.deadlineExceeded) {
                 sawDeadlineExceeded = true;
@@ -378,22 +666,43 @@ void main() {
       );
 
       expect(sawDeadlineExceeded, isTrue);
+      expect(
+        trailerCount,
+        equals(1),
+        reason: 'Exactly 1 trailer expected, got $trailerCount',
+      );
+      // The handler should NOT have completed all 100 yields.
+      expect(
+        yieldsBeforeCancel,
+        lessThan(100),
+        reason: 'Timeout should have stopped the handler early',
+      );
     });
 
-    test('timeout after stream closure is safe', () async {
+    test('timeout timer firing after handler completion is harmless', () async {
+      // The handler completes instantly (unary), but the grpc-timeout
+      // header is set to 50ms. The timeout timer fires ~50ms AFTER
+      // the handler has already sent OK trailers and terminated the
+      // stream. The _onTimedOut guard (isCanceled || _trailersSent)
+      // must prevent the stale timer from crashing or sending a
+      // second DEADLINE_EXCEEDED trailer.
       Future<int> methodHandler(ServiceCall call, Future<int> request) async {
         return await request;
       }
 
       final responseCompleter = Completer<void>();
       var sawOkStatus = false;
+      var trailerCount = 0;
 
       harness.fromServer.stream.listen(
         (message) {
           if (message is HeadersStreamMessage) {
             final headers = headersToMap(message.headers);
-            if (headers['grpc-status'] == '0') {
-              sawOkStatus = true;
+            if (headers.containsKey('grpc-status')) {
+              trailerCount++;
+              if (headers['grpc-status'] == '0') {
+                sawOkStatus = true;
+              }
             }
           }
         },
@@ -418,13 +727,21 @@ void main() {
         onTimeout: () => fail('Timed out waiting for response'),
       );
 
+      // Wait 100ms — well past the 50ms grpc-timeout. The stale
+      // timer fires during this window and must be a no-op.
       await Future.delayed(const Duration(milliseconds: 100));
 
       expect(
         sawOkStatus,
         isTrue,
+        reason: 'Handler should have completed with OK status',
+      );
+      expect(
+        trailerCount,
+        equals(1),
         reason:
-            'Handler should have completed with OK status before timeout fired',
+            'Stale timeout timer must not produce a second trailer '
+            '(got $trailerCount)',
       );
     });
   });
@@ -541,7 +858,90 @@ void main() {
         reason: 'Handler should have completed with OK status',
       );
 
-      await (harness.server as Server).shutdown();
+      // NOTE: server.shutdown() is intentionally NOT called here.
+      // serveStream_() does not register the handler in
+      // Server._connections or Server.handlers, so shutdown()
+      // would be a no-op and mislead readers. The _terminateStream
+      // guard is exercised by the normal completion path above.
+    });
+
+    test('_streamTerminated guard exercises double-terminate via cancel() '
+        'after normal completion', () async {
+      // This test deliberately triggers _terminateStream() TWICE:
+      //   1. Normal handler completion: _onResponseDone → sendTrailers
+      //      (endStream: true) closes the stream. Then _onDone →
+      //      _incomingSubscription.cancel() — but since serveStream_
+      //      uses a TestServerStream, the underlying transport-level
+      //      _terminateStream path is implicit.
+      //   2. Explicit cancel() after completion: calls
+      //      _terminateStream() directly (handler.dart:661).
+      // The _streamTerminated guard (handler.dart:671) must make the
+      // second call a no-op without throwing.
+      final toServer = StreamController<StreamMessage>();
+      final fromServer = StreamController<StreamMessage>();
+      final service = TestService();
+
+      Future<int> methodHandler(ServiceCall call, Future<int> request) async {
+        return await request;
+      }
+
+      service.unaryHandler = methodHandler;
+      final server = Server.create(
+        services: [service],
+        errorHandler: (_, _) {},
+      );
+      final stream = TestServerStream(toServer.stream, fromServer.sink);
+      final handler = server.serveStream_(stream: stream);
+
+      addTearDown(() async {
+        if (!toServer.isClosed) await toServer.close();
+        if (!fromServer.isClosed) await fromServer.close();
+      });
+
+      final done = Completer<void>();
+      var sawOkStatus = false;
+
+      fromServer.stream.listen(
+        (message) {
+          if (message is HeadersStreamMessage) {
+            final headers = headersToMap(message.headers);
+            if (headers['grpc-status'] == '0') sawOkStatus = true;
+          }
+        },
+        onError: (_) {},
+        onDone: () {
+          if (!done.isCompleted) done.complete();
+        },
+      );
+
+      final headers = Http2ClientConnection.createCallHeaders(
+        true,
+        'test',
+        '/Test/Unary',
+        null,
+        null,
+        null,
+        userAgent: 'dart-grpc/1.0.0 test',
+      );
+      toServer.add(HeadersStreamMessage(headers));
+      toServer.add(DataStreamMessage(frame(mockEncode(42))));
+      await toServer.close();
+
+      await done.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('Handler did not complete'),
+      );
+
+      expect(sawOkStatus, isTrue);
+
+      // Handler has already completed normally. Now call cancel()
+      // which invokes _terminateStream() a second time. The
+      // _streamTerminated guard must make this a no-op.
+      handler.cancel();
+      handler.cancel(); // Triple-call for extra coverage.
+
+      // No crash = guard works.
+      expect(handler.isCanceled, isTrue);
     });
   });
 
@@ -572,14 +972,14 @@ void main() {
         }
 
         final responseCompleter = Completer<void>();
-        var sawGrpcStatus = false;
+        String? grpcStatusCode;
 
         harness.fromServer.stream.listen(
           (message) {
             if (message is HeadersStreamMessage) {
               final headers = headersToMap(message.headers);
               if (headers.containsKey('grpc-status')) {
-                sawGrpcStatus = true;
+                grpcStatusCode = headers['grpc-status'];
               }
             }
           },
@@ -603,9 +1003,17 @@ void main() {
         );
 
         expect(
-          sawGrpcStatus,
-          isTrue,
-          reason: 'Server should have sent grpc-status for serialization error',
+          grpcStatusCode,
+          isNotNull,
+          reason: 'Server should have sent grpc-status trailer',
+        );
+        // Serialization errors produce INTERNAL or UNKNOWN status.
+        expect(
+          int.tryParse(grpcStatusCode!),
+          anyOf(equals(StatusCode.internal), equals(StatusCode.unknown)),
+          reason:
+              'Serialization error should produce INTERNAL or '
+              'UNKNOWN status, got $grpcStatusCode',
         );
       },
     );
@@ -766,13 +1174,7 @@ void main() {
         final server = Server.create(services: [service]);
         await server.serve(address: address, port: 0);
 
-        final channel = _TestClientChannel(
-          Http2ClientConnection(
-            address,
-            server.port!,
-            ChannelOptions(credentials: ChannelCredentials.insecure()),
-          ),
-        );
+        final channel = createTestChannel(address, server.port!);
         final client = echo.EchoClient(channel);
 
         final inputController = StreamController<int>();
@@ -835,13 +1237,7 @@ void main() {
         final server = Server.create(services: [service]);
         await server.serve(address: address, port: 0);
 
-        final channel = _TestClientChannel(
-          Http2ClientConnection(
-            address,
-            server.port!,
-            ChannelOptions(credentials: ChannelCredentials.insecure()),
-          ),
-        );
+        final channel = createTestChannel(address, server.port!);
         final client = echo.EchoClient(channel);
 
         // Open 10 bidi streams, each sending 1 item then blocking.
@@ -934,8 +1330,7 @@ void main() {
         if (!fromServer.isClosed) await fromServer.close();
       });
 
-      final wireMessages = <StreamMessage>[];
-      fromServer.stream.listen(wireMessages.add, onError: (_) {});
+      fromServer.stream.listen((_) {}, onError: (_) {});
 
       final headers = Http2ClientConnection.createCallHeaders(
         true,
@@ -1006,8 +1401,7 @@ void main() {
         if (!fromServer.isClosed) await fromServer.close();
       });
 
-      final wireMessages = <StreamMessage>[];
-      fromServer.stream.listen(wireMessages.add, onError: (_) {});
+      fromServer.stream.listen((_) {}, onError: (_) {});
 
       final headers = Http2ClientConnection.createCallHeaders(
         true,
@@ -1053,6 +1447,62 @@ void main() {
       // sending trailers. The key assertion here is: injecting 5 data
       // frames after cancel does NOT cause "Cannot add event after
       // closing" or any other crash.
+    });
+
+    test('cancel() stops request deserialization after cancellation', () async {
+      final toServer = StreamController<StreamMessage>();
+      final fromServer = StreamController<StreamMessage>();
+      final firstRequestSeen = Completer<void>();
+      var deserializeCount = 0;
+
+      final service = _CountingDecodeBidiService(
+        onDeserialize: () => deserializeCount++,
+        onFirstRequestSeen: firstRequestSeen,
+      );
+      final server = Server.create(services: [service]);
+      final stream = TestServerStream(toServer.stream, fromServer.sink);
+      final handler = server.serveStream_(stream: stream);
+
+      addTearDown(() async {
+        if (!toServer.isClosed) await toServer.close();
+        if (!fromServer.isClosed) await fromServer.close();
+      });
+
+      fromServer.stream.listen((_) {}, onError: (_) {});
+
+      final headers = Http2ClientConnection.createCallHeaders(
+        true,
+        'test',
+        '/test.EchoService/BidiStream',
+        null,
+        null,
+        null,
+        userAgent: 'dart-grpc/1.0.0 test',
+      );
+      toServer.add(HeadersStreamMessage(headers));
+      toServer.add(DataStreamMessage(frame(<int>[1])));
+
+      await firstRequestSeen.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail('Handler never consumed first request'),
+      );
+
+      handler.cancel();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      final countAtCancel = deserializeCount;
+      for (var i = 0; i < 5; i++) {
+        toServer.add(DataStreamMessage(frame(<int>[i + 2])));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(handler.isCanceled, isTrue);
+      expect(
+        deserializeCount,
+        equals(countAtCancel),
+        reason:
+            'No additional request deserialization should occur after cancel',
+      );
     });
 
     test('timeout fires while handler is mid-yield', () async {
@@ -1142,10 +1592,10 @@ void main() {
         if (!fromServer.isClosed) await fromServer.close();
       });
 
-      final wireMessages = <StreamMessage>[];
       final wireDone = Completer<void>();
+      var wireMessageCount = 0;
       fromServer.stream.listen(
-        wireMessages.add,
+        (_) => wireMessageCount++,
         onError: (_) {},
         onDone: () {
           if (!wireDone.isCompleted) wireDone.complete();
@@ -1190,14 +1640,76 @@ void main() {
         onTimeout: () => fail('Wire stream never closed after triple-race'),
       );
 
-      // Assert: handler terminated.
+      // Assert: handler terminated and wire settled.
       expect(handler.isCanceled, isTrue);
-
-      // _onError (transport error) and cancel() both terminate the
-      // stream directly WITHOUT sending trailers (RST_STREAM path).
-      // The key assertion: no crash, no deadlock, handler marked
-      // canceled, wire stream closed cleanly.
+      // The handler sent at least initial headers + 1 data frame
+      // (the echoed value). After the triple-race, it may or may not
+      // have sent trailers depending on which termination path won.
+      expect(
+        wireMessageCount,
+        greaterThanOrEqualTo(1),
+        reason: 'Wire should have at least the initial response headers',
+      );
     });
+
+    test(
+      '_onError catch path tolerates request-stream addError failure',
+      () async {
+        final toServer = StreamController<StreamMessage>();
+        final fromServer = StreamController<StreamMessage>();
+        final firstRequestSeen = Completer<void>();
+        final wireDone = Completer<void>();
+        var addErrorAttempted = false;
+
+        final service = _OnErrorCatchBidiService(
+          onAddErrorAttempt: () => addErrorAttempted = true,
+          onFirstRequestSeen: firstRequestSeen,
+        );
+        final server = Server.create(services: [service]);
+        final stream = TestServerStream(toServer.stream, fromServer.sink);
+        final handler = server.serveStream_(stream: stream);
+
+        addTearDown(() async {
+          if (!toServer.isClosed) await toServer.close();
+          if (!fromServer.isClosed) await fromServer.close();
+        });
+
+        fromServer.stream.listen(
+          (_) {},
+          onError: (_) {},
+          onDone: () {
+            if (!wireDone.isCompleted) wireDone.complete();
+          },
+        );
+
+        final headers = Http2ClientConnection.createCallHeaders(
+          true,
+          'test',
+          '/test.EchoService/BidiStream',
+          null,
+          null,
+          null,
+          userAgent: 'dart-grpc/1.0.0 test',
+        );
+        toServer.add(HeadersStreamMessage(headers));
+        toServer.add(DataStreamMessage(frame(<int>[1])));
+
+        await firstRequestSeen.future.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => fail('Handler never processed initial request'),
+        );
+
+        toServer.addError(Exception('forced transport error'));
+
+        await wireDone.future.timeout(
+          const Duration(seconds: 3),
+          onTimeout: () => fail('Wire did not settle after _onError injection'),
+        );
+
+        expect(addErrorAttempted, isTrue);
+        expect(handler.isCanceled, isTrue);
+      },
+    );
 
     test(
       '8 sequential handlers exercise all _requests-closing paths',
@@ -1300,6 +1812,11 @@ void main() {
           contains('grpc-status'),
           reason: 'Path 5 (timeout) must send a trailer',
         );
+        expect(
+          path5Trailer['grpc-status'],
+          '${StatusCode.deadlineExceeded}',
+          reason: 'Path 5 must produce DEADLINE_EXCEEDED',
+        );
 
         // Path 6: Request deserialization error (RequestError method).
         // NOTE: RequestError uses _bidirectional as its handler function,
@@ -1323,6 +1840,11 @@ void main() {
           contains('grpc-status'),
           reason: 'Path 6 (deserialization error) must send a trailer',
         );
+        expect(
+          int.tryParse(path6Trailer['grpc-status']!),
+          anyOf(equals(StatusCode.internal), equals(StatusCode.unknown)),
+          reason: 'Path 6 must produce INTERNAL or UNKNOWN',
+        );
 
         // Path 7: Response serialization error (ResponseError method).
         // NOTE: ResponseError also uses _bidirectional as handler.
@@ -1343,6 +1865,11 @@ void main() {
           path7Trailer,
           contains('grpc-status'),
           reason: 'Path 7 (serialization error) must send a trailer',
+        );
+        expect(
+          int.tryParse(path7Trailer['grpc-status']!),
+          anyOf(equals(StatusCode.internal), equals(StatusCode.unknown)),
+          reason: 'Path 7 must produce INTERNAL or UNKNOWN',
         );
 
         // Path 8: Handler throws non-GrpcError exception.

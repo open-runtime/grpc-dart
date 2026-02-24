@@ -36,29 +36,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc/src/client/channel.dart' hide ClientChannel;
-import 'package:grpc/src/client/connection.dart';
 import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
 import 'src/echo_service.dart';
-
-// =============================================================================
-// Test Channel Wrapper
-// =============================================================================
-
-class TestClientChannel extends ClientChannelBase {
-  final Http2ClientConnection clientConnection;
-  final List<ConnectionState> states = [];
-
-  TestClientChannel(this.clientConnection) {
-    onConnectionStateChanged.listen((state) => states.add(state));
-  }
-
-  @override
-  ClientConnection createConnection() => clientConnection;
-}
 
 // =============================================================================
 // TCP Transport Tests
@@ -122,12 +104,12 @@ void main() {
       // Use a controller with event-loop yields to prevent HTTP/2
       // flow-control deadlock on UDS transports.
       final ctrl = StreamController<int>();
-      () async {
+      unawaited(() async {
         for (final v in [1, 2, 3, 4, 5]) {
           ctrl.add(v);
         }
         await ctrl.close();
-      }();
+      }());
       final result = await client.clientStream(ctrl.stream);
       expect(result, equals(15)); // Sum of 1+2+3+4+5
 
@@ -166,7 +148,7 @@ void main() {
       // can make progress.
       final controller = StreamController<int>();
       var sentCount = 0;
-      () async {
+      unawaited(() async {
         for (var i = 1; i <= 50; i++) {
           controller.add(i);
           sentCount++;
@@ -179,7 +161,7 @@ void main() {
         }
         log('closing controller after $sentCount items');
         await controller.close();
-      }();
+      }());
 
       log('awaiting bidi stream results...');
       final results = await client.bidiStream(controller.stream).toList();
@@ -191,6 +173,99 @@ void main() {
       await server.shutdown();
       log('done');
     });
+
+    testTcpAndUds(
+      'flow-control producer comparison (fromIterable vs yielded controller)',
+      (address) async {
+        final transport = address.type == InternetAddressType.unix
+            ? 'UDS'
+            : 'TCP';
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
+
+        final channel = TestClientChannel(
+          Http2ClientConnection(
+            address,
+            server.port!,
+            ChannelOptions(credentials: ChannelCredentials.insecure()),
+          ),
+        );
+        final client = EchoClient(channel);
+
+        Future<({bool completed, int count, int elapsedMs})> runCase(
+          String label,
+          Stream<int> requests,
+        ) async {
+          final sw = Stopwatch()..start();
+          try {
+            final results = await client
+                .bidiStream(requests)
+                .toList()
+                .timeout(const Duration(seconds: 2));
+            sw.stop();
+            print(
+              '[flow-control/$transport] $label completed in '
+              '${sw.elapsedMilliseconds}ms (${results.length} items)',
+            );
+            return (
+              completed: true,
+              count: results.length,
+              elapsedMs: sw.elapsedMilliseconds,
+            );
+          } on TimeoutException {
+            sw.stop();
+            print(
+              '[flow-control/$transport] $label timed out after '
+              '${sw.elapsedMilliseconds}ms',
+            );
+            return (
+              completed: false,
+              count: 0,
+              elapsedMs: sw.elapsedMilliseconds,
+            );
+          }
+        }
+
+        const itemCount = 200;
+        final fromIterableResult = await runCase(
+          'fromIterable',
+          Stream<int>.fromIterable(List<int>.generate(itemCount, (i) => i + 1)),
+        );
+
+        final yieldedController = StreamController<int>();
+        unawaited(() async {
+          for (var i = 1; i <= itemCount; i++) {
+            yieldedController.add(i);
+            if (i % 10 == 0) {
+              await Future.delayed(Duration.zero);
+            }
+          }
+          await yieldedController.close();
+        }());
+        final yieldedResult = await runCase(
+          'yieldedController',
+          yieldedController.stream,
+        );
+
+        // The yielded producer is the expected safe baseline.
+        expect(yieldedResult.completed, isTrue);
+        expect(yieldedResult.count, equals(itemCount));
+
+        // fromIterable is expected to be reliable on TCP and may stall on UDS.
+        if (fromIterableResult.completed) {
+          expect(fromIterableResult.count, equals(itemCount));
+        } else {
+          expect(
+            address.type,
+            equals(InternetAddressType.unix),
+            reason: 'Only UDS is expected to hit this flow-control stall',
+          );
+        }
+
+        await channel.shutdown();
+        await server.shutdown();
+      },
+    );
 
     testTcpAndUds('multiple concurrent RPCs', (address) async {
       final server = Server.create(services: [EchoService()]);
@@ -344,13 +419,13 @@ void main() {
       // Use a controller with event-loop yields to prevent HTTP/2
       // flow-control deadlock on UDS (same pattern as bidi tests).
       final ctrl = StreamController<int>();
-      () async {
+      unawaited(() async {
         for (var i = 0; i < 50; i++) {
           ctrl.add((i % 5) + 1);
           if (i % 10 == 0) await Future.delayed(Duration.zero);
         }
         await ctrl.close();
-      }();
+      }());
 
       final result = await client.clientStream(
         ctrl.stream,
@@ -383,7 +458,7 @@ void main() {
       final client = EchoClient(channel);
 
       final controller = StreamController<int>();
-      () async {
+      unawaited(() async {
         for (var i = 0; i < 100; i++) {
           controller.add(i % 128);
           if (i % 20 == 0) {
@@ -391,7 +466,7 @@ void main() {
           }
         }
         await controller.close();
-      }();
+      }());
 
       final results = await client
           .bidiStream(
@@ -467,12 +542,18 @@ void main() {
 
       final client = EchoClient(channel);
 
+      // Use echoBytes with a 1KB payload so gzip actually compresses
+      // (1-byte payloads expand under gzip, defeating the purpose).
+      final payload = Uint8List(1024);
+      for (var j = 0; j < payload.length; j++) {
+        payload[j] = j & 0xFF;
+      }
       for (var i = 0; i < 500; i++) {
-        final result = await client.echo(
-          i % 256,
+        final result = await client.echoBytes(
+          payload,
           options: CallOptions(compression: const GzipCodec()),
         );
-        expect(result, equals(i % 256), reason: 'RPC $i');
+        expect(result, equals(payload), reason: 'RPC $i');
       }
 
       await channel.shutdown();
@@ -831,13 +912,13 @@ void main() {
         // Use a controller with event-loop yields to prevent flow-control
         // deadlock (same pattern as TCP/UDS bidi tests).
         final ctrl = StreamController<int>();
-        () async {
+        unawaited(() async {
           for (var i = 0; i < 50; i++) {
             ctrl.add(i + 1);
             if (i % 10 == 0) await Future.delayed(Duration.zero);
           }
           await ctrl.close();
-        }();
+        }());
         final results = await client.bidiStream(ctrl.stream).toList();
         expect(results, equals(List.generate(50, (i) => (i + 1) * 2)));
 

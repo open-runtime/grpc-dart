@@ -14,7 +14,52 @@
 // limitations under the License.
 import 'dart:async';
 import 'dart:io';
+
+import 'package:grpc/grpc.dart';
+import 'package:grpc/src/client/channel.dart' hide ClientChannel;
+import 'package:grpc/src/client/connection.dart';
+import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
+
+// =============================================================================
+// Shared TestClientChannel (used by all end-to-end test files)
+// =============================================================================
+
+/// Channel wrapper that records [ConnectionState] transitions for assertions.
+class TestClientChannel extends ClientChannelBase {
+  final Http2ClientConnection clientConnection;
+  final List<ConnectionState> states = [];
+
+  TestClientChannel(this.clientConnection) {
+    onConnectionStateChanged.listen((state) => states.add(state));
+  }
+
+  @override
+  ClientConnection createConnection() => clientConnection;
+}
+
+/// Creates a [TestClientChannel] connected to the given [address] and [port]
+/// with insecure credentials.
+///
+/// An optional [codecRegistry] can be provided for compression tests.
+TestClientChannel createTestChannel(
+  Object address,
+  int port, {
+  ChannelOptions? options,
+  CodecRegistry? codecRegistry,
+}) {
+  return TestClientChannel(
+    Http2ClientConnection(
+      address,
+      port,
+      options ??
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            codecRegistry: codecRegistry,
+          ),
+    ),
+  );
+}
 
 /// Test functionality for Unix domain socket.
 void testUds(String name, FutureOr<void> Function(InternetAddress) testCase) {

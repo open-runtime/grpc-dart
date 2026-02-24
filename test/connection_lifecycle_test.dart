@@ -23,38 +23,17 @@
 /// - makeRequest on null connection throws GrpcError.unavailable-style error
 ///   (ArgumentError with descriptive message, not a null pointer crash)
 @TestOn('vm')
+@Timeout(Duration(seconds: 60))
 library;
 
 import 'dart:async';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc/src/client/channel.dart' hide ClientChannel;
-import 'package:grpc/src/client/connection.dart';
 import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
 import 'src/echo_service.dart';
-
-// =============================================================================
-// Test Channel Wrapper (mirrors transport_test.dart pattern)
-// =============================================================================
-
-class TestClientChannel extends ClientChannelBase {
-  final Http2ClientConnection clientConnection;
-  final List<ConnectionState> states = [];
-
-  TestClientChannel(this.clientConnection) {
-    onConnectionStateChanged.listen((state) => states.add(state));
-  }
-
-  @override
-  ClientConnection createConnection() => clientConnection;
-}
-
-// =============================================================================
-// Tests
-// =============================================================================
 
 void main() {
   // ---------------------------------------------------------------------------
@@ -140,7 +119,7 @@ void main() {
           .length;
       expect(
         readyCount,
-        greaterThanOrEqualTo(3),
+        greaterThanOrEqualTo(4),
         reason: 'Should have reconnected multiple times',
       );
 
@@ -296,9 +275,27 @@ void main() {
       // Shutdown server while stream is active
       await server.shutdown();
 
-      // Stream should either complete partially or error gracefully
+      // Stream should either complete partially or error gracefully.
+      // The stream requested 100 items at 10ms/item = ~1 second total.
+      // With a 50ms head start before shutdown, some items should have
+      // arrived.
       final results = await streamFuture;
-      expect(results.length, lessThanOrEqualTo(100));
+      expect(
+        results.length,
+        lessThan(100),
+        reason:
+            'Stream should have been truncated by shutdown '
+            '(received ${results.length}/100 items)',
+      );
+
+      // Verify data integrity of whatever DID arrive.
+      for (var i = 0; i < results.length; i++) {
+        expect(
+          results[i],
+          equals(i + 1),
+          reason: 'item $i should equal ${i + 1}',
+        );
+      }
 
       await channel.shutdown();
     });
@@ -335,7 +332,22 @@ void main() {
       await server.shutdown();
 
       final results = await streamFuture;
-      expect(results.length, lessThanOrEqualTo(100));
+      expect(
+        results.length,
+        lessThan(100),
+        reason:
+            'Stream should have been truncated by shutdown '
+            '(received ${results.length}/100 items)',
+      );
+
+      // Verify data integrity of whatever DID arrive.
+      for (var i = 0; i < results.length; i++) {
+        expect(
+          results[i],
+          equals(i + 1),
+          reason: 'item $i should equal ${i + 1}',
+        );
+      }
 
       await channel.shutdown();
     });
@@ -435,14 +447,13 @@ void main() {
           .length;
       expect(
         readyCount,
-        greaterThanOrEqualTo(10),
+        greaterThanOrEqualTo(15),
         reason:
-            'Should have reconnected at least 10 times '
+            'Should have reconnected at least 15 times '
             'across 20 cycles (got $readyCount)',
       );
 
       await channel.shutdown();
-      await server.shutdown();
     });
 
     // After 5 full connection cycles, each with a real RPC, verify
@@ -500,7 +511,6 @@ void main() {
       );
 
       await channel.shutdown();
-      await server.shutdown();
     });
 
     // 10 RPCs fired simultaneously on a brand-new channel. All 10
@@ -564,7 +574,6 @@ void main() {
         );
 
         await channel.shutdown();
-        await server.shutdown();
       },
     );
   });

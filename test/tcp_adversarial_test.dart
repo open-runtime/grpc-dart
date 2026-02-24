@@ -29,49 +29,13 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc/src/client/channel.dart' hide ClientChannel;
-import 'package:grpc/src/client/connection.dart';
-import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
 import 'src/echo_service.dart';
-
-// =============================================================================
-// Test Channel Wrapper
-// =============================================================================
-
-class TestClientChannel extends ClientChannelBase {
-  final Http2ClientConnection clientConnection;
-  final List<ConnectionState> states = [];
-
-  TestClientChannel(this.clientConnection) {
-    onConnectionStateChanged.listen((state) => states.add(state));
-  }
-
-  @override
-  ClientConnection createConnection() => clientConnection;
-}
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-/// Creates a [TestClientChannel] connected to the given [address] and [port]
-/// with insecure credentials.
-TestClientChannel _createChannel(InternetAddress address, int port) {
-  return TestClientChannel(
-    Http2ClientConnection(
-      address,
-      port,
-      ChannelOptions(credentials: ChannelCredentials.insecure()),
-    ),
-  );
-}
 
 // =============================================================================
 // Tests
@@ -108,7 +72,7 @@ void main() {
       // handshake when we kill the server.
       final channels = List.generate(
         5,
-        (_) => _createChannel(address, server.port!),
+        (_) => createTestChannel(address, server.port!),
       );
       final clients = channels.map(EchoClient.new).toList();
 
@@ -161,7 +125,7 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Fire the RPC (triggers lazy connect) and immediately shut down.
@@ -210,7 +174,7 @@ void main() {
         await server.serve(address: address, port: 0);
         addTearDown(() => server.shutdown());
 
-        final channel = _createChannel(address, server.port!);
+        final channel = createTestChannel(address, server.port!);
         final client = EchoClient(channel);
 
         // Create a long-lived bidi stream: the client sends 100 items
@@ -280,7 +244,7 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Request 255 items (max single-byte value). The server yields
@@ -337,7 +301,7 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Create a slow client stream that sends values over time.
@@ -407,7 +371,7 @@ void main() {
       // Spin up 3 independent channels.
       final channels = List.generate(
         3,
-        (_) => _createChannel(address, server.port!),
+        (_) => createTestChannel(address, server.port!),
       );
       final clients = channels.map(EchoClient.new).toList();
 
@@ -468,7 +432,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       for (var cycle = 0; cycle < 20; cycle++) {
-        final channel = _createChannel(address, server.port!);
+        final channel = createTestChannel(address, server.port!);
         final client = EchoClient(channel);
 
         // Value cycles through 0..19 (all single-byte safe).
@@ -514,7 +478,7 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Create a 100KB payload with a repeating pattern for
@@ -563,7 +527,7 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Build the 8-byte request: chunkCount=10 (4 BE), chunkSize=
@@ -629,7 +593,7 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Build 50 chunks of 2KB each with unique fill patterns.
@@ -727,7 +691,7 @@ void main() {
       // Create 3 fully independent channels.
       final channels = List.generate(
         3,
-        (_) => _createChannel(address, server.port!),
+        (_) => createTestChannel(address, server.port!),
       );
       final clients = channels.map(EchoClient.new).toList();
 
@@ -816,7 +780,7 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       // Launch all four RPC patterns concurrently.
@@ -843,26 +807,40 @@ void main() {
 
       // Each RPC should either complete successfully or fail with
       // a gRPC error — never hang or throw an unhandled exception.
+      // Track which RPCs settled to prove the assertion is not vacuous.
+      var settledCount = 0;
       try {
         await unaryFuture;
+        settledCount++;
       } on GrpcError {
-        // Expected if shutdown raced the unary call.
+        settledCount++;
       }
       try {
         await serverStreamFuture;
+        settledCount++;
       } on GrpcError {
-        // Expected if shutdown raced the server stream.
+        settledCount++;
       }
       try {
         await clientStreamFuture;
+        settledCount++;
       } on GrpcError {
-        // Expected if shutdown raced the client stream.
+        settledCount++;
       }
       try {
         await bidiCollector;
+        settledCount++;
       } on GrpcError {
-        // Expected if shutdown raced the bidi stream.
+        settledCount++;
       }
+
+      expect(
+        settledCount,
+        equals(4),
+        reason:
+            'All 4 RPC types (unary, server-stream, client-stream, bidi) '
+            'must settle after server shutdown — got $settledCount/4',
+      );
 
       await channel.shutdown();
     });
@@ -870,7 +848,7 @@ void main() {
     // -------------------------------------------------------------------------
     // Test 13: Channel reuse after server restart
     // -------------------------------------------------------------------------
-    testTcpAndUds('new channel works after server restart on same port', (
+    testTcpAndUds('new channel works after server restart on new port', (
       address,
     ) async {
       // First lifecycle.
@@ -878,7 +856,7 @@ void main() {
       await server1.serve(address: address, port: 0);
       final port = server1.port!;
 
-      final channel1 = _createChannel(address, port);
+      final channel1 = createTestChannel(address, port);
       final client1 = EchoClient(channel1);
       expect(await client1.echo(42), equals(42));
 
@@ -890,7 +868,7 @@ void main() {
       await server2.serve(address: address, port: 0);
       addTearDown(() => server2.shutdown());
 
-      final channel2 = _createChannel(address, server2.port!);
+      final channel2 = createTestChannel(address, server2.port!);
       final client2 = EchoClient(channel2);
       expect(await client2.echo(99), equals(99));
 
@@ -908,7 +886,7 @@ void main() {
         await server.serve(address: address, port: 0);
         addTearDown(() => server.shutdown());
 
-        final channel = _createChannel(address, server.port!);
+        final channel = createTestChannel(address, server.port!);
         final client = EchoClient(channel);
 
         final inputController = StreamController<int>();
@@ -1005,7 +983,7 @@ void main() {
 
           final channels = List.generate(
             3,
-            (_) => _createChannel(address, server.port!),
+            (_) => createTestChannel(address, server.port!),
           );
           final clients = channels.map(EchoClient.new).toList();
 
@@ -1068,7 +1046,7 @@ void main() {
 
         final channels = List.generate(
           5,
-          (_) => _createChannel(address, server.port!),
+          (_) => createTestChannel(address, server.port!),
         );
         final clients = channels.map(EchoClient.new).toList();
 
@@ -1089,17 +1067,14 @@ void main() {
             }),
           );
 
-          // Server stream: request 20 items, verify count and
-          // first/last values.
+          // Server stream: request 20 items, verify full data integrity.
           allFutures.add(
             client.serverStream(20).toList().then((items) {
               expect(
-                items.length,
-                equals(20),
-                reason: 'server-stream channel $ch item count',
+                items,
+                equals(List.generate(20, (i) => i + 1)),
+                reason: 'server-stream channel $ch full data integrity',
               );
-              expect(items.first, equals(1));
-              expect(items.last, equals(20));
             }),
           );
 
@@ -1192,7 +1167,7 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(address, server.port!);
       final client = EchoClient(channel);
 
       final results = await client
@@ -1249,7 +1224,11 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(
+        address,
+        server.port!,
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
       final client = EchoClient(channel);
 
       final controller = StreamController<int>();
@@ -1329,7 +1308,11 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(
+        address,
+        server.port!,
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
       final client = EchoClient(channel);
 
       final results = await client
@@ -1389,13 +1372,21 @@ void main() {
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channel = _createChannel(address, server.port!);
+      final channel = createTestChannel(
+        address,
+        server.port!,
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
       final client = EchoClient(channel);
 
-      // Create a 500KB payload with a repeating pattern.
+      // Use a pseudo-random pattern that doesn't compress well,
+      // ensuring the compressed payload still exceeds the HTTP/2
+      // flow control window (65535 bytes).
       final payload = Uint8List(500 * 1024);
+      var seed = 0xDEADBEEF;
       for (var i = 0; i < payload.length; i++) {
-        payload[i] = i & 0xFF;
+        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
+        payload[i] = (seed >> 16) & 0xFF;
       }
 
       final result = await client
