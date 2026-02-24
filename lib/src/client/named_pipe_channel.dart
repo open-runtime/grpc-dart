@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import '../shared/named_pipe_io.dart';
 import 'channel.dart';
 import 'connection.dart';
 import 'http2_connection.dart' show Http2ClientConnection;
@@ -77,7 +78,7 @@ class NamedPipeClientChannel extends ClientChannelBase {
   NamedPipeClientChannel(this.pipeName, {this.options = const ChannelOptions(), super.channelShutdownHandler});
 
   /// The full Windows path for the named pipe.
-  String get pipePath => r'\\.\pipe\' + pipeName;
+  String get pipePath => namedPipePath(pipeName);
 
   @override
   ClientConnection createConnection() {

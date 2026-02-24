@@ -24,14 +24,12 @@ import 'package:http2/transport.dart';
 import 'package:win32/win32.dart';
 
 import '../shared/codec_registry.dart';
+import '../shared/named_pipe_io.dart';
 import 'handler.dart';
 import 'interceptor.dart';
 import 'server.dart';
 import 'server_keepalive.dart';
 import 'service.dart';
-
-/// Buffer size for pipe I/O operations.
-const int _kBufferSize = 65536;
 
 /// A gRPC server that listens on Windows named pipes.
 ///
@@ -104,7 +102,7 @@ class NamedPipeServer extends ConnectionServer {
   }) : super(services, interceptors, serverInterceptors, codecRegistry, errorHandler, keepAliveOptions);
 
   /// The full Windows path for the named pipe.
-  String? get pipePath => _pipeName != null ? r'\\.\pipe\' + _pipeName! : null;
+  String? get pipePath => _pipeName != null ? namedPipePath(_pipeName!) : null;
 
   /// Whether the server is running.
   bool get isRunning => _isRunning;
@@ -148,13 +146,27 @@ class NamedPipeServer extends ConnectionServer {
     // Wait for the isolate to confirm the pipe has been created.
     // This guarantees the pipe exists in the Windows namespace and clients
     // can successfully call CreateFile when serve() returns.
-    await _readyCompleter!.future.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () => throw StateError(
-        'NamedPipeServer timed out waiting for pipe creation. '
-        'The server isolate may have crashed.',
-      ),
-    );
+    try {
+      await _readyCompleter!.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw StateError(
+          'NamedPipeServer timed out waiting for pipe creation. '
+          'The server isolate may have crashed.',
+        ),
+      );
+    } catch (_) {
+      // Cleanup on failure: the isolate and receive port would otherwise leak
+      // because _isRunning is never set to true, so shutdown() would no-op.
+      _serverIsolate?.kill(priority: Isolate.immediate);
+      _serverIsolate = null;
+      await _receivePortSubscription?.cancel();
+      _receivePortSubscription = null;
+      _receivePort?.close();
+      _receivePort = null;
+      _pipeName = null;
+      _readyCompleter = null;
+      rethrow;
+    }
 
     _isRunning = true;
   }
@@ -216,7 +228,7 @@ class NamedPipeServer extends ConnectionServer {
     connection.sendPort.send(_SetResponsePort(responsePort.sendPort));
 
     // Create HTTP/2 connection and serve it
-    final transportConnection = ServerTransportConnection.viaStreams(incoming.stream, outgoing);
+    final transportConnection = ServerTransportConnection.viaStreams(incoming.stream, outgoing.sink);
 
     serveConnection(connection: transportConnection);
   }
@@ -275,11 +287,11 @@ class NamedPipeServer extends ConnectionServer {
   /// Opens and immediately closes a dummy client connection to unblock
   /// a blocking ConnectNamedPipe call in the server isolate.
   static void _connectDummyClient(String pipeName) {
-    final pipePath = r'\\.\pipe\' + pipeName;
+    final path = namedPipePath(pipeName);
     // Allocate with calloc so the matching calloc.free() is correct.
     // toNativeUtf16() defaults to malloc — passing calloc explicitly
     // avoids an allocator mismatch.
-    final pipePathPtr = pipePath.toNativeUtf16(allocator: calloc);
+    final pipePathPtr = path.toNativeUtf16(allocator: calloc);
     try {
       final hPipe = CreateFile(pipePathPtr, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, NULL);
       if (hPipe != INVALID_HANDLE_VALUE) {
@@ -348,7 +360,7 @@ class _ServerError {
 /// Sends [_ServerReady] after the first pipe is created so the main isolate
 /// knows clients can connect.
 Future<void> _acceptLoop(_AcceptLoopConfig config) async {
-  final pipePath = r'\\.\pipe\' + config.pipeName;
+  final pipePath = namedPipePath(config.pipeName);
   // Use calloc allocator so the matching calloc.free() is correct.
   final pipePathPtr = pipePath.toNativeUtf16(allocator: calloc);
   var readySent = false;
@@ -361,8 +373,8 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         PIPE_ACCESS_DUPLEX,
         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
         PIPE_UNLIMITED_INSTANCES,
-        _kBufferSize,
-        _kBufferSize,
+        kNamedPipeBufferSize,
+        kNamedPipeBufferSize,
         0, // Default timeout
         nullptr, // Default security
       );
@@ -447,14 +459,14 @@ void _spawnConnectionHandler(int hPipe, SendPort mainPort) {
 /// be moved to a dedicated isolate (separate from the connection handler) or
 /// use overlapped I/O with an event-based completion model.
 Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
-  final buffer = calloc<Uint8>(_kBufferSize);
+  final buffer = calloc<Uint8>(kNamedPipeBufferSize);
   final bytesRead = calloc<DWORD>();
 
   try {
     while (true) {
       bytesRead.value = 0;
 
-      final success = ReadFile(hPipe, buffer, _kBufferSize, bytesRead, nullptr);
+      final success = ReadFile(hPipe, buffer, kNamedPipeBufferSize, bytesRead, nullptr);
 
       if (success == 0) {
         final error = GetLastError();
@@ -475,10 +487,7 @@ Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
       }
 
       // Copy and send data
-      final data = Uint8List(count);
-      for (var i = 0; i < count; i++) {
-        data[i] = buffer[i];
-      }
+      final data = copyFromNativeBuffer(buffer, count);
       responsePort.send(_PipeData(data));
     }
   } finally {
@@ -504,15 +513,13 @@ void _writeToPipe(int hPipe, Uint8List data) {
   final bytesWritten = calloc<DWORD>();
 
   try {
-    for (var i = 0; i < data.length; i++) {
-      buffer[i] = data[i];
-    }
+    copyToNativeBuffer(buffer, data);
 
     var offset = 0;
     while (offset < data.length) {
       bytesWritten.value = 0;
       final remaining = data.length - offset;
-      final success = WriteFile(hPipe, buffer.elementAt(offset), remaining, bytesWritten, nullptr);
+      final success = WriteFile(hPipe, buffer + offset, remaining, bytesWritten, nullptr);
 
       if (success == 0) {
         final error = GetLastError();

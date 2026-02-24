@@ -16,31 +16,28 @@
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:io' show Platform;
-import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:http2/transport.dart';
 import 'package:win32/win32.dart';
 
+import '../shared/named_pipe_io.dart';
 import 'client_transport_connector.dart';
-
-/// Buffer size for pipe I/O operations.
-const int _kBufferSize = 65536;
 
 /// Maximum number of retry attempts when the pipe is busy.
 ///
+/// Uses exponential backoff starting at 100ms: 100ms, 200ms, 400ms.
 /// This is a defense-in-depth measure for production scenarios where all pipe
 /// instances are briefly in use (between the server accepting one connection
 /// and creating the next pipe instance). The server's serve() method
 /// guarantees the pipe exists, so ERROR_FILE_NOT_FOUND is NOT retried.
 const int _kMaxPipeBusyRetries = 3;
 
-/// Backoff delays for ERROR_PIPE_BUSY retries (simple exponential backoff).
-const List<Duration> _kPipeBusyRetryDelays = [
-  Duration(milliseconds: 100),
-  Duration(milliseconds: 200),
-  Duration(milliseconds: 400),
-];
+/// Computes the backoff delay for a PIPE_BUSY retry attempt.
+///
+/// Uses simple exponential backoff: 100ms * 2^attempt.
+/// attempt 0 → 100ms, attempt 1 → 200ms, attempt 2 → 400ms.
+Duration _pipeBusyRetryDelay(int attempt) => Duration(milliseconds: 100 * (1 << attempt));
 
 /// A [ClientTransportConnector] implementation for Windows named pipes.
 ///
@@ -81,7 +78,7 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   NamedPipeTransportConnector(this.pipeName);
 
   /// The full Windows path for the named pipe.
-  String get pipePath => r'\\.\pipe\' + pipeName;
+  String get pipePath => namedPipePath(pipeName);
 
   @override
   String get authority => 'localhost';
@@ -175,7 +172,7 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
       // Only retry on ERROR_PIPE_BUSY — all pipe instances are temporarily
       // in use. This is a normal transient condition under load.
       if (error == ERROR_PIPE_BUSY && attempt < _kMaxPipeBusyRetries) {
-        await Future<void>.delayed(_kPipeBusyRetryDelays[attempt]);
+        await Future<void>.delayed(_pipeBusyRetryDelay(attempt));
         continue;
       }
 
@@ -189,8 +186,8 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
         error,
       );
     }
-
-    // Unreachable — the loop always returns or throws.
+    // Required for Dart flow analysis — the loop above always returns or
+    // throws, but the analyzer cannot prove this statically.
     throw StateError('Unreachable');
   }
 
@@ -266,7 +263,7 @@ class _NamedPipeStream {
   /// gRPC UNAVAILABLE errors, which clients can retry via standard gRPC
   /// retry policies.
   Future<void> _readLoop() async {
-    final buffer = calloc<Uint8>(_kBufferSize);
+    final buffer = calloc<Uint8>(kNamedPipeBufferSize);
     final bytesRead = calloc<DWORD>();
 
     try {
@@ -274,7 +271,7 @@ class _NamedPipeStream {
         bytesRead.value = 0;
 
         // Read from pipe (blocking call)
-        final success = ReadFile(_handle, buffer, _kBufferSize, bytesRead, nullptr);
+        final success = ReadFile(_handle, buffer, kNamedPipeBufferSize, bytesRead, nullptr);
 
         if (success == 0) {
           final error = GetLastError();
@@ -297,10 +294,7 @@ class _NamedPipeStream {
         }
 
         // Copy bytes and add to stream
-        final data = Uint8List(count);
-        for (var i = 0; i < count; i++) {
-          data[i] = buffer[i];
-        }
+        final data = copyFromNativeBuffer(buffer, count);
         _incomingController.add(data);
       }
     } finally {
@@ -328,15 +322,13 @@ class _NamedPipeStream {
 
     try {
       // Copy data to native buffer
-      for (var i = 0; i < data.length; i++) {
-        buffer[i] = data[i];
-      }
+      copyToNativeBuffer(buffer, data);
 
       var offset = 0;
       while (offset < data.length) {
         bytesWritten.value = 0;
         final remaining = data.length - offset;
-        final success = WriteFile(_handle, buffer.elementAt(offset), remaining, bytesWritten, nullptr);
+        final success = WriteFile(_handle, buffer + offset, remaining, bytesWritten, nullptr);
 
         if (success == 0) {
           final error = GetLastError();
