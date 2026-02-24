@@ -681,10 +681,9 @@ void main() {
       await server.shutdown();
     });
 
-    // 19. Same-channel reconnection after server restart.
+    // 19. New-channel connect after server restart.
     //     Connect, do an RPC, shut down server, restart on same pipe name,
-    //     do another RPC on a new channel (same pipe name). Verifies the
-    //     server can be restarted cleanly and new clients can connect.
+    //     then verify a fresh channel can connect and issue RPCs.
     testNamedPipe('new channel works after server restart on same pipe name', (
       pipeName,
     ) async {
@@ -719,6 +718,108 @@ void main() {
 
       await channel2.shutdown();
       await server2.shutdown();
+    });
+
+    // 20. Same channel reconnects after server restart.
+    //     This validates channel-level transport recovery (not just creating
+    //     a brand-new channel) after the server restarts on the same pipe.
+    testNamedPipe(
+      'same channel reconnects after server restart on same pipe name',
+      (pipeName) async {
+        final server1 = NamedPipeServer.create(services: [EchoService()]);
+        await server1.serve(pipeName: pipeName);
+        addTearDown(() => server1.shutdown());
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+        expect(await client.echo(42), equals(42));
+
+        await server1.shutdown();
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+
+        final server2 = NamedPipeServer.create(services: [EchoService()]);
+        addTearDown(() => server2.shutdown());
+        await server2.serve(pipeName: pipeName);
+
+        Object? lastError;
+        var recovered = false;
+        for (var attempt = 0; attempt < 10; attempt++) {
+          try {
+            const requestValue = 99;
+            final result = await client
+                .echo(requestValue)
+                .timeout(const Duration(milliseconds: 1000));
+            expect(result, equals(requestValue));
+            recovered = true;
+            break;
+          } catch (e) {
+            lastError = e;
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+        }
+
+        expect(
+          recovered,
+          isTrue,
+          reason:
+              'Same channel failed to recover after restart. '
+              'Last error: $lastError',
+        );
+
+        await channel.shutdown();
+        await server2.shutdown();
+      },
+    );
+
+    // 21. Force ERROR_PIPE_BUSY and verify connector retry behavior.
+    //     With maxInstances=1, channel2 cannot connect while channel1 holds
+    //     the only active pipe instance. channel2 should retry and then
+    //     succeed once channel1 disconnects.
+    testNamedPipe('ERROR_PIPE_BUSY retry succeeds when pipe becomes free', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName, maxInstances: 1);
+
+      final channel1 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel1.shutdown());
+      final client1 = EchoClient(channel1);
+      expect(await client1.echo(1), equals(1));
+
+      final channel2 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel2.shutdown());
+      final client2 = EchoClient(channel2);
+
+      final stopwatch = Stopwatch()..start();
+      final secondRpcFuture = client2.echo(2);
+
+      // Keep channel1 connected long enough for channel2 to hit busy/retry.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await channel1.shutdown();
+
+      final result = await secondRpcFuture.timeout(const Duration(seconds: 5));
+      stopwatch.stop();
+
+      expect(result, equals(2));
+      expect(
+        stopwatch.elapsedMilliseconds,
+        greaterThanOrEqualTo(250),
+        reason: 'Expected retry/backoff delay before connection succeeded',
+      );
+
+      await channel2.shutdown();
+      await server.shutdown();
     });
   });
 

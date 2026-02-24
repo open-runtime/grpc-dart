@@ -21,7 +21,7 @@ import 'package:http2/transport.dart';
 import '../shared/codec.dart';
 import '../shared/codec_registry.dart';
 import '../shared/io_bits/io_bits.dart' show InternetAddress, X509Certificate;
-import '../shared/logging/logging.dart' show logGrpcError;
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/message.dart';
 import '../shared/status.dart';
 import '../shared/streams.dart';
@@ -234,7 +234,14 @@ class ServerHandler extends ServiceCall {
             ..addError(error)
             ..close();
         } catch (e) {
-          logGrpcError('[gRPC] Failed to deliver error to request stream in _startStreamingRequest: $e');
+          logGrpcEvent(
+            '[gRPC] Failed to deliver error to request stream'
+            ' in _startStreamingRequest: $e',
+            component: 'ServerHandler',
+            event: 'deliver_error',
+            context: '_startStreamingRequest',
+            error: e,
+          );
         }
       }
       _sendError(error);
@@ -273,7 +280,14 @@ class ServerHandler extends ServiceCall {
           ..addError(error)
           ..close();
       } catch (e) {
-        logGrpcError('[gRPC] Failed to deliver timeout error to request stream in _onTimedOut: $e');
+        logGrpcEvent(
+          '[gRPC] Failed to deliver timeout error to request'
+          ' stream in _onTimedOut: $e',
+          component: 'ServerHandler',
+          event: 'deliver_timeout_error',
+          context: '_onTimedOut',
+          error: e,
+        );
       }
     }
   }
@@ -292,7 +306,14 @@ class ServerHandler extends ServiceCall {
             ..addError(error)
             ..close();
         } catch (e) {
-          logGrpcError('[gRPC] Failed to deliver error to request stream in _onDataActive (bad message): $e');
+          logGrpcEvent(
+            '[gRPC] Failed to deliver error to request stream'
+            ' in _onDataActive (bad message): $e',
+            component: 'ServerHandler',
+            event: 'deliver_error',
+            context: '_onDataActive.badMessage',
+            error: e,
+          );
         }
       }
       return;
@@ -307,7 +328,14 @@ class ServerHandler extends ServiceCall {
             ..addError(error)
             ..close();
         } catch (e) {
-          logGrpcError('[gRPC] Failed to deliver error to request stream in _onDataActive (too many requests): $e');
+          logGrpcEvent(
+            '[gRPC] Failed to deliver error to request stream'
+            ' in _onDataActive (too many requests): $e',
+            component: 'ServerHandler',
+            event: 'deliver_error',
+            context: '_onDataActive.tooManyRequests',
+            error: e,
+          );
         }
       }
       return;
@@ -327,7 +355,14 @@ class ServerHandler extends ServiceCall {
             ..addError(grpcError, trace)
             ..close();
         } catch (e) {
-          logGrpcError('[gRPC] Failed to deliver error to request stream in _onDataActive (deserialize): $e');
+          logGrpcEvent(
+            '[gRPC] Failed to deliver error to request stream'
+            ' in _onDataActive (deserialize): $e',
+            component: 'ServerHandler',
+            event: 'deliver_error',
+            context: '_onDataActive.deserialize',
+            error: e,
+          );
         }
       }
       return;
@@ -336,7 +371,14 @@ class ServerHandler extends ServiceCall {
       try {
         _requests!.add(request);
       } catch (e) {
-        logGrpcError('[gRPC] Failed to add request to stream in _onDataActive: $e');
+        logGrpcEvent(
+          '[gRPC] Failed to add request to stream'
+          ' in _onDataActive: $e',
+          component: 'ServerHandler',
+          event: 'add_request',
+          context: '_onDataActive',
+          error: e,
+        );
         return;
       }
     }
@@ -364,7 +406,14 @@ class ServerHandler extends ServiceCall {
         } catch (e) {
           // Stream was closed between check and add - ignore this error
           // The handler has already been notified or terminated
-          logGrpcError('[gRPC] Failed to deliver error to request stream in _onResponse: $e');
+          logGrpcEvent(
+            '[gRPC] Failed to deliver error to request stream'
+            ' in _onResponse: $e',
+            component: 'ServerHandler',
+            event: 'deliver_error',
+            context: '_onResponse',
+            error: e,
+          );
         }
       }
       _sendError(grpcError, trace);
@@ -457,7 +506,14 @@ class ServerHandler extends ServiceCall {
     } catch (e) {
       // Stream is already closed - this can happen during concurrent termination
       // The client is gone, so we can't send the trailers anyway
-      logGrpcError('[gRPC] Failed to send trailers (stream may already be closed): $e');
+      logGrpcEvent(
+        '[gRPC] Failed to send trailers'
+        ' (stream may already be closed): $e',
+        component: 'ServerHandler',
+        event: 'send_trailers',
+        context: 'sendTrailers',
+        error: e,
+      );
     }
 
     // We're done!
@@ -478,7 +534,14 @@ class ServerHandler extends ServiceCall {
           ..addError(GrpcError.cancelled('Cancelled'))
           ..close();
       } catch (e) {
-        logGrpcError('[gRPC] Failed to deliver cancellation to request stream in _onError: $e');
+        logGrpcEvent(
+          '[gRPC] Failed to deliver cancellation to request'
+          ' stream in _onError: $e',
+          component: 'ServerHandler',
+          event: 'deliver_cancellation',
+          context: '_onError',
+          error: e,
+        );
       }
     }
     _cancelResponseSubscription();
@@ -501,7 +564,14 @@ class ServerHandler extends ServiceCall {
           _requests!.addError(error);
         } catch (e) {
           // Stream was closed - ignore this error
-          logGrpcError('[gRPC] Failed to deliver error to request stream in _onDoneExpected: $e');
+          logGrpcEvent(
+            '[gRPC] Failed to deliver error to request stream'
+            ' in _onDoneExpected: $e',
+            component: 'ServerHandler',
+            event: 'deliver_error',
+            context: '_onDoneExpected',
+            error: e,
+          );
         }
       }
     }
@@ -512,7 +582,13 @@ class ServerHandler extends ServiceCall {
     try {
       _requests?.close();
     } catch (e) {
-      logGrpcError('[gRPC] Failed to close request stream in _onDone: $e');
+      logGrpcEvent(
+        '[gRPC] Failed to close request stream in _onDone: $e',
+        component: 'ServerHandler',
+        event: 'close_stream',
+        context: '_onDone',
+        error: e,
+      );
     }
     _incomingSubscription!.cancel();
   }
@@ -545,7 +621,13 @@ class ServerHandler extends ServiceCall {
           ..addError(GrpcError.cancelled('Cancelled'))
           ..close();
       } catch (e) {
-        logGrpcError('[gRPC] Failed to close request stream in cancel: $e');
+        logGrpcEvent(
+          '[gRPC] Failed to close request stream in cancel: $e',
+          component: 'ServerHandler',
+          event: 'close_stream',
+          context: 'cancel',
+          error: e,
+        );
       }
     }
     _cancelResponseSubscription();
@@ -566,7 +648,14 @@ class ServerHandler extends ServiceCall {
     } catch (e) {
       // Stream sink may already be closed (e.g. response completed with
       // endStream: true before shutdown). Safe to ignore.
-      logGrpcError('[gRPC] Failed to terminate stream (may already be closed): $e');
+      logGrpcEvent(
+        '[gRPC] Failed to terminate stream'
+        ' (may already be closed): $e',
+        component: 'ServerHandler',
+        event: 'terminate_stream',
+        context: '_terminateStream',
+        error: e,
+      );
     }
   }
 }

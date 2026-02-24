@@ -575,6 +575,100 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // cancel() unblocks await-for handlers (#35 regression)
+  // ---------------------------------------------------------------------------
+  group('cancel() unblocks await-for handlers', () {
+    test('bidi handler blocked in await-for completes on cancel()', () async {
+      // A bidi handler that processes one item then sits in an
+      // await-for waiting for the next request that will never
+      // arrive. Before the fix, cancel() did not close _requests,
+      // so this handler would hang forever.
+      final toServer = StreamController<StreamMessage>();
+      final fromServer = StreamController<StreamMessage>();
+      final service = TestService();
+      final handlerEntered = Completer<void>();
+      final handlerUnblocked = Completer<void>();
+      var sawCancelledError = false;
+      Stream<int> methodHandler(ServiceCall call, Stream<int> request) async* {
+        try {
+          await for (final value in request) {
+            yield value;
+            if (!handlerEntered.isCompleted) {
+              handlerEntered.complete();
+            }
+            // Now blocked in await-for waiting for next item.
+          }
+        } catch (e) {
+          if (e is GrpcError && e.code == StatusCode.cancelled) {
+            sawCancelledError = true;
+            if (!handlerUnblocked.isCompleted) {
+              handlerUnblocked.complete();
+            }
+            return;
+          }
+          rethrow;
+        }
+        if (!handlerUnblocked.isCompleted) {
+          handlerUnblocked.complete();
+        }
+      }
+
+      service.bidirectionalHandler = methodHandler;
+      final server = Server.create(services: [service]);
+      final stream = TestServerStream(toServer.stream, fromServer.sink);
+      final handler = server.serveStream_(stream: stream);
+      addTearDown(() async {
+        if (!toServer.isClosed) {
+          await toServer.close();
+        }
+        if (!fromServer.isClosed) {
+          await fromServer.close();
+        }
+        await server.shutdown();
+      });
+
+      // Drain output to avoid unhandled stream termination noise.
+      fromServer.stream.listen((_) {}, onError: (_) {}, onDone: () {});
+
+      final headers = Http2ClientConnection.createCallHeaders(
+        true,
+        'test',
+        '/Test/Bidirectional',
+        null,
+        null,
+        null,
+        userAgent: 'dart-grpc/1.0.0 test',
+      );
+      toServer.add(HeadersStreamMessage(headers));
+      // Send one data frame to enter the handler's await-for
+      toServer.add(DataStreamMessage(frame(mockEncode(1))));
+
+      // Wait for the handler to process the first item
+      await handlerEntered.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail('Handler never entered await-for'),
+      );
+      // Yield once so the handler reliably returns to the blocking await-for.
+      await Future<void>.delayed(Duration.zero);
+
+      // Handler is now blocked mid-await-for.
+      // cancel() must close _requests and unblock it.
+      handler.cancel();
+
+      await handlerUnblocked.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () =>
+            fail('Handler stayed blocked — cancel() did not close _requests'),
+      );
+      expect(
+        sawCancelledError,
+        isTrue,
+        reason: 'Expected handler to be unblocked by GrpcError.cancelled',
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // _onDoneExpected safe error handling
   // ---------------------------------------------------------------------------
   group('_onDoneExpected safe error handling', () {

@@ -23,7 +23,7 @@ import 'package:http2/transport.dart';
 import 'package:win32/win32.dart';
 
 import '../shared/codec_registry.dart';
-import '../shared/logging/logging.dart' show logGrpcError;
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/named_pipe_io.dart';
 import 'handler.dart';
 import 'interceptor.dart';
@@ -138,13 +138,20 @@ class NamedPipeServer extends ConnectionServer {
   /// [pipeName] is the name of the pipe (e.g., 'my-service-12345').
   /// The full path will be `\\.\pipe\{pipeName}`.
   ///
+  /// [maxInstances] controls the maximum number of simultaneous named-pipe
+  /// instances created by the server accept loop. Defaults to
+  /// [PIPE_UNLIMITED_INSTANCES].
+  ///
+  /// This is primarily useful in tests that need to force
+  /// `ERROR_PIPE_BUSY` conditions.
+  ///
   /// This method returns only after the pipe has been created in the Windows
   /// namespace and is ready to accept client connections. This eliminates
   /// race conditions where clients attempt to connect before the pipe exists.
   ///
   /// Throws [UnsupportedError] if not running on Windows.
   /// Throws [StateError] if the server is already running.
-  Future<void> serve({required String pipeName}) async {
+  Future<void> serve({required String pipeName, int maxInstances = PIPE_UNLIMITED_INSTANCES}) async {
     if (!Platform.isWindows) {
       throw UnsupportedError(
         'Named pipes are only supported on Windows. '
@@ -154,6 +161,9 @@ class NamedPipeServer extends ConnectionServer {
 
     if (_isRunning) {
       throw StateError('NamedPipeServer is already running');
+    }
+    if (maxInstances < 1 || maxInstances > PIPE_UNLIMITED_INSTANCES) {
+      throw ArgumentError.value(maxInstances, 'maxInstances', 'must be between 1 and $PIPE_UNLIMITED_INSTANCES');
     }
 
     _pipeName = pipeName;
@@ -166,7 +176,7 @@ class NamedPipeServer extends ConnectionServer {
     // Start the accept loop in a separate isolate
     _serverIsolate = await Isolate.spawn(
       _acceptLoop,
-      _AcceptLoopConfig(pipeName: pipeName, mainPort: _receivePort!.sendPort),
+      _AcceptLoopConfig(pipeName: pipeName, mainPort: _receivePort!.sendPort, maxInstances: maxInstances),
     );
 
     // Wait for the isolate to confirm the pipe has been created.
@@ -217,7 +227,13 @@ class NamedPipeServer extends ConnectionServer {
       if (!(_readyCompleter?.isCompleted ?? true)) {
         _readyCompleter!.completeError(StateError(message.error));
       } else {
-        logGrpcError('[gRPC] NamedPipeServer error: ${message.error}');
+        logGrpcEvent(
+          '[gRPC] NamedPipeServer error: ${message.error}',
+          component: 'NamedPipeServer',
+          event: 'isolate_error',
+          context: '_handleIsolateMessage',
+          error: message.error,
+        );
       }
     }
   }
@@ -427,7 +443,13 @@ class _ServerPipeStream {
         if (peekResult == 0) {
           final error = GetLastError();
           if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
-            logGrpcError('[gRPC] Server pipe peek error: $error');
+            logGrpcEvent(
+              '[gRPC] Server pipe peek error: $error',
+              component: 'NamedPipeServer',
+              event: 'pipe_peek_error',
+              context: '_readFromPipe',
+              error: error,
+            );
           }
           break;
         }
@@ -445,7 +467,13 @@ class _ServerPipeStream {
         if (success == 0) {
           final error = GetLastError();
           if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
-            logGrpcError('[gRPC] Server pipe read error: $error');
+            logGrpcEvent(
+              '[gRPC] Server pipe read error: $error',
+              component: 'NamedPipeServer',
+              event: 'pipe_read_error',
+              context: '_readFromPipe',
+              error: error,
+            );
           }
           break;
         }
@@ -495,13 +523,24 @@ class _ServerPipeStream {
 
         if (success == 0) {
           final error = GetLastError();
-          logGrpcError('[gRPC] Server pipe write error: $error');
+          logGrpcEvent(
+            '[gRPC] Server pipe write error: $error',
+            component: 'NamedPipeServer',
+            event: 'pipe_write_error',
+            context: '_writeToPipe',
+            error: error,
+          );
           close(force: true);
           return;
         }
 
         if (bytesWritten.value == 0) {
-          logGrpcError('[gRPC] Server pipe write stalled: 0 bytes written');
+          logGrpcEvent(
+            '[gRPC] Server pipe write stalled: 0 bytes written',
+            component: 'NamedPipeServer',
+            event: 'pipe_write_stall',
+            context: '_writeToPipe',
+          );
           close(force: true);
           return;
         }
@@ -660,8 +699,9 @@ class _ServerPipeStream {
 class _AcceptLoopConfig {
   final String pipeName;
   final SendPort mainPort;
+  final int maxInstances;
 
-  _AcceptLoopConfig({required this.pipeName, required this.mainPort});
+  _AcceptLoopConfig({required this.pipeName, required this.mainPort, required this.maxInstances});
 }
 
 /// Message indicating the server has created the first pipe instance and is
@@ -715,7 +755,7 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         pipePathPtr,
         PIPE_ACCESS_DUPLEX,
         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-        PIPE_UNLIMITED_INSTANCES,
+        config.maxInstances,
         kNamedPipeBufferSize,
         kNamedPipeBufferSize,
         0, // Default timeout
@@ -724,6 +764,13 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
 
       if (hPipe == INVALID_HANDLE_VALUE) {
         final error = GetLastError();
+        // With a bounded maxInstances configuration (e.g. maxInstances=1),
+        // CreateNamedPipe can transiently fail with ERROR_PIPE_BUSY while all
+        // current instances are connected. Retry instead of failing the server.
+        if (error == ERROR_PIPE_BUSY) {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+          continue;
+        }
         config.mainPort.send(_ServerError('CreateNamedPipe failed: $error'));
         break;
       }

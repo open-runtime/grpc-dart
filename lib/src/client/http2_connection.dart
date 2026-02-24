@@ -92,8 +92,13 @@ class Http2ClientConnection implements connection.ClientConnection {
   static const _settingsFrameTimeout = Duration(milliseconds: 100);
 
   Future<ClientTransportConnection> connectTransport() async {
-    final connection = await _transportConnector.connect();
+    // Increment generation BEFORE the await so that any stale .done
+    // callback from a previous connection that fires during the await
+    // sees (oldGeneration != _connectionGeneration) and is a no-op.
+    // If we incremented after, a stale callback could match and
+    // incorrectly abandon a perfectly good new connection.
     final generation = ++_connectionGeneration;
+    final connection = await _transportConnector.connect();
     _transportConnector.done.then((_) {
       if (generation == _connectionGeneration) {
         _abandonConnection();

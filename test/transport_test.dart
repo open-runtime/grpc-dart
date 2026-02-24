@@ -280,6 +280,106 @@ void main() {
       await server.shutdown();
     });
 
+    testTcpAndUds('server streaming with compression', (address) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+          ),
+        ),
+      );
+
+      final client = EchoClient(channel);
+      final results = await client
+          .serverStream(5, options: CallOptions(compression: const GzipCodec()))
+          .toList();
+      expect(results, equals([1, 2, 3, 4, 5]));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testTcpAndUds('client streaming with compression', (address) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+          ),
+        ),
+      );
+
+      final client = EchoClient(channel);
+      final result = await client.clientStream(
+        Stream.fromIterable([1, 2, 3, 4, 5]),
+        options: CallOptions(compression: const GzipCodec()),
+      );
+      expect(result, equals(15));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testTcpAndUds('bidi streaming with compression', (address) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+          ),
+        ),
+      );
+
+      final client = EchoClient(channel);
+
+      final controller = StreamController<int>();
+      () async {
+        for (var i = 1; i <= 10; i++) {
+          controller.add(i);
+          if (i % 5 == 0) {
+            await Future.delayed(Duration.zero);
+          }
+        }
+        await controller.close();
+      }();
+
+      final results = await client
+          .bidiStream(
+            controller.stream,
+            options: CallOptions(compression: const GzipCodec()),
+          )
+          .toList();
+      expect(results, equals(List.generate(10, (i) => (i + 1) * 2)));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
     testTcpAndUds('large payload exceeding typical buffer sizes', (
       address,
     ) async {
