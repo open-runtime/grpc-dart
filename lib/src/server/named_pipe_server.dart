@@ -348,12 +348,16 @@ class _ServerPipeStream {
   final StreamController<List<int>> _outgoingController = StreamController<List<int>>();
 
   /// Subscription to outgoing data events, stored so it can be explicitly
-  /// cancelled during [close]. Without explicit cancellation, a dangling
-  /// subscription keeps the event loop alive when [_outgoingController.close]
-  /// throws due to an active `addStream()` from the HTTP/2 transport.
+  /// cancelled during forced [close]. In normal close, the subscription is
+  /// allowed to drain naturally so the HTTP/2 transport can finish writing
+  /// all frames before the handle is closed.
   StreamSubscription<List<int>>? _outgoingSubscription;
 
   bool _isClosed = false;
+
+  /// Whether the Win32 handle has been closed. Prevents double-close when
+  /// both normal close (via [_onOutgoingDone]) and forced close paths run.
+  bool _handleClosed = false;
 
   /// Completes when this stream is closed (for external tracking).
   final Completer<void> _closeCompleter = Completer<void>();
@@ -366,14 +370,16 @@ class _ServerPipeStream {
     Future.microtask(_readLoop);
 
     // Forward outgoing data to the pipe via WriteFile.
+    // onDone calls _onOutgoingDone (NOT close) so the outgoing subscription
+    // can drain naturally during normal close before the handle is released.
     _outgoingSubscription = _outgoingController.stream.listen(
       _writeData,
-      onDone: close,
+      onDone: _onOutgoingDone,
       onError: (error) {
         if (!_isClosed) {
           _incomingController.addError(error);
         }
-        close();
+        close(force: true);
       },
     );
   }
@@ -449,8 +455,13 @@ class _ServerPipeStream {
   /// pipe's internal buffer is nearly full. A partial write silently drops
   /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
   /// until all bytes are written or an error occurs.
+  ///
+  /// Guards on [_handleClosed] rather than [_isClosed] because during normal
+  /// close (force=false), the outgoing subscription continues draining while
+  /// the handle remains open. Using [_isClosed] would silently drop all
+  /// remaining HTTP/2 frames — causing data loss in high-throughput streaming.
   void _writeData(List<int> data) {
-    if (_isClosed) return;
+    if (_handleClosed) return;
 
     // Guard against zero-length writes: calloc<Uint8>(0) is undefined
     // behavior (may return nullptr on some platforms).
@@ -471,13 +482,13 @@ class _ServerPipeStream {
         if (success == 0) {
           final error = GetLastError();
           stderr.writeln('Server pipe write error: $error');
-          close();
+          close(force: true);
           return;
         }
 
         if (bytesWritten.value == 0) {
           stderr.writeln('Server pipe write stalled: 0 bytes written');
-          close();
+          close(force: true);
           return;
         }
 
@@ -489,74 +500,138 @@ class _ServerPipeStream {
     }
   }
 
-  /// Closes the pipe stream and cleans up the Win32 handle.
+  /// Called when the outgoing subscription's stream completes naturally.
   ///
-  /// When [force] is `false` (the default, used by normal HTTP/2 connection
-  /// close), only [CloseHandle] is called. This preserves unread data in the
-  /// kernel pipe buffer so the client can drain it before seeing
-  /// `ERROR_BROKEN_PIPE`. This is critical for high-throughput streaming:
-  /// without it, the client loses any buffered data that hasn't been read yet.
+  /// This is the deferred cleanup path for normal (non-forced) close. When
+  /// the read loop ends and calls `close()` without force, the outgoing
+  /// subscription is left running so the HTTP/2 transport can finish writing
+  /// all response frames. Once the transport closes the outgoing stream
+  /// (completing the `addStream()`), this callback fires and we can safely
+  /// close the Win32 handle — all data has been written to the pipe buffer.
   ///
-  /// When [force] is `true` (used by [NamedPipeServer.shutdown]),
-  /// [DisconnectNamedPipe] is called first to immediately terminate the
-  /// connection and discard any unread data. This prevents resource leaks
-  /// during forced shutdown.
+  /// This separation is critical for high-throughput streaming: without it,
+  /// `close()` would cancel the subscription immediately, dropping HTTP/2
+  /// frames that haven't been written yet (causing 232/1000 item failures
+  /// in tests).
+  void _onOutgoingDone() {
+    _outgoingSubscription = null;
+    _closeHandle(disconnect: false);
+    if (!_isClosed) {
+      close();
+    }
+  }
+
+  /// Closes the pipe stream and cleans up resources.
   ///
-  /// **FlushFileBuffers is intentionally omitted.** It is a synchronous FFI
-  /// call that blocks until the client reads ALL pending data. In our
-  /// architecture, server and client pipe I/O share the same Dart event loop
-  /// (two-isolate model: accept loop in separate isolate, data I/O in main).
-  /// FlushFileBuffers would block the event loop, preventing the client's
-  /// `PeekNamedPipe` polling from running — a guaranteed deadlock for any
-  /// response larger than the pipe buffer. Even in production (separate
-  /// processes), it blocks the server's event loop, starving other
-  /// connections.
+  /// ## Normal close (force=false)
   ///
-  /// This method is safe to call from any context — including during active
-  /// HTTP/2 `addStream()` operations. By cancelling [_outgoingSubscription]
-  /// first, we trigger the cascade:
-  ///  1. The single-subscription controller detects no listeners
-  ///  2. The active `addStream()` cancels its source subscription
-  ///  3. The `addStream()` Future completes, unlocking the controller
+  /// Used when the read loop exits (broken pipe, peer disconnect, etc.).
+  /// Stops incoming data by closing [_incomingController], but **does NOT
+  /// cancel the outgoing subscription**. The HTTP/2 transport may still be
+  /// writing response frames via `addStream()` — cancelling the subscription
+  /// would drop those frames, causing data loss.
+  ///
+  /// Instead, handle cleanup is deferred to [_onOutgoingDone], which fires
+  /// when the transport finishes writing and the outgoing stream completes.
+  /// At that point, all data has been written to the pipe buffer and
+  /// [CloseHandle] preserves it for the client to drain before seeing
+  /// `ERROR_BROKEN_PIPE`.
+  ///
+  /// ## Forced close (force=true)
+  ///
+  /// Used by [NamedPipeServer.shutdown] for immediate resource cleanup.
+  /// Cancels the outgoing subscription (triggering the `addStream()` cascade
+  /// that unlocks the controller), calls [DisconnectNamedPipe] to discard
+  /// unread data, and [CloseHandle] to release the handle.
+  ///
+  /// The `addStream()` cascade when cancelling the subscription:
+  ///  1. Cancelling `.listen()` → controller detects no listeners
+  ///  2. Active `addStream()` cancels its source subscription
+  ///  3. `addStream()` Future completes, unlocking the controller
   ///  4. `_outgoingController.close()` succeeds normally
   ///
-  /// Without this explicit cancellation, the subscription keeps the event
-  /// loop alive indefinitely — causing the test process to hang for 20+
-  /// minutes until the CI timeout kills it.
+  /// Without explicit cancellation in the forced path, the subscription keeps
+  /// the event loop alive indefinitely — causing the test process to hang for
+  /// 20+ minutes until the CI timeout kills it.
+  ///
+  /// ## FlushFileBuffers
+  ///
+  /// **Intentionally omitted.** It is a synchronous FFI call that blocks
+  /// until the client reads ALL pending data. In our architecture, server and
+  /// client pipe I/O share the same Dart event loop (two-isolate model:
+  /// accept loop in separate isolate, data I/O in main). FlushFileBuffers
+  /// would block the event loop, preventing the client's `PeekNamedPipe`
+  /// polling from running — a guaranteed deadlock for any response larger
+  /// than the pipe buffer.
   void close({bool force = false}) {
-    if (_isClosed) return;
+    if (_isClosed) {
+      // Already closed normally. If forced close is requested (e.g., by
+      // server.shutdown()), upgrade to forced: cancel the outgoing
+      // subscription and close the handle immediately. This handles the case
+      // where normal close deferred handle cleanup to _onOutgoingDone, but
+      // the server is shutting down before the transport finishes writing.
+      if (force) {
+        _outgoingSubscription?.cancel();
+        _outgoingSubscription = null;
+        try {
+          _outgoingController.close();
+        } catch (_) {}
+        _closeHandle(disconnect: true);
+      }
+      return;
+    }
     _isClosed = true;
 
     // Close incoming first — stops the read loop from adding more data.
     _incomingController.close();
 
-    // Cancel the outgoing subscription BEFORE closing the controller.
-    // This unlocks the controller if addStream() is active (see doc above).
-    _outgoingSubscription?.cancel();
-    _outgoingSubscription = null;
-
-    // With the subscription cancelled, close() should succeed. Keep the
-    // try-catch as defense-in-depth in case of unexpected edge cases.
-    try {
-      _outgoingController.close();
-    } catch (_) {
-      // Defensive: should not happen after subscription cancellation,
-      // but must not fail during shutdown.
-    }
-
-    // Clean up the Win32 pipe handle.
     if (force) {
-      // Forced shutdown: DisconnectNamedPipe immediately terminates the
-      // connection and discards unread data in the pipe buffer. This is
-      // acceptable during server.shutdown() where we prioritize fast
-      // resource cleanup over data delivery.
+      // Forced shutdown: cancel outgoing subscription immediately.
+      // This triggers the addStream() cascade (see doc above) that unlocks
+      // the controller so close() succeeds.
+      _outgoingSubscription?.cancel();
+      _outgoingSubscription = null;
+
+      try {
+        _outgoingController.close();
+      } catch (_) {
+        // Defensive: should not happen after subscription cancellation,
+        // but must not fail during shutdown.
+      }
+
+      _closeHandle(disconnect: true);
+    }
+    // Normal close: Do NOT cancel the outgoing subscription. The HTTP/2
+    // transport may still be writing frames. Handle cleanup is deferred
+    // to _onOutgoingDone() which fires when the transport finishes.
+    //
+    // If there's no outgoing subscription (already drained or never started),
+    // close the handle now since _onOutgoingDone won't fire.
+    else if (_outgoingSubscription == null) {
+      _closeHandle(disconnect: false);
+    }
+  }
+
+  /// Closes the Win32 pipe handle, with optional [DisconnectNamedPipe].
+  ///
+  /// Safe to call multiple times — tracks state with [_handleClosed].
+  ///
+  /// When [disconnect] is `true`, [DisconnectNamedPipe] is called first to
+  /// immediately terminate the connection and discard unread buffer data.
+  /// When `false`, only [CloseHandle] is called, preserving buffered data
+  /// for the client to drain.
+  void _closeHandle({required bool disconnect}) {
+    if (_handleClosed) return;
+    _handleClosed = true;
+
+    if (disconnect) {
       DisconnectNamedPipe(_handle);
     }
-    // In both cases, close the handle. Without prior DisconnectNamedPipe,
-    // data in the pipe buffer is preserved for the client to read. The
-    // client sees ERROR_BROKEN_PIPE only after draining the buffer.
     CloseHandle(_handle);
 
+    // Signal completion only after the handle is truly closed. This keeps the
+    // stream in NamedPipeServer._activeStreams until cleanup is complete, so
+    // server.shutdown() can force-close streams that are still draining.
     if (!_closeCompleter.isCompleted) {
       _closeCompleter.complete();
     }
