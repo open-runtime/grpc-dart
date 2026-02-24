@@ -289,7 +289,7 @@ class _NamedPipeStream {
     final peekAvail = calloc<DWORD>();
 
     try {
-      while (!_isClosed) {
+      while (!_isClosed && !_incomingController.isClosed) {
         // Non-blocking check: is there data available on the pipe?
         //
         // PeekNamedPipe returns immediately without blocking the thread.

@@ -29,7 +29,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
@@ -43,27 +42,6 @@ import 'src/echo_service.dart';
 // =============================================================================
 
 void main() {
-  // ---------------------------------------------------------------------------
-  // Safety net: on Windows, named-pipe client isolates can become permanently
-  // blocked on FFI calls (ConnectNamedPipe/ReadFile) when the server dies
-  // mid-handshake. Dart cannot kill isolates stuck in FFI. After all tests
-  // complete, dart test waits for ALL isolates to finish before exiting the
-  // process — but zombie isolates never finish, hanging the process forever
-  // and blocking subsequent test files.
-  //
-  // This tearDownAll schedules a forced exit after a grace period. By the time
-  // it fires, dart test has already recorded all test results and reported
-  // them, so the exit code reflects the true test outcome.
-  // ---------------------------------------------------------------------------
-  if (Platform.isWindows) {
-    tearDownAll(() {
-      Timer(const Duration(seconds: 10), () {
-        print('[tearDownAll] Force-exiting: zombie named-pipe isolates '
-            'prevented clean shutdown.');
-        exit(0);
-      });
-    });
-  }
   // ===========================================================================
   // 1. Shutdown-During-Connect Races
   // ===========================================================================

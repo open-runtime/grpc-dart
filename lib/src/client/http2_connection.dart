@@ -230,6 +230,11 @@ class Http2ClientConnection implements connection.ClientConnection {
     _setShutdownState();
     await _transportConnection?.finish();
     _disconnect();
+    // Release the underlying OS resource (e.g. Win32 pipe handle, socket).
+    // Only called in terminal paths (shutdown/terminate) — NOT in _disconnect()
+    // which is also used by non-terminal paths (idle timeout, connection
+    // failure, abandon) that may need to reconnect.
+    _transportConnector.shutdown();
   }
 
   @override
@@ -237,6 +242,11 @@ class Http2ClientConnection implements connection.ClientConnection {
     _setShutdownState();
     await _transportConnection?.terminate();
     _disconnect();
+    // Release the underlying OS resource (e.g. Win32 pipe handle, socket).
+    // Without this, terminate() closes the HTTP/2 logical connection but
+    // leaves the transport connector open, causing _readLoop() to busy-wait
+    // forever on named pipes and preventing process exit.
+    _transportConnector.shutdown();
   }
 
   void _setShutdownState() {
@@ -370,6 +380,7 @@ class SocketTransportConnector implements ClientTransportConnector {
   final int _port;
   final ChannelOptions _options;
   late Socket socket;
+  bool _socketInitialized = false;
 
   Proxy? get proxy => _options.proxy;
   Object get host => proxy == null ? _host : proxy!.host;
@@ -406,6 +417,7 @@ class SocketTransportConnector implements ClientTransportConnector {
 
   Future<Stream<List<int>>> connectImpl(Proxy? proxy) async {
     socket = await initSocket(host, port);
+    _socketInitialized = true;
     if (proxy == null) {
       return socket;
     }
@@ -456,7 +468,7 @@ class SocketTransportConnector implements ClientTransportConnector {
 
   @override
   void shutdown() {
-    ArgumentError.checkNotNull(socket);
+    if (!_socketInitialized) return;
     socket.destroy();
   }
 

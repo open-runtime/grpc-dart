@@ -29,6 +29,7 @@ class Http2TransportStream extends GrpcTransportStream {
   final Stream<GrpcMessage> incomingMessages;
   final StreamController<List<int>> _outgoingMessages = StreamController();
   final ErrorHandler _onError;
+  late final StreamSubscription _outgoingSubscription;
 
   @override
   StreamSink<List<int>> get outgoingMessages => _outgoingMessages.sink;
@@ -37,7 +38,7 @@ class Http2TransportStream extends GrpcTransportStream {
     : incomingMessages = _transportStream.incomingMessages
           .transform(GrpcHttpDecoder(forResponse: true))
           .transform(grpcDecompressor(codecRegistry: codecRegistry)) {
-    _outgoingMessages.stream
+    _outgoingSubscription = _outgoingMessages.stream
         .map((payload) => frame(payload, compression))
         .map<StreamMessage>((bytes) => DataStreamMessage(bytes))
         .handleError(_onError)
@@ -51,6 +52,7 @@ class Http2TransportStream extends GrpcTransportStream {
 
   @override
   Future<void> terminate() async {
+    await _outgoingSubscription.cancel();
     await _outgoingMessages.close();
     _transportStream.terminate();
   }
