@@ -1,5 +1,5 @@
-// Copyright (c) 2025, the gRPC project authors. Please see the AUTHORS file
-// for details. All rights reserved.
+// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba
+// Pieces.app. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,6 +26,21 @@ import 'client_transport_connector.dart';
 
 /// Buffer size for pipe I/O operations.
 const int _kBufferSize = 65536;
+
+/// Maximum number of retry attempts when the pipe is busy.
+///
+/// This is a defense-in-depth measure for production scenarios where all pipe
+/// instances are briefly in use (between the server accepting one connection
+/// and creating the next pipe instance). The server's serve() method
+/// guarantees the pipe exists, so ERROR_FILE_NOT_FOUND is NOT retried.
+const int _kMaxPipeBusyRetries = 3;
+
+/// Backoff delays for ERROR_PIPE_BUSY retries (simple exponential backoff).
+const List<Duration> _kPipeBusyRetryDelays = [
+  Duration(milliseconds: 100),
+  Duration(milliseconds: 200),
+  Duration(milliseconds: 400),
+];
 
 /// A [ClientTransportConnector] implementation for Windows named pipes.
 ///
@@ -84,26 +99,26 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 
     try {
       // Open the named pipe for reading and writing.
+      //
       // The server's serve() method guarantees the pipe exists in the Windows
-      // namespace before returning, so CreateFile should succeed immediately.
-      final hPipe = CreateFile(
-        pipePathPtr,
-        GENERIC_READ | GENERIC_WRITE,
-        0, // No sharing
-        nullptr, // Default security
-        OPEN_EXISTING,
-        0, // Normal attributes
-        NULL, // No template
-      );
+      // namespace before returning, so CreateFile should succeed immediately
+      // in the common case.
+      //
+      // Defense-in-depth: In production under load, ERROR_PIPE_BUSY (231) can
+      // legitimately occur when all pipe instances are briefly in use — the
+      // window between the server accepting one connection and creating the
+      // next pipe instance. We retry with exponential backoff for this
+      // specific error only.
+      //
+      // ERROR_FILE_NOT_FOUND is NOT retried because serve() guarantees the
+      // pipe exists. If the pipe doesn't exist, that indicates a real problem
+      // (server crashed, wrong pipe name, etc.) and should fail immediately.
+      final hPipe = await _openPipeWithRetry(pipePathPtr);
 
-      if (hPipe == INVALID_HANDLE_VALUE) {
-        final error = GetLastError();
-        throw NamedPipeException('Failed to connect to named pipe "$pipePath": Win32 error $error', error);
-      }
-
-      _pipeHandle = hPipe;
-
-      // Set pipe to byte-read mode for stream-oriented HTTP/2 framing
+      // Set pipe to byte-read mode for stream-oriented HTTP/2 framing.
+      // IMPORTANT: Do not assign _pipeHandle until SetNamedPipeHandleState
+      // succeeds — otherwise shutdown() would double-close an already-closed
+      // handle if this step fails.
       final mode = calloc<DWORD>();
       mode.value = PIPE_READMODE_BYTE;
       final success = SetNamedPipeHandleState(hPipe, mode, nullptr, nullptr);
@@ -115,6 +130,9 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
         throw NamedPipeException('Failed to set pipe mode: Win32 error $error', error);
       }
 
+      // Handle is fully initialized — safe to track for shutdown cleanup.
+      _pipeHandle = hPipe;
+
       // Create bidirectional stream wrapper
       _pipeStream = _NamedPipeStream(hPipe, _doneCompleter);
 
@@ -125,6 +143,54 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
     }
   }
 
+  /// Opens the named pipe, retrying only on ERROR_PIPE_BUSY.
+  ///
+  /// This is a defense-in-depth retry for production scenarios where all
+  /// server pipe instances are transiently occupied. The server creates
+  /// PIPE_UNLIMITED_INSTANCES, so busy is always a transient condition
+  /// that resolves once the server's accept loop creates the next instance.
+  ///
+  /// All other errors (including ERROR_FILE_NOT_FOUND) fail immediately.
+  Future<int> _openPipeWithRetry(Pointer<Utf16> pipePathPtr) async {
+    for (var attempt = 0; attempt <= _kMaxPipeBusyRetries; attempt++) {
+      final hPipe = CreateFile(
+        pipePathPtr,
+        GENERIC_READ | GENERIC_WRITE,
+        0, // No sharing
+        nullptr, // Default security
+        OPEN_EXISTING,
+        0, // Normal attributes
+        NULL, // No template
+      );
+
+      if (hPipe != INVALID_HANDLE_VALUE) {
+        return hPipe;
+      }
+
+      final error = GetLastError();
+
+      // Only retry on ERROR_PIPE_BUSY — all pipe instances are temporarily
+      // in use. This is a normal transient condition under load.
+      if (error == ERROR_PIPE_BUSY && attempt < _kMaxPipeBusyRetries) {
+        await Future<void>.delayed(_kPipeBusyRetryDelays[attempt]);
+        continue;
+      }
+
+      // All other errors fail immediately. ERROR_FILE_NOT_FOUND means
+      // the pipe doesn't exist (server not running or wrong name).
+      // ERROR_PIPE_BUSY after all retries exhausted also fails here.
+      throw NamedPipeException(
+        'Failed to connect to named pipe "$pipePath"'
+        '${error == ERROR_PIPE_BUSY ? " (all $_kMaxPipeBusyRetries retries exhausted)" : ""}'
+        ': Win32 error $error',
+        error,
+      );
+    }
+
+    // Unreachable — the loop always returns or throws.
+    throw StateError('Unreachable');
+  }
+
   @override
   Future<void> get done => _doneCompleter.future;
 
@@ -133,6 +199,9 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
     _pipeStream?.close();
     final handle = _pipeHandle;
     if (handle != null && handle != INVALID_HANDLE_VALUE) {
+      // FlushFileBuffers can block if the pipe has pending writes, but
+      // this is acceptable during shutdown — we need to ensure data
+      // integrity. The pipe is local-only so this should be fast.
       FlushFileBuffers(handle);
       CloseHandle(handle);
       _pipeHandle = null;
@@ -200,8 +269,11 @@ class _NamedPipeStream {
 
         final count = bytesRead.value;
         if (count == 0) {
-          // No data, yield to event loop
-          await Future.delayed(Duration.zero);
+          // No data available yet. Use a 1ms delay to yield to the event
+          // loop without busy-waiting. Duration.zero would cause a CPU-
+          // wasting spin loop since it only yields to microtasks, not
+          // timers or I/O callbacks.
+          await Future.delayed(const Duration(milliseconds: 1));
           continue;
         }
 
@@ -246,6 +318,10 @@ class _NamedPipeStream {
   }
 
   /// Closes the pipe streams.
+  ///
+  /// Note: This does NOT close the underlying Win32 handle. The handle is
+  /// owned by [NamedPipeTransportConnector] and closed in its [shutdown()]
+  /// method, which also flushes pending writes via FlushFileBuffers.
   void close() {
     if (_isClosed) return;
     _isClosed = true;

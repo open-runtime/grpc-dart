@@ -1,5 +1,5 @@
-// Copyright (c) 2025, the gRPC project authors. Please see the AUTHORS file
-// for details. All rights reserved.
+// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba
+// Pieces.app. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -428,7 +428,10 @@ Future<void> _startPipeReader(int hPipe, SendPort responsePort) async {
 
       final count = bytesRead.value;
       if (count == 0) {
-        await Future.delayed(Duration.zero);
+        // Use a 1ms delay to yield to the event loop without busy-waiting.
+        // Duration.zero only yields to microtasks, causing a CPU-wasting
+        // spin loop.
+        await Future.delayed(const Duration(milliseconds: 1));
         continue;
       }
 
