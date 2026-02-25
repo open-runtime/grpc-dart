@@ -596,6 +596,15 @@ class _ServerPipeStream {
   void _onOutgoingDone() {
     _cancelDeferredCloseTimer();
     _outgoingSubscription = null;
+    // Close the incoming controller now that all outgoing frames are written.
+    // This is deferred from close(force=false) because closing _incomingController
+    // signals the HTTP/2 transport that the byte stream ended. If closed too early
+    // (before all response frames are written), the transport interprets it as
+    // connection EOF and shuts down the outgoing stream — dropping frames and
+    // causing data loss (e.g. 232/1000 items delivered in high-throughput tests).
+    if (!_incomingController.isClosed) {
+      _incomingController.close();
+    }
     _closeHandle(disconnect: false);
     if (!_isClosed) {
       close();
@@ -627,6 +636,9 @@ class _ServerPipeStream {
       try {
         _outgoingController.close();
       } catch (_) {}
+      if (!_incomingController.isClosed) {
+        _incomingController.close();
+      }
       _closeHandle(disconnect: false);
     });
   }
@@ -636,16 +648,18 @@ class _ServerPipeStream {
   /// ## Normal close (force=false)
   ///
   /// Used when the read loop exits (broken pipe, peer disconnect, etc.).
-  /// Stops incoming data by closing [_incomingController], but **does NOT
-  /// cancel the outgoing subscription**. The HTTP/2 transport may still be
-  /// writing response frames via `addStream()` — cancelling the subscription
-  /// would drop those frames, causing data loss.
+  /// Does NOT cancel the outgoing subscription OR close [_incomingController]
+  /// when there is an active outgoing subscription. Both are deferred to
+  /// [_onOutgoingDone] which fires when the transport finishes writing.
   ///
-  /// Instead, handle cleanup is deferred to [_onOutgoingDone], which fires
-  /// when the transport finishes writing and the outgoing stream completes.
-  /// At that point, all data has been written to the pipe buffer and
-  /// [CloseHandle] preserves it for the client to drain before seeing
-  /// `ERROR_BROKEN_PIPE`.
+  /// Closing [_incomingController] prematurely signals the HTTP/2 transport
+  /// that the byte stream has ended. The transport interprets this as
+  /// connection EOF and shuts down the outgoing stream — dropping response
+  /// frames not yet written (e.g. 232/1000 items in high-throughput tests).
+  ///
+  /// When [_onOutgoingDone] fires, all data has been written to the pipe
+  /// buffer and [CloseHandle] preserves it for the client to drain before
+  /// seeing `ERROR_BROKEN_PIPE`.
   ///
   /// ## Forced close (force=true)
   ///
@@ -687,16 +701,19 @@ class _ServerPipeStream {
         try {
           _outgoingController.close();
         } catch (_) {}
+        // Close incoming if deferred from normal close (see below).
+        if (!_incomingController.isClosed) {
+          _incomingController.close();
+        }
         _closeHandle(disconnect: true);
       }
       return;
     }
     _isClosed = true;
 
-    // Close incoming first — stops the read loop from adding more data.
-    _incomingController.close();
-
     if (force) {
+      // Close incoming immediately — forced shutdown tears everything down.
+      _incomingController.close();
       _cancelDeferredCloseTimer();
       // Forced shutdown: cancel outgoing subscription immediately.
       // This triggers the addStream() cascade (see doc above) that unlocks
@@ -720,10 +737,16 @@ class _ServerPipeStream {
     // If there's no outgoing subscription (already drained or never started),
     // close the handle now since _onOutgoingDone won't fire.
     else if (_outgoingSubscription == null) {
+      _incomingController.close();
       _closeHandle(disconnect: false);
     } else {
-      // Deferred cleanup path: allow normal drain, but force-close if it
-      // does not complete within the safety window.
+      // Deferred cleanup path: allow the outgoing subscription to drain
+      // naturally. Do NOT close _incomingController here — the HTTP/2
+      // transport treats incoming stream closure as connection EOF and
+      // shuts down the outgoing stream immediately, dropping any response
+      // frames not yet written. The incoming controller is closed in
+      // _onOutgoingDone() (after all frames are written) or in the
+      // deferred close timer callback (safety timeout).
       _armDeferredCloseTimer();
     }
   }

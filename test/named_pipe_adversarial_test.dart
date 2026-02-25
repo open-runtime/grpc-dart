@@ -872,14 +872,16 @@ void main() {
       // not the encoding range.
       final results = await client.serverStream(1000).toList();
 
-      // Same-process throughput varies by OS and CI load. Require ≥100
-      // items to prove meaningful throughput and no deadlock.
+      // All 1000 items must arrive. The deferred _incomingController.close()
+      // fix in _ServerPipeStream.close() ensures the HTTP/2 transport keeps
+      // the outgoing stream open until all response frames are written.
+      // Any shortfall indicates a regression in the deferred close path.
       expect(
         results.length,
-        greaterThanOrEqualTo(100),
+        equals(1000),
         reason:
-            'Expected ≥100 of 1000 items but got ${results.length}. '
-            'Same-process event loop contention limits throughput.',
+            'Expected all 1000 items but got ${results.length}. '
+            'No shutdown racing this stream — full delivery required.',
       );
 
       // Verify every received item is correct and in order — the critical
