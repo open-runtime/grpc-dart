@@ -855,7 +855,10 @@ void main() {
           server.port!,
           ChannelOptions(
             credentials: ChannelCredentials.insecure(),
-            connectionTimeout: const Duration(milliseconds: 30),
+            // 200ms gives enough headroom for slow CI runners (Intel
+            // macOS) where 30ms caused cascading reconnections during
+            // the concurrent Round 2 dispatch.
+            connectionTimeout: const Duration(milliseconds: 200),
           ),
         ),
       );
@@ -883,7 +886,7 @@ void main() {
       }
 
       // Wait for connection to age out (> connectionTimeout).
-      await Future.delayed(const Duration(milliseconds: 80));
+      await Future.delayed(const Duration(milliseconds: 400));
 
       // Round 2: 50 more concurrent RPCs — forces reconnection.
       final round2 = List.generate(

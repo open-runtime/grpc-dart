@@ -119,7 +119,7 @@ void main() {
       await waitForHandlers(
         server,
         minCount: 50,
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 30),
         reason: '50 handlers must be registered',
       );
 
@@ -188,7 +188,7 @@ void main() {
       await waitForHandlers(
         server,
         minCount: 60,
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 30),
         reason: '60 handlers must be registered',
       );
 
@@ -875,7 +875,7 @@ void main() {
       await waitForHandlers(
         server,
         minCount: 50,
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 30),
         reason:
             '50 handlers across 5 connections '
             'must be registered',

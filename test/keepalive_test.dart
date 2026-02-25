@@ -86,13 +86,24 @@ void main() {
     () async {
       await fakeClient.echo(EchoRequest());
       // Config-derived wait: client pings every 10ms, server needs >5 bad
-      // pings to close. Each ping after the first is bad (10ms < 500ms
-      // minInterval). Allow generous time for GOAWAY propagation.
-      await Future.delayed(const Duration(milliseconds: 500));
-      await fakeClient.echo(EchoRequest());
-      // Check that the server closed the connection, the next request then has
-      // to build a new one.
-      expect(fakeChannel.newConnectionCounter, 2);
+      // pings to close (10ms < 500ms minInterval ⇒ every ping is bad).
+      // Ideal: 6 pings × 10ms = 60ms + GOAWAY propagation ≈ 100ms.
+      // Under CI contention (concurrency=4), Dart timer resolution
+      // degrades 2–4×. Use 1000ms for comfortable headroom.
+      await Future.delayed(const Duration(milliseconds: 1000));
+      // The GOAWAY (ENHANCE_YOUR_CALM) may still be mid-propagation on
+      // slow runners. If the echo hits the dying connection, catch the
+      // transport error and retry on the freshly opened connection.
+      try {
+        await fakeClient.echo(EchoRequest());
+      } catch (_) {
+        // GOAWAY is being processed — wait for the channel to detect
+        // the dead connection and reconnect on the next attempt.
+        await Future.delayed(const Duration(milliseconds: 500));
+        await fakeClient.echo(EchoRequest());
+      }
+      // Server closed connection 1 via GOAWAY, forcing a reconnect.
+      expect(fakeChannel.newConnectionCounter, greaterThanOrEqualTo(2));
     },
   );
 

@@ -150,7 +150,7 @@ void main() {
         final connectFutures = <Future<Object?>>[];
         for (var i = 0; i < 8; i++) {
           connectFutures.add(
-            connector.connect().then((t) => t, onError: (e, _) => e),
+            connector.connect().then<Object?>((t) => t, onError: (e, _) => e),
           );
         }
         // shutdown() is synchronous; call it immediately to race with connect.
@@ -222,13 +222,13 @@ void main() {
         addTearDown(() => connector.shutdown());
 
         // Single connect + immediate shutdown to maximize race window.
-        final connectFuture = connector.connect().then(
+        final connectFuture = connector.connect().then<Object?>(
           (t) => t,
           onError: (e, _) => e,
         );
         connector.shutdown();
 
-        final Object result = await connectFuture.timeout(
+        final result = await connectFuture.timeout(
           const Duration(seconds: 10),
           onTimeout: () => fail('connect() did not settle within 10s'),
         );
