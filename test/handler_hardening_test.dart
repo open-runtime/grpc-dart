@@ -1213,6 +1213,89 @@ void main() {
         reason: 'Expected handler to be unblocked by GrpcError.cancelled',
       );
     });
+
+    test('transport-triggered terminate invokes cancellation path '
+        '(onTerminated callback)', () async {
+      // Regression: TestServerStream must invoke onTerminated when terminate()
+      // is called, so the handler's cancel() runs (not only direct handler.cancel).
+      final toServer = StreamController<StreamMessage>();
+      final fromServer = StreamController<StreamMessage>();
+      final service = TestService();
+      final handlerEntered = Completer<void>();
+      final handlerUnblocked = Completer<void>();
+      var sawCancelledError = false;
+      Stream<int> methodHandler(ServiceCall call, Stream<int> request) async* {
+        try {
+          await for (final value in request) {
+            yield value;
+            if (!handlerEntered.isCompleted) {
+              handlerEntered.complete();
+            }
+          }
+        } catch (e) {
+          if (e is GrpcError && e.code == StatusCode.cancelled) {
+            sawCancelledError = true;
+            if (!handlerUnblocked.isCompleted) {
+              handlerUnblocked.complete();
+            }
+            return;
+          }
+          rethrow;
+        }
+        if (!handlerUnblocked.isCompleted) {
+          handlerUnblocked.complete();
+        }
+      }
+
+      service.bidirectionalHandler = methodHandler;
+      final server = Server.create(services: [service]);
+      final stream = TestServerStream(toServer.stream, fromServer.sink);
+      server.serveStream_(stream: stream);
+      addTearDown(() async {
+        if (!toServer.isClosed) await toServer.close();
+        if (!fromServer.isClosed) await fromServer.close();
+        await server.shutdown();
+      });
+
+      fromServer.stream.listen((_) {}, onError: (_) {}, onDone: () {});
+
+      final headers = Http2ClientConnection.createCallHeaders(
+        true,
+        'test',
+        '/Test/Bidirectional',
+        null,
+        null,
+        null,
+        userAgent: 'dart-grpc/1.0.0 test',
+      );
+      toServer.add(HeadersStreamMessage(headers));
+      toServer.add(DataStreamMessage(frame(mockEncode(1))));
+
+      await handlerEntered.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail('Handler never entered await-for'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      // Transport-triggered terminate (e.g. RST_STREAM from client disconnect)
+      // must invoke onTerminated callback → cancel() → close _requests.
+      stream.terminate();
+
+      await handlerUnblocked.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail(
+          'Handler stayed blocked — transport terminate() did not invoke '
+          'onTerminated callback',
+        ),
+      );
+      expect(
+        sawCancelledError,
+        isTrue,
+        reason:
+            'Expected handler to be unblocked by GrpcError.cancelled via '
+            'onTerminated callback',
+      );
+    });
   });
 
   // ---------------------------------------------------------------------------

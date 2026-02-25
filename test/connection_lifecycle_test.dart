@@ -45,6 +45,7 @@ void main() {
       (address) async {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
 
         final channel = TestClientChannel(
           Http2ClientConnection(
@@ -82,14 +83,14 @@ void main() {
           reason: 'Should have connected at least twice (original + reconnect)',
         );
 
-        await channel.shutdown();
-        await server.shutdown();
+        addTearDown(() => channel.shutdown());
       },
     );
 
     testTcpAndUds('rapid reconnection cycles are stable', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -123,8 +124,7 @@ void main() {
         reason: 'Should have reconnected multiple times',
       );
 
-      await channel.shutdown();
-      await server.shutdown();
+      addTearDown(() => channel.shutdown());
     });
   });
 
@@ -135,6 +135,7 @@ void main() {
     testTcpAndUds('shutdown cleans up all resources', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -164,12 +165,13 @@ void main() {
         expect(e, isA<GrpcError>());
       }
 
-      await server.shutdown();
+      addTearDown(() => channel.shutdown());
     });
 
     testTcpAndUds('terminate cleans up all resources', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -191,8 +193,49 @@ void main() {
       // Verify shutdown state was reached
       expect(channel.states.last, equals(ConnectionState.shutdown));
 
-      await server.shutdown();
+      addTearDown(() => channel.shutdown());
     });
+
+    testTcpAndUds(
+      'terminate after shutdown escalates and settles active streams',
+      (address) async {
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
+
+        final channel = createTestChannel(address, server.port!);
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+
+        // Ensure connection is established.
+        expect(await client.echo(1), equals(1));
+
+        // Start a long-running stream so escalation has work to do.
+        final streamFuture = client
+            .serverStream(100)
+            .toList()
+            .then((v) => v, onError: (_) => <int>[]);
+
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        await channel.shutdown();
+        await channel.terminate();
+
+        // If terminate() incorrectly no-ops after shutdown(), this can hang.
+        await streamFuture.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            fail(
+              'active stream did not settle after shutdown() + terminate() '
+              'escalation',
+            );
+          },
+        );
+
+        // Repeated terminal operations should remain safe no-ops.
+        await channel.terminate();
+        await channel.shutdown();
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -209,6 +252,7 @@ void main() {
           12345, // arbitrary port, doesn't matter
           ChannelOptions(credentials: ChannelCredentials.insecure()),
         );
+        addTearDown(() => connection.shutdown());
 
         // Calling makeRequest when _transportConnection is null should
         // throw a GrpcError.unavailable with an informative message,
@@ -252,6 +296,7 @@ void main() {
     ) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -297,7 +342,7 @@ void main() {
         );
       }
 
-      await channel.shutdown();
+      addTearDown(() => channel.shutdown());
     });
 
     testTcpAndUds('server shutdown during active streams does not crash', (
@@ -305,6 +350,7 @@ void main() {
     ) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -349,7 +395,7 @@ void main() {
         );
       }
 
-      await channel.shutdown();
+      addTearDown(() => channel.shutdown());
     });
   });
 
@@ -358,8 +404,10 @@ void main() {
   // ---------------------------------------------------------------------------
   group('Connection idle timeout', () {
     testTcpAndUds('idle connection transitions to idle state', (address) async {
+      const idleTimeout = Duration(milliseconds: 100);
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
         Http2ClientConnection(
@@ -367,7 +415,7 @@ void main() {
           server.port!,
           ChannelOptions(
             credentials: ChannelCredentials.insecure(),
-            idleTimeout: const Duration(milliseconds: 100),
+            idleTimeout: idleTimeout,
           ),
         ),
       );
@@ -378,8 +426,8 @@ void main() {
       expect(await client.echo(1), equals(1));
       expect(channel.states, contains(ConnectionState.ready));
 
-      // Wait for idle timeout to fire
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Wait for idle timeout to fire (config-derived: 3x idleTimeout).
+      await Future.delayed(idleTimeout * 3);
 
       // The connection should have gone idle
       expect(channel.states, contains(ConnectionState.idle));
@@ -387,8 +435,7 @@ void main() {
       // But a new request should still work (re-establishes connection)
       expect(await client.echo(2), equals(2));
 
-      await channel.shutdown();
-      await server.shutdown();
+      addTearDown(() => channel.shutdown());
     });
   });
 
@@ -405,6 +452,7 @@ void main() {
     testTcpAndUds('rapid reconnection forces generation counter to 20+', (
       address,
     ) async {
+      const connectionTimeout = Duration(milliseconds: 20);
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -416,14 +464,17 @@ void main() {
           ChannelOptions(
             credentials: ChannelCredentials.insecure(),
             // Very short timeout forces reconnection each cycle.
-            connectionTimeout: const Duration(milliseconds: 20),
+            connectionTimeout: connectionTimeout,
           ),
         ),
       );
+      addTearDown(() => channel.shutdown());
 
       final client = EchoClient(channel);
 
       // 20 cycles: RPC + wait for connection to age out.
+      // Use 50ms (slightly > 2x connectionTimeout) for reliable aging.
+      const cycleWait = Duration(milliseconds: 50);
       for (var i = 0; i < 20; i++) {
         final result = await client
             .echo(i % 256)
@@ -437,8 +488,8 @@ void main() {
               },
             );
         expect(result, equals(i % 256), reason: 'cycle $i');
-        // Wait for connection timeout to expire.
-        await Future.delayed(const Duration(milliseconds: 50));
+        // Config-derived wait for connection timeout to expire.
+        await Future.delayed(cycleWait);
       }
 
       // Verify we had many ready states (one per reconnection).
@@ -575,6 +626,199 @@ void main() {
 
         await channel.shutdown();
       },
+    );
+
+    testTcpAndUds(
+      'M4: _abandonConnection during pending-dispatch yield (connector.done)',
+      (address) async {
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
+
+        final channel = TestClientChannel(
+          Http2ClientConnection(
+            address,
+            server.port!,
+            ChannelOptions(credentials: ChannelCredentials.insecure()),
+          ),
+        );
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+
+        const callCount = 20;
+        final rpcFutures = List.generate(
+          callCount,
+          (i) => client
+              .echo((i * 17) % 256)
+              .then<Object?>((v) => v, onError: (e) => e),
+        );
+
+        final readyDeadline = DateTime.now().add(const Duration(seconds: 2));
+        while (!channel.states.contains(ConnectionState.ready) &&
+            DateTime.now().isBefore(readyDeadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+        }
+
+        late Future<void> serverShutdownFuture;
+        Timer(Duration.zero, () {
+          serverShutdownFuture = server.shutdown();
+        });
+        await Future<void>.delayed(Duration.zero);
+
+        final transientDeadline = DateTime.now().add(
+          const Duration(seconds: 2),
+        );
+        while (!channel.states.contains(ConnectionState.transientFailure) &&
+            DateTime.now().isBefore(transientDeadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+        }
+        expect(
+          channel.states,
+          anyOf(
+            contains(ConnectionState.transientFailure),
+            contains(ConnectionState.idle),
+          ),
+          reason:
+              'Expected transientFailure or idle after connector.done (server '
+              'kill)',
+        );
+
+        await channel.shutdown();
+        await serverShutdownFuture;
+
+        // Await all RPCs so they settle (succeed or error). Without this,
+        // the test would leak uncompleted futures and the analyzer flags
+        // rpcFutures as unused.
+        await Future.wait(rpcFutures).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => fail(
+            'M4: RPCs did not settle after server kill + channel shutdown',
+          ),
+        );
+      },
+    );
+
+    testTcpAndUds('shutdown during pending dispatch settles all queued RPCs', (
+      address,
+    ) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      const callCount = 200;
+      final rpcFutures = List.generate(
+        callCount,
+        (i) => client
+            .echo((i * 17) % 256)
+            .then<Object?>((v) => v, onError: (e) => e),
+      );
+
+      // Wait briefly for lazy-connect to enter ready and start dispatching
+      // queued calls with yields between each dispatch.
+      final readyDeadline = DateTime.now().add(const Duration(seconds: 2));
+      while (!channel.states.contains(ConnectionState.ready) &&
+          DateTime.now().isBefore(readyDeadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+
+      await channel.shutdown();
+
+      // Regression guard: no queued call may be orphaned/hung.
+      final settled = await Future.wait(rpcFutures).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          fail(
+            'Queued RPCs did not settle after shutdown during pending '
+            'dispatch -- possible orphaned pending calls',
+          );
+        },
+      );
+
+      expect(settled.length, equals(callCount));
+      for (final result in settled) {
+        expect(result, anyOf(isA<int>(), isA<GrpcError>()));
+      }
+
+      // Server should remain healthy after high-pressure shutdown race.
+      final probeChannel = createTestChannel(address, server.port!);
+      final probeClient = EchoClient(probeChannel);
+      expect(await probeClient.echo(77), equals(77));
+      await probeChannel.shutdown();
+    });
+
+    testTcpAndUds(
+      'stress: repeated shutdown during pending dispatch does not orphan RPCs',
+      (address) async {
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
+
+        const cycles = 14;
+        const callCountPerCycle = 140;
+
+        for (var cycle = 0; cycle < cycles; cycle++) {
+          final channel = TestClientChannel(
+            Http2ClientConnection(
+              address,
+              server.port!,
+              ChannelOptions(credentials: ChannelCredentials.insecure()),
+            ),
+          );
+          addTearDown(() => channel.shutdown());
+          final client = EchoClient(channel);
+
+          final rpcFutures = List.generate(
+            callCountPerCycle,
+            (i) => client
+                .echo((cycle * 100 + i) % 256)
+                .then<Object?>((v) => v, onError: (e) => e),
+          );
+
+          // Alternate race patterns to broaden coverage:
+          //  - Even cycles: wait for ready, then kill during pending dispatch.
+          //  - Odd cycles: kill immediately while still connecting.
+          if (cycle.isEven) {
+            final readyDeadline = DateTime.now().add(
+              const Duration(seconds: 2),
+            );
+            while (!channel.states.contains(ConnectionState.ready) &&
+                DateTime.now().isBefore(readyDeadline)) {
+              await Future<void>.delayed(const Duration(milliseconds: 1));
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 1));
+          }
+
+          // Stress escalation semantics: shutdown + terminate overlap.
+          await Future.wait([channel.shutdown(), channel.terminate()]);
+
+          final settled = await Future.wait(rpcFutures).timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              fail(
+                'Cycle $cycle: queued RPCs did not settle after shutdown '
+                'during pending dispatch',
+              );
+            },
+          );
+
+          expect(
+            settled.length,
+            equals(callCountPerCycle),
+            reason: 'Cycle $cycle should settle all queued RPCs',
+          );
+        }
+      },
+      udsTimeout: const Timeout(Duration(seconds: 120)),
     );
   });
 }

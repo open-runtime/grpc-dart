@@ -55,6 +55,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.shutdown());
 
         final client = EchoClient(channel);
 
@@ -97,6 +98,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel1.shutdown());
       final client1 = EchoClient(channel1);
       expect(await client1.echo(1), equals(1));
 
@@ -117,6 +119,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel2.shutdown());
       final client2 = EchoClient(channel2);
       expect(await client2.echo(2), equals(2));
 
@@ -167,6 +170,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       // Request a long server stream (1000 items, ~10ms each = ~10 seconds).
@@ -239,6 +243,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       // Create a 100KB payload filled with a repeating byte pattern.
@@ -268,6 +273,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       // Request 5 chunks of 20KB each (100KB total).
@@ -317,6 +323,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       final futures = List.generate(100, (i) => client.echo(i));
@@ -365,6 +372,9 @@ void main() {
           options: const NamedPipeChannelOptions(),
         ),
       );
+      for (final ch in channels) {
+        addTearDown(() => ch.shutdown());
+      }
       final clients = channels.map(EchoClient.new).toList();
 
       // Fire one RPC per client concurrently.
@@ -403,6 +413,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       final stopwatch = Stopwatch()..start();
@@ -442,6 +453,9 @@ void main() {
           options: const NamedPipeChannelOptions(),
         ),
       );
+      for (final ch in channels) {
+        addTearDown(() => ch.shutdown());
+      }
       final clients = channels.map(EchoClient.new).toList();
 
       // Fire 20 concurrent RPCs per client (100 total).
@@ -568,6 +582,7 @@ void main() {
         fakePipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       // Attempting an RPC should fail because the pipe does not exist.
@@ -628,6 +643,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel1.shutdown());
       final client1 = EchoClient(channel1);
       expect(await client1.echo(99), equals(99));
       await channel1.shutdown();
@@ -643,6 +659,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel2.shutdown());
       final client2 = EchoClient(channel2);
 
       try {
@@ -707,6 +724,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       expect(await client.echo(42), equals(42));
@@ -734,6 +752,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       expect(await client.echo(42), equals(42));
@@ -761,6 +780,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
       // Ensure at least one RPC to establish the connection.
@@ -798,6 +818,9 @@ void main() {
           options: const NamedPipeChannelOptions(),
         ),
       );
+      for (final ch in channels) {
+        addTearDown(() => ch.shutdown());
+      }
       final clients = channels.map(EchoClient.new).toList();
 
       // Fire RPCs from all channels in parallel.
@@ -829,11 +852,13 @@ void main() {
       // First server lifecycle.
       final server1 = NamedPipeServer.create(services: [EchoService()]);
       await server1.serve(pipeName: pipeName);
+      addTearDown(() => server1.shutdown());
 
       final channel1 = NamedPipeClientChannel(
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel1.shutdown());
       final client1 = EchoClient(channel1);
       expect(await client1.echo(42), equals(42));
 

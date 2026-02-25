@@ -183,6 +183,8 @@ class TestServerStream extends ServerTransportStream {
   @override
   final StreamSink<StreamMessage> outgoingMessages;
 
+  void Function(int)? _onTerminated;
+
   TestServerStream(this.incomingMessages, this.outgoingMessages);
 
   @override
@@ -190,6 +192,7 @@ class TestServerStream extends ServerTransportStream {
 
   @override
   void terminate() {
+    _onTerminated?.call(0);
     try {
       outgoingMessages.addError('TERMINATED');
       outgoingMessages.close();
@@ -199,7 +202,9 @@ class TestServerStream extends ServerTransportStream {
   }
 
   @override
-  set onTerminated(void Function(int x) value) {}
+  set onTerminated(void Function(int x) value) {
+    _onTerminated = value;
+  }
 
   @override
   bool get canPush => true;

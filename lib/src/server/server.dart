@@ -21,6 +21,7 @@ import 'package:meta/meta.dart';
 
 import '../shared/codec_registry.dart';
 import '../shared/io_bits/io_bits.dart' as io_bits;
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/security.dart';
 import 'handler.dart';
 import 'interceptor.dart';
@@ -142,13 +143,32 @@ class ConnectionServer {
         if (error is Error) {
           Zone.current.handleUncaughtError(error, stackTrace);
         }
+        logGrpcEvent(
+          '[gRPC] Connection stream error: $error',
+          component: 'ConnectionServer',
+          event: 'connection_stream_error',
+          context: 'serveConnection',
+          error: error,
+        );
+        // Clean up connection state on stream error — mirrors onDone
+        // cleanup. Without this, the connection and its handlers leak
+        // permanently in the _connections list and handlers map.
+        final connectionHandlers = handlers[connection] ?? [];
+        for (final handler in connectionHandlers) {
+          handler.cancel();
+        }
+        _connections.remove(connection);
+        handlers.remove(connection);
+        onDataReceivedController.close();
       },
       onDone: () async {
         // TODO(sigurdm): This is not correct behavior in the presence of
         // half-closed tcp streams.
         // Half-closed  streams seems to not be fully supported by package:http2.
         // https://github.com/dart-lang/http2/issues/42
-        for (var handler in handlers[connection]!) {
+        // Snapshot avoids races with onCanceled list removals.
+        final connectionHandlers = List.of(handlers[connection] ?? []);
+        for (var handler in connectionHandlers) {
           handler.cancel();
         }
         _connections.remove(connection);
@@ -168,6 +188,18 @@ class ConnectionServer {
   /// Cancelling handlers first terminates in-flight streams so
   /// `connection.finish()` can complete.
   ///
+  /// A yield (`Future.delayed(Duration.zero)`) is inserted between
+  /// cancelling handlers and finishing connections. This gives the
+  /// http2 package's `ConnectionMessageQueueOut` at least one event-loop
+  /// turn to flush the RST_STREAM frames enqueued by `handler.cancel()`
+  /// before `connection.finish()` enqueues GOAWAY and potentially closes
+  /// the socket. Without this yield, RST_STREAM frames may be silently
+  /// dropped because `_frameWriter.close()` can fire before the outgoing
+  /// queue has drained. GOAWAY alone does NOT terminate
+  /// already-acknowledged streams on the client side (it only terminates
+  /// streams with IDs > `lastStreamId`), so the RST_STREAM frames are
+  /// the only reliable per-stream termination signal.
+  ///
   /// Snapshots [_connections] before iterating because finishing a
   /// connection triggers the `onDone` callback in [serveConnection],
   /// which removes the connection from the list.
@@ -182,7 +214,12 @@ class ConnectionServer {
         }
       }
     }
-    await Future.wait([for (final connection in activeConnections) connection.finish()]);
+
+    // Yield to let the http2 outgoing queue flush RST_STREAM frames
+    // before connection.finish() enqueues GOAWAY and closes the socket.
+    await Future.delayed(Duration.zero);
+
+    await Future.wait([for (final connection in activeConnections) connection.finish().catchError((_) {})]);
   }
 
   @visibleForTesting
@@ -323,6 +360,13 @@ class Server extends ConnectionServer {
         if (error is Error) {
           Zone.current.handleUncaughtError(error, stackTrace);
         }
+        logGrpcEvent(
+          '[gRPC] Server socket error: $error',
+          component: 'Server',
+          event: 'server_socket_error',
+          context: 'serve',
+          error: error,
+        );
       },
     );
   }

@@ -250,6 +250,7 @@ class ClientCall<Q, R> implements Response {
       return;
     }
     _requestTimeline?.instant('Request sent', arguments: {'metadata': metadata});
+    final outSink = stream.outgoingMessages;
     _requestSubscription = _requests
         .map((data) {
           _requestTimeline?.instant('Data sent', arguments: {'data': data.toString()});
@@ -258,9 +259,24 @@ class ClientCall<Q, R> implements Response {
         })
         .handleError(_onRequestError)
         .listen(
-          stream.outgoingMessages.add,
-          onError: stream.outgoingMessages.addError,
-          onDone: stream.outgoingMessages.close,
+          // Guard against "Cannot add event after closing": the
+          // transport stream may be terminated (RST_STREAM, connection
+          // teardown) while serialized request data is still queued.
+          (data) {
+            try {
+              outSink.add(data);
+            } catch (_) {}
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            try {
+              outSink.addError(error, stackTrace);
+            } catch (_) {}
+          },
+          onDone: () {
+            try {
+              outSink.close();
+            } catch (_) {}
+          },
           cancelOnError: true,
         );
     _stream = stream;

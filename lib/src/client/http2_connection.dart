@@ -21,6 +21,7 @@ import 'dart:typed_data';
 import 'package:http2/transport.dart';
 
 import '../shared/codec.dart';
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/status.dart';
 import '../shared/timeout.dart';
 import 'call.dart';
@@ -166,10 +167,26 @@ class Http2ClientConnection implements connection.ClientConnection {
             _pendingCalls.clear();
             for (final call in pendingCalls) {
               // If the connection state changed during a yield (e.g.,
-              // shutdown or abandonment), stop dispatching. Remaining
-              // calls have their own timeout timers that will fire
-              // GrpcError.deadlineExceeded.
-              if (_state != ConnectionState.ready) break;
+              // shutdown or abandonment), handle remaining calls.
+              // We cannot just `break` here because _pendingCalls was
+              // already cleared — remaining calls in this local
+              // snapshot would become orphaned futures that never
+              // complete.
+              if (_state != ConnectionState.ready) {
+                if (_state == ConnectionState.shutdown) {
+                  _shutdownCall(call);
+                } else {
+                  // Re-queue for the next connection attempt. We
+                  // batch all remaining calls here rather than
+                  // calling dispatchCall() per-call, because
+                  // dispatchCall() in idle state triggers an
+                  // immediate _connect() with zero backoff. The
+                  // post-loop reconnection below applies proper
+                  // exponential backoff.
+                  _pendingCalls.add(call);
+                }
+                continue;
+              }
               dispatchCall(call);
               // Yield to the event loop so the HTTP/2 transport can
               // process incoming frames (WINDOW_UPDATE, SETTINGS ACK)
@@ -177,6 +194,16 @@ class Http2ClientConnection implements connection.ClientConnection {
               // of pending calls exhausts the flow-control window on
               // transports without TCP_NODELAY (UDS, named pipes).
               await Future.delayed(Duration.zero);
+            }
+            // If calls were re-queued because the connection changed
+            // state mid-iteration (e.g., GOAWAY during dispatch),
+            // trigger reconnection with exponential backoff. This
+            // prevents tight-loop reconnection when a server
+            // repeatedly accepts and immediately GOAWAY's.
+            if (_hasPendingCalls() && _state != ConnectionState.shutdown && _state != ConnectionState.connecting) {
+              _setState(ConnectionState.transientFailure);
+              _currentReconnectDelay = options.backoffStrategy(_currentReconnectDelay);
+              _timer = Timer(_currentReconnectDelay!, _handleReconnect);
             }
           }
         })
@@ -191,7 +218,15 @@ class Http2ClientConnection implements connection.ClientConnection {
     final isHealthy = _transportConnection!.isOpen;
     final shouldRefresh = _connectionLifeTimer.elapsed > options.connectionTimeout;
     if (shouldRefresh) {
-      _transportConnection!.finish();
+      _transportConnection!.finish().catchError((e) {
+        logGrpcEvent(
+          '[gRPC] Failed to finish transport during refresh: $e',
+          component: 'Http2ClientConnection',
+          event: 'finish_transport',
+          context: '_refreshConnectionIfUnhealthy',
+          error: e,
+        );
+      });
       // Note: onTransportTermination is called by _disconnect() inside
       // _abandonConnection(), so we don't call it here to avoid double-call.
     }
@@ -302,7 +337,15 @@ class Http2ClientConnection implements connection.ClientConnection {
   void _handleIdleTimeout() {
     if (_timer == null || _state != ConnectionState.ready) return;
     _cancelTimer();
-    _transportConnection?.finish().catchError((_) {}); // TODO(jakobr): Log error.
+    _transportConnection?.finish().catchError((e) {
+      logGrpcEvent(
+        '[gRPC] Failed to finish transport during idle timeout: $e',
+        component: 'Http2ClientConnection',
+        event: 'finish_transport',
+        context: '_handleIdleTimeout',
+        error: e,
+      );
+    });
     // Note: onTransportTermination is called by _disconnect() below,
     // so we don't call it here to avoid double-call.
     _disconnect();
@@ -560,7 +603,7 @@ class SocketTransportConnector implements ClientTransportConnector {
     if (response.startsWith('HTTP/1.1 200')) {
       completer.complete();
     } else {
-      throw TransportException('Error establishing proxy connection: $response');
+      completer.completeError(TransportException('Error establishing proxy connection: $response'));
     }
   }
 }

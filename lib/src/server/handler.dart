@@ -256,6 +256,10 @@ class ServerHandler extends ServiceCall {
         }
       }
     } catch (error) {
+      // Preserve the original GrpcError (and its status code) if the
+      // interceptor deliberately threw one. Only wrap non-GrpcError
+      // exceptions as INTERNAL.
+      if (error is GrpcError) return error;
       final grpcError = GrpcError.internal(error.toString());
       return grpcError;
     }
@@ -303,6 +307,10 @@ class ServerHandler extends ServiceCall {
     final error = GrpcError.deadlineExceeded('Deadline exceeded');
     _sendError(error);
     _addErrorAndClose(_requests, error, null, '_onTimedOut', 'deliver_timeout_error');
+    // Clean up the incoming subscription and terminate the HTTP/2 stream
+    // to avoid leaking server-side resources after deadline expiry.
+    _incomingSubscription?.cancel();
+    _terminateStream();
   }
 
   // -- Active state, incoming data --
@@ -497,6 +505,9 @@ class ServerHandler extends ServiceCall {
   void _onDoneError() {
     _sendError(GrpcError.unavailable('Request stream closed unexpectedly'));
     _onDone();
+    // Terminate the HTTP/2 stream to avoid resource leaks when the
+    // request stream closes unexpectedly (e.g. client disconnect).
+    _terminateStream();
   }
 
   void _onDoneExpected() {

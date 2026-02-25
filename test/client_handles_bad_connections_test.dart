@@ -64,7 +64,13 @@ class TestService extends grpc.Service {
 
   Stream<int> stream(grpc.ServiceCall call, Future request) async* {
     yield 1;
+    // Small delays keep the stream alive across event-loop yields in the
+    // client's pending-call dispatch loop. Without these, the stream
+    // completes during a single yield and never contributes to the
+    // concurrent stream count.
+    await Future.delayed(const Duration(milliseconds: 20));
     yield 2;
+    await Future.delayed(const Duration(milliseconds: 20));
     yield 3;
   }
 }
@@ -91,9 +97,11 @@ Future<void> main() async {
       testTcpAndUds('client reconnects after the connection gets old', (
         address,
       ) async {
+        const connectionTimeout = Duration(milliseconds: 100);
         // client reconnect after a short delay.
         final server = grpc.Server.create(services: [TestService()]);
         await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
 
         final channel = FixedConnectionClientChannel(
           Http2ClientConnection(
@@ -102,15 +110,17 @@ Future<void> main() async {
             grpc.ChannelOptions(
               idleTimeout: Duration(minutes: 1),
               // Short delay to test that it will time out.
-              connectionTimeout: Duration(milliseconds: 100),
+              connectionTimeout: connectionTimeout,
               credentials: grpc.ChannelCredentials.insecure(),
             ),
           ),
         );
+        addTearDown(() => channel.shutdown());
 
         final testClient = TestClient(channel);
         expect(await testClient.stream(1).toList(), [1, 2, 3]);
-        await Future.delayed(Duration(milliseconds: 200));
+        // Config-derived wait: ensure connection has aged out.
+        await Future.delayed(connectionTimeout * 2);
         expect(await testClient.stream(1).toList(), [1, 2, 3]);
         expect(
           channel.states.where((x) => x == grpc.ConnectionState.ready).length,
@@ -130,6 +140,7 @@ Future<void> main() async {
           port: 0,
           http2ServerSettings: ServerSettings(concurrentStreamLimit: 2),
         );
+        addTearDown(() => server.shutdown());
 
         final channel = FixedConnectionClientChannel(
           Http2ClientConnection(
@@ -140,6 +151,7 @@ Future<void> main() async {
             ),
           ),
         );
+        addTearDown(() => channel.shutdown());
         final states = <grpc.ConnectionState>[];
         channel.onConnectionStateChanged.listen((state) {
           states.add(state);
