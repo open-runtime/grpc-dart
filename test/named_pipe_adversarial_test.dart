@@ -40,6 +40,10 @@ import 'package:test/test.dart';
 import 'common.dart';
 import 'src/echo_service.dart';
 
+Future<Object?> _settleRpc(Future<Object?> future) {
+  return future.then<Object?>((value) => value, onError: (Object e) => e);
+}
+
 /// Connector that returns a pre-built transport (used to verify post-shutdown
 /// transport is not usable).
 class _SingleTransportConnector implements ClientTransportConnector {
@@ -416,14 +420,17 @@ void main() {
       final client = EchoClient(channel);
 
       // Fire the RPC (triggers lazy connect) and immediately shut down.
-      final rpcFuture = client.echo(42).then((v) => v, onError: (_) => -1);
+      final rpcFuture = _settleRpc(client.echo(42));
 
       // Race: shut down while the RPC is in-flight.
       await channel.shutdown();
 
       // The RPC either succeeded or failed gracefully.
       final result = await rpcFuture;
-      expect(result, anyOf(equals(42), equals(-1)));
+      expect(
+        result,
+        anyOf(equals(42), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+      );
 
       await server.shutdown();
     });
@@ -467,9 +474,13 @@ void main() {
         // Collect responses (with error tolerance).
         final received = <int>[];
         final streamDone = Completer<void>();
+        final unexpectedStreamErrors = <Object>[];
         responseStream.listen(
           received.add,
-          onError: (_) {
+          onError: (Object error) {
+            if (error is! GrpcError) {
+              unexpectedStreamErrors.add(error);
+            }
             if (!streamDone.isCompleted) streamDone.complete();
           },
           onDone: () {
@@ -494,6 +505,11 @@ void main() {
           onTimeout: () {
             fail('bidi stream did not terminate after server shutdown');
           },
+        );
+        expect(
+          unexpectedStreamErrors,
+          isEmpty,
+          reason: 'Unexpected non-gRPC stream errors during shutdown race',
         );
 
         // Close the client side.
@@ -529,9 +545,9 @@ void main() {
         final inputController = StreamController<int>();
 
         // Start the client-stream RPC (returns when server sends response).
-        final resultFuture = client
-            .clientStream(inputController.stream)
-            .then((v) => v, onError: (_) => -1);
+        final resultFuture = _settleRpc(
+          client.clientStream(inputController.stream),
+        );
 
         // Send a few values.
         for (var i = 1; i <= 5; i++) {
@@ -556,7 +572,10 @@ void main() {
 
         // If server died, we get -1 (error). If it somehow completed, sum
         // of 1..5 = 15. Either is acceptable.
-        expect(result, anyOf(equals(15), equals(-1)));
+        expect(
+          result,
+          anyOf(equals(15), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+        );
 
         await channel.shutdown();
       },
@@ -607,10 +626,10 @@ void main() {
 
       // Fire 100 RPCs spread across all 3 clients, without awaiting.
       // Values are i & 0xFF to stay within single-byte echo encoding.
-      final rpcFutures = <Future<void>>[];
+      final rpcFutures = <Future<Object?>>[];
       for (var i = 0; i < 100; i++) {
         final client = clients[i % 3];
-        rpcFutures.add(client.echo(i & 0xFF).then((_) {}, onError: (_) {}));
+        rpcFutures.add(_settleRpc(client.echo(i & 0xFF)));
       }
 
       // After a tiny delay (to let some RPCs be mid-processing), shut down.
@@ -618,12 +637,20 @@ void main() {
       await server.shutdown();
 
       // All RPCs must settle.
-      await Future.wait(rpcFutures).timeout(
+      final settled = await Future.wait(rpcFutures).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
           fail('RPCs hung after server.shutdown()');
         },
       );
+      for (final result in settled) {
+        expect(
+          result,
+          anyOf(isA<int>(), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+          reason:
+              'Unexpected named-pipe concurrent-shutdown settlement: $result',
+        );
+      }
 
       for (final ch in channels) {
         await ch.shutdown().timeout(
@@ -665,17 +692,23 @@ void main() {
         final client1 = EchoClient(channel1);
 
         // Request 500 items (~5 seconds of streaming).
-        final streamFuture = client1
-            .serverStream(500)
-            .toList()
-            .then((r) => r, onError: (_) => <int>[]);
+        final streamFuture = _settleRpc(client1.serverStream(500).toList());
 
         // Let some items flow.
         await Future.delayed(const Duration(milliseconds: 50));
 
         // Kill the client channel while the server is actively streaming.
         await channel1.shutdown();
-        await streamFuture; // Must settle, not hang.
+        final streamResult = await streamFuture; // Must settle, not hang.
+        expect(
+          streamResult,
+          anyOf(
+            isA<List<int>>(),
+            isA<GrpcError>(),
+            isA<Exception>(),
+            isA<Error>(),
+          ),
+        );
 
         // Client 2: Verify the server is still alive after the rude
         // disconnection.
@@ -851,10 +884,7 @@ void main() {
           final controller = StreamController<int>();
           controllers.add(controller);
 
-          final responseFuture = client
-              .bidiStream(controller.stream)
-              .toList()
-              .then((r) => r, onError: (_) => <int>[]);
+          final responseFuture = client.bidiStream(controller.stream).toList();
           streamFutures.add(responseFuture);
         }
 

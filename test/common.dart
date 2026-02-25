@@ -53,6 +53,62 @@ Stream<T> pacedStream<T>(Iterable<T> values, {int yieldEvery = 10}) async* {
 }
 
 // =============================================================================
+// Shared test helpers
+// =============================================================================
+
+/// Deterministic wait for at least [minCount] handlers to be registered on
+/// [server].
+///
+/// Replaces arbitrary `Future.delayed(milliseconds: N)` calls with a bounded
+/// poll loop that checks the concrete `server.handlers` map. This ensures
+/// tests advance as soon as the server has accepted and begun processing RPCs,
+/// rather than guessing an appropriate sleep duration.
+///
+/// Throws a [TestFailure] if the handler count does not reach [minCount]
+/// within [timeout].
+Future<void> waitForHandlers(
+  ConnectionServer server, {
+  int minCount = 1,
+  Duration timeout = const Duration(seconds: 5),
+  String reason = 'Handlers must be registered',
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final handlerCount = server.handlers.values.fold<int>(
+      0,
+      (sum, list) => sum + list.length,
+    );
+    if (handlerCount >= minCount) return;
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  fail(reason);
+}
+
+/// Wraps an RPC future so errors become return values instead of throwing.
+///
+/// This allows tests to inspect errors after `Future.wait` without the first
+/// error aborting the wait. Use with [expectExpectedRpcSettlement] to verify
+/// each result is a known success/error type.
+Future<Object?> settleRpc(Future<Object?> future) {
+  return future.then<Object?>((value) => value, onError: (Object e) => e);
+}
+
+/// Asserts that an RPC result from [settleRpc] is one of the expected types.
+void expectExpectedRpcSettlement(Object? result, {required String reason}) {
+  expect(
+    result,
+    anyOf(
+      isA<int>(),
+      isA<List<int>>(),
+      isA<GrpcError>(),
+      isA<Exception>(),
+      isA<Error>(),
+    ),
+    reason: reason,
+  );
+}
+
+// =============================================================================
 // Shared TestClientChannel (used by all end-to-end test files)
 // =============================================================================
 

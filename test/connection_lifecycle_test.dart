@@ -214,14 +214,14 @@ void main() {
         final streamFuture = client
             .serverStream(100)
             .toList()
-            .then((v) => v, onError: (_) => <int>[]);
+            .then<Object?>((v) => v, onError: (Object e) => e);
 
         await Future<void>.delayed(const Duration(milliseconds: 30));
         await channel.shutdown();
         await channel.terminate();
 
         // If terminate() incorrectly no-ops after shutdown(), this can hang.
-        await streamFuture.timeout(
+        final streamResult = await streamFuture.timeout(
           const Duration(seconds: 5),
           onTimeout: () {
             fail(
@@ -229,6 +229,17 @@ void main() {
               'escalation',
             );
           },
+        );
+        expect(
+          streamResult,
+          anyOf(
+            isA<List<int>>(),
+            isA<GrpcError>(),
+            isA<Exception>(),
+            isA<Error>(),
+          ),
+          reason:
+              'Active stream must settle to data or explicit transport error',
         );
 
         // Repeated terminal operations should remain safe no-ops.
@@ -314,16 +325,16 @@ void main() {
           .toList()
           .then((results) => results, onError: (e) => <int>[]);
 
-      // Let some data flow
-      await Future.delayed(const Duration(milliseconds: 50));
+      // Wait for handler registration (deterministic signal).
+      await waitForHandlers(
+        server,
+        reason: 'Handler must be active before shutdown test',
+      );
 
       // Shutdown server while stream is active
       await server.shutdown();
 
       // Stream should either complete partially or error gracefully.
-      // The stream requested 100 items at 10ms/item = ~1 second total.
-      // With a 50ms head start before shutdown, some items should have
-      // arrived.
       final results = await streamFuture;
       expect(
         results.length,
@@ -368,8 +379,11 @@ void main() {
           .toList()
           .then((results) => results, onError: (e) => <int>[]);
 
-      // Let some data flow
-      await Future.delayed(const Duration(milliseconds: 30));
+      // Wait for handler registration (deterministic signal).
+      await waitForHandlers(
+        server,
+        reason: 'Handler must be active before double-terminate test',
+      );
 
       // Shutdown while stream is active. server.shutdown()
       // calls cancel() on all active handlers, which calls

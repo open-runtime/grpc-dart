@@ -190,8 +190,16 @@ class TestServerStream extends ServerTransportStream {
   @override
   int get id => -1;
 
+  /// Whether [terminate] has been called at least once.
+  bool wasTerminated = false;
+
+  /// How many times [terminate] has been called.
+  int terminateCount = 0;
+
   @override
   void terminate() {
+    wasTerminated = true;
+    terminateCount++;
     _onTerminated?.call(0);
     try {
       outgoingMessages.addError('TERMINATED');
@@ -204,6 +212,16 @@ class TestServerStream extends ServerTransportStream {
   @override
   set onTerminated(void Function(int x) value) {
     _onTerminated = value;
+  }
+
+  /// Retrieve the registered onTerminated callback (if any).
+  void Function(int)? get onTerminatedCallback => _onTerminated;
+
+  /// Simulate an RST_STREAM from the client by invoking the
+  /// registered onTerminated callback with the given [errorCode].
+  /// Does nothing if no callback has been registered.
+  void simulateRstStream([int errorCode = 0]) {
+    _onTerminated?.call(errorCode);
   }
 
   @override

@@ -517,7 +517,7 @@ void main() {
           // concurrently.
           final rpcFuture = client
               .echo(i % 256)
-              .then((v) => v, onError: (_) => null);
+              .then<Object?>((v) => v, onError: (Object e) => e);
           final shutdownFuture = channel.shutdown();
 
           // Both must settle within timeout — no hang. Both run concurrently
@@ -535,8 +535,13 @@ void main() {
           // RPC either succeeded (connect won) or failed (shutdown won).
           expect(
             rpcResult,
-            anyOf(equals(i % 256), isNull),
-            reason: 'iteration $i: RPC must return value or null (error)',
+            anyOf(
+              equals(i % 256),
+              isA<GrpcError>(),
+              isA<Exception>(),
+              isA<Error>(),
+            ),
+            reason: 'iteration $i: RPC must return value or explicit error',
           );
 
           // After shutdown, channel must not be usable — no successful RPCs.

@@ -620,7 +620,7 @@ void main() {
             cancelOnError: false,
           )
           .asFuture()
-          .then((_) => collected, onError: (_) => collected);
+          .then<Object?>((_) => collected, onError: (Object e) => e);
 
       // Send 20 items with small delays
       for (var i = 0; i < 20; i++) {
@@ -636,7 +636,20 @@ void main() {
 
       // Stream must terminate (not hang) within 10 seconds
       log('waiting for stream to terminate...');
-      final results = await streamDone.timeout(const Duration(seconds: 10));
+      final streamResult = await streamDone.timeout(
+        const Duration(seconds: 10),
+      );
+      expect(
+        streamResult,
+        anyOf(
+          isA<List<int>>(),
+          isA<GrpcError>(),
+          isA<Exception>(),
+          isA<Error>(),
+        ),
+        reason: 'bidi shutdown stream must settle to data or explicit error',
+      );
+      final results = streamResult is List<int> ? streamResult : collected;
       log('stream done, received ${results.length} items total');
 
       // We should have received some (possibly all) doubled values.
@@ -699,15 +712,31 @@ void main() {
       final streamFuture = client
           .serverStream(100)
           .toList()
-          .then((results) => results, onError: (e) => <int>[]);
+          .then<Object?>((results) => results, onError: (Object e) => e);
 
-      // Wait a bit then shutdown server
-      await Future.delayed(const Duration(milliseconds: 50));
+      // Wait for the handler to be registered (deterministic signal).
+      await waitForHandlers(
+        server,
+        reason: 'Handler must be active before graceful shutdown test',
+      );
       await server.shutdown();
 
       // Stream should either complete partially or have been caught above
-      final results = await streamFuture;
-      expect(results.length, lessThanOrEqualTo(100));
+      final streamResult = await streamFuture;
+      expect(
+        streamResult,
+        anyOf(
+          isA<List<int>>(),
+          isA<GrpcError>(),
+          isA<Exception>(),
+          isA<Error>(),
+        ),
+        reason:
+            'graceful shutdown stream must settle to data or explicit error',
+      );
+      if (streamResult is List<int>) {
+        expect(streamResult.length, lessThanOrEqualTo(100));
+      }
 
       await channel.shutdown();
     });
@@ -734,11 +763,14 @@ void main() {
         (_) => client
             .serverStream(100)
             .toList()
-            .then((r) => r, onError: (e) => <int>[]),
+            .then<Object?>((r) => r, onError: (Object e) => e),
       );
 
-      // Let some responses flow
-      await Future.delayed(const Duration(milliseconds: 50));
+      // Wait for handlers to be registered (deterministic signal).
+      await waitForHandlers(
+        server,
+        reason: 'Handlers must be active before multi-stream shutdown test',
+      );
 
       // Shutdown should not hang even with 5 active streams
       await server.shutdown();
@@ -746,7 +778,19 @@ void main() {
       // All streams should resolve (partially or with error)
       final results = await Future.wait(streams);
       for (final result in results) {
-        expect(result.length, lessThanOrEqualTo(100));
+        expect(
+          result,
+          anyOf(
+            isA<List<int>>(),
+            isA<GrpcError>(),
+            isA<Exception>(),
+            isA<Error>(),
+          ),
+          reason: 'multi-stream shutdown must settle to data or explicit error',
+        );
+        if (result is List<int>) {
+          expect(result.length, lessThanOrEqualTo(100));
+        }
       }
 
       await channel.shutdown();
@@ -772,13 +816,27 @@ void main() {
       final streamFuture = client
           .serverStream(100)
           .toList()
-          .then((r) => r, onError: (e) => <int>[]);
+          .then<Object?>((r) => r, onError: (Object e) => e);
 
       // Client shuts down immediately
       await channel.shutdown();
 
-      final results = await streamFuture;
-      expect(results.length, lessThanOrEqualTo(100));
+      final streamResult = await streamFuture;
+      expect(
+        streamResult,
+        anyOf(
+          isA<List<int>>(),
+          isA<GrpcError>(),
+          isA<Exception>(),
+          isA<Error>(),
+        ),
+        reason:
+            'client shutdown stream must settle to data or explicit transport '
+            'error',
+      );
+      if (streamResult is List<int>) {
+        expect(streamResult.length, lessThanOrEqualTo(100));
+      }
 
       await server.shutdown();
     });

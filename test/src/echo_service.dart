@@ -222,7 +222,7 @@ class EchoService extends Service {
     final count = await request;
     for (var i = 1; i <= count; i++) {
       yield i;
-      await Future.delayed(const Duration(milliseconds: 10));
+      await Future.delayed(const Duration(milliseconds: 1));
     }
   }
 

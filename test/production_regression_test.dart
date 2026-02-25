@@ -30,6 +30,15 @@ import 'src/echo_service.dart';
 ///
 /// This file focuses on regressions that can cause hangs, leaked handlers,
 /// or unhandled transport errors under shutdown and keepalive pressure.
+Future<void> _safeShutdown(ClientChannel channel) async {
+  try {
+    await channel.shutdown();
+  } catch (error) {
+    // Expected when a channel was already hard-terminated.
+    if (error is! GrpcError && error is! StateError) rethrow;
+  }
+}
+
 void main() {
   group('Server lifecycle regressions', () {
     test(
@@ -51,10 +60,18 @@ void main() {
 
         final firstItemSeen = Completer<void>();
         final subs = <StreamSubscription<int>>[];
+        final unexpectedErrors = <Object>[];
         for (var i = 0; i < 5; i++) {
-          final sub = client.serverStream(255).listen((_) {
-            if (!firstItemSeen.isCompleted) firstItemSeen.complete();
-          }, onError: (_) {});
+          final sub = client
+              .serverStream(255)
+              .listen(
+                (_) {
+                  if (!firstItemSeen.isCompleted) firstItemSeen.complete();
+                },
+                onError: (Object error) {
+                  if (error is! GrpcError) unexpectedErrors.add(error);
+                },
+              );
           subs.add(sub);
         }
 
@@ -75,6 +92,11 @@ void main() {
         for (final sub in subs) {
           await sub.cancel();
         }
+        expect(
+          unexpectedErrors,
+          isEmpty,
+          reason: 'Expected only GrpcError stream termination signals',
+        );
 
         expect(
           server.handlers.values.every((list) => list.isEmpty),
@@ -102,7 +124,7 @@ void main() {
           credentials: ChannelCredentials.insecure(),
         ),
       );
-      addTearDown(() => brokenChannel.shutdown());
+      addTearDown(() => _safeShutdown(brokenChannel));
       final brokenClient = EchoClient(brokenChannel);
       expect(await brokenClient.echo(1), equals(1));
       await brokenChannel.terminate();
@@ -137,9 +159,15 @@ void main() {
         final activeClient = EchoClient(activeChannel);
         expect(await activeClient.echo(1), equals(1));
 
+        final unexpectedErrors = <Object>[];
         final streamSub = activeClient
             .serverStream(100)
-            .listen((_) {}, onError: (_) {});
+            .listen(
+              (_) {},
+              onError: (Object error) {
+                if (error is! GrpcError) unexpectedErrors.add(error);
+              },
+            );
 
         final brokenChannel = ClientChannel(
           'localhost',
@@ -148,7 +176,7 @@ void main() {
             credentials: ChannelCredentials.insecure(),
           ),
         );
-        addTearDown(() => brokenChannel.shutdown());
+        addTearDown(() => _safeShutdown(brokenChannel));
         final brokenClient = EchoClient(brokenChannel);
         expect(await brokenClient.echo(2), equals(2));
         await brokenChannel.terminate();
@@ -161,6 +189,11 @@ void main() {
         );
 
         await streamSub.cancel();
+        expect(
+          unexpectedErrors,
+          isEmpty,
+          reason: 'Expected only GrpcError stream termination signals',
+        );
       },
     );
   });

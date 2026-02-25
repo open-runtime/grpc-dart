@@ -30,29 +30,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc/src/client/channel.dart' hide ClientChannel;
-import 'package:grpc/src/client/connection.dart';
 import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
 import 'src/echo_service.dart';
-
-// =============================================================================
-// Test Channel Wrapper
-// =============================================================================
-
-class TestClientChannel extends ClientChannelBase {
-  final Http2ClientConnection clientConnection;
-  final List<ConnectionState> states = [];
-
-  TestClientChannel(this.clientConnection) {
-    onConnectionStateChanged.listen((state) => states.add(state));
-  }
-
-  @override
-  ClientConnection createConnection() => clientConnection;
-}
 
 // =============================================================================
 // Helpers
