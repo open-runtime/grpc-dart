@@ -148,8 +148,15 @@ class Http2ClientConnection implements connection.ClientConnection {
             keepAliveManager = ClientKeepAlive(
               options: options.keepAlive,
               ping: () {
-                if (transport.isOpen) {
-                  transport.ping();
+                try {
+                  if (transport.isOpen) {
+                    transport.ping();
+                  }
+                } catch (e) {
+                  // ping() can throw if the transport is being
+                  // terminated (e.g., server sent GOAWAY). Safe to
+                  // ignore — transport.done will trigger
+                  // _abandonConnection().
                 }
               },
               onPingTimeout: () {
@@ -205,6 +212,18 @@ class Http2ClientConnection implements connection.ClientConnection {
               // of pending calls exhausts the flow-control window on
               // transports without TCP_NODELAY (UDS, named pipes).
               await Future.delayed(Duration.zero);
+              // Reset the connection life timer after each yield so
+              // the pending-call drain loop doesn't trigger a
+              // timer-based connection refresh. On slow CI hardware,
+              // N calls × yield can exceed connectionTimeout, causing
+              // _refreshConnectionIfUnhealthy() to abandon this
+              // fresh connection mid-dispatch and socket.destroy()
+              // already-dispatched RPCs.
+              if (_state == ConnectionState.ready) {
+                _connectionLifeTimer
+                  ..reset()
+                  ..start();
+              }
             }
             // If calls were re-queued because the connection changed
             // state mid-iteration (e.g., GOAWAY during dispatch),

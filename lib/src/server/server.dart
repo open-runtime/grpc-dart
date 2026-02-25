@@ -237,7 +237,19 @@ class ConnectionServer {
     // before connection.finish() enqueues GOAWAY and closes the socket.
     await Future.delayed(Duration.zero);
 
-    await Future.wait([for (final connection in activeConnections) connection.finish().catchError((_) {})]);
+    // Graceful shutdown: finish() sends GOAWAY and waits for all HTTP/2
+    // streams to fully close (both sides). If a client hasn't sent
+    // END_STREAM on its request side, finish() blocks indefinitely.
+    // Standard gRPC shutdown pattern: try finish() with a grace period,
+    // then forcefully terminate() remaining connections.
+    await Future.wait([
+      for (final connection in activeConnections)
+        connection.finish().timeout(const Duration(seconds: 5)).catchError((_) {
+          try {
+            connection.terminate();
+          } catch (_) {}
+        }),
+    ]);
   }
 
   @visibleForTesting
