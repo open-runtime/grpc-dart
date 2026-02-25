@@ -152,7 +152,18 @@ class Http2ClientConnection implements connection.ClientConnection {
                   transport.ping();
                 }
               },
-              onPingTimeout: () => transport.finish(),
+              onPingTimeout: () {
+                transport.finish().catchError((e) {
+                  logGrpcEvent(
+                    '[gRPC] Failed to finish transport'
+                    ' on ping timeout: $e',
+                    component: 'Http2ClientConnection',
+                    event: 'finish_transport',
+                    context: 'onPingTimeout',
+                    error: e,
+                  );
+                });
+              },
             );
             _frameReceivedSubscription = transport.onFrameReceived.listen((_) => keepAliveManager?.onFrameReceived());
           }
@@ -218,15 +229,28 @@ class Http2ClientConnection implements connection.ClientConnection {
     final isHealthy = _transportConnection!.isOpen;
     final shouldRefresh = _connectionLifeTimer.elapsed > options.connectionTimeout;
     if (shouldRefresh) {
-      _transportConnection!.finish().catchError((e) {
+      try {
+        _transportConnection!.finish().catchError((e) {
+          logGrpcEvent(
+            '[gRPC] Failed to finish transport during refresh: $e',
+            component: 'Http2ClientConnection',
+            event: 'finish_transport',
+            context: '_refreshConnectionIfUnhealthy',
+            error: e,
+          );
+        });
+      } catch (e) {
+        // finish() may throw synchronously if the transport is
+        // already terminated. Safe to ignore — we are about to
+        // abandon this connection anyway.
         logGrpcEvent(
-          '[gRPC] Failed to finish transport during refresh: $e',
+          '[gRPC] finish() threw synchronously during refresh: $e',
           component: 'Http2ClientConnection',
-          event: 'finish_transport',
+          event: 'finish_transport_sync',
           context: '_refreshConnectionIfUnhealthy',
           error: e,
         );
-      });
+      }
       // Note: onTransportTermination is called by _disconnect() inside
       // _abandonConnection(), so we don't call it here to avoid double-call.
     }

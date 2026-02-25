@@ -40,10 +40,6 @@ import 'package:test/test.dart';
 import 'common.dart';
 import 'src/echo_service.dart';
 
-Future<Object?> _settleRpc(Future<Object?> future) {
-  return future.then<Object?>((value) => value, onError: (Object e) => e);
-}
-
 /// Connector that returns a pre-built transport (used to verify post-shutdown
 /// transport is not usable).
 class _SingleTransportConnector implements ClientTransportConnector {
@@ -420,7 +416,7 @@ void main() {
       final client = EchoClient(channel);
 
       // Fire the RPC (triggers lazy connect) and immediately shut down.
-      final rpcFuture = _settleRpc(client.echo(42));
+      final rpcFuture = settleRpc(client.echo(42));
 
       // Race: shut down while the RPC is in-flight.
       await channel.shutdown();
@@ -545,7 +541,7 @@ void main() {
         final inputController = StreamController<int>();
 
         // Start the client-stream RPC (returns when server sends response).
-        final resultFuture = _settleRpc(
+        final resultFuture = settleRpc(
           client.clientStream(inputController.stream),
         );
 
@@ -629,7 +625,7 @@ void main() {
       final rpcFutures = <Future<Object?>>[];
       for (var i = 0; i < 100; i++) {
         final client = clients[i % 3];
-        rpcFutures.add(_settleRpc(client.echo(i & 0xFF)));
+        rpcFutures.add(settleRpc(client.echo(i & 0xFF)));
       }
 
       // After a tiny delay (to let some RPCs be mid-processing), shut down.
@@ -692,7 +688,7 @@ void main() {
         final client1 = EchoClient(channel1);
 
         // Request 500 items (~5 seconds of streaming).
-        final streamFuture = _settleRpc(client1.serverStream(500).toList());
+        final streamFuture = settleRpc(client1.serverStream(500).toList());
 
         // Let some items flow.
         await Future.delayed(const Duration(milliseconds: 50));

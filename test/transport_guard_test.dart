@@ -88,7 +88,7 @@ void main() {
 
       // Close all controllers so streams can finish.
       for (final ctrl in controllers) {
-        await ctrl.close().catchError((_) {});
+        await ctrl.close().catchError((Object _) {});
       }
 
       final results = await Future.wait(futures).timeout(
@@ -101,6 +101,13 @@ void main() {
         equals(10),
         reason: 'All 10 bidi streams must settle',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
     });
 
     testTcpAndUds('server shutdown during large payload transfer', (
@@ -143,6 +150,13 @@ void main() {
         equals(5),
         reason: 'All 5 echoBytes RPCs must settle',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
     });
 
     testTcpAndUds('rapid terminate during bidiStreamBytes'
@@ -195,11 +209,11 @@ void main() {
 
       // Close controllers so streams finish.
       for (final ctrl in controllers) {
-        await ctrl.close().catchError((_) {});
+        await ctrl.close().catchError((Object _) {});
       }
 
       // Wait for all feed futures too.
-      await Future.wait(feedFutures).catchError((_) => <void>[]);
+      await Future.wait(feedFutures).catchError((Object _) => <void>[]);
 
       final results = await Future.wait(futures).timeout(
         const Duration(seconds: 15),
@@ -211,6 +225,13 @@ void main() {
         equals(10),
         reason: 'All 10 bidiStreamBytes streams must settle',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
     });
 
     testTcpAndUds('client sends data after server has initiated'
@@ -260,7 +281,7 @@ void main() {
 
       // Close controllers.
       for (final ctrl in controllers) {
-        await ctrl.close().catchError((_) {});
+        await ctrl.close().catchError((Object _) {});
       }
 
       final results = await Future.wait(futures).timeout(
@@ -275,6 +296,13 @@ void main() {
             'All 5 bidi streams must settle '
             'without crash',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
     });
   });
 
@@ -324,6 +352,13 @@ void main() {
             'All 20 server-streaming RPCs must '
             'settle without crashes',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
     });
 
     testTcpAndUds('channel.shutdown() while server is streaming'
@@ -371,6 +406,13 @@ void main() {
             'All 10 serverStreamBytes RPCs must '
             'settle without StateError',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
 
       await server.shutdown();
     });
@@ -414,6 +456,13 @@ void main() {
             'All 10 echoBytes RPCs must settle '
             '(success or error), no crashes',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
 
       await server.shutdown();
     });
@@ -478,6 +527,13 @@ void main() {
             'All 10 streams must settle without '
             'unhandled exceptions',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
     });
 
     testTcpAndUds('sustained throughput then abrupt terminate'
@@ -519,6 +575,13 @@ void main() {
         equals(50),
         reason: 'All 50 bidi streams must settle',
       );
+      for (final r in results) {
+        expectExpectedRpcSettlement(
+          r,
+          reason: 'Each RPC must settle as '
+              'success or known error type',
+        );
+      }
     });
 
     testTcpAndUds('repeated connect-transfer-terminate cycles'
@@ -560,7 +623,7 @@ void main() {
 
         // Close controllers.
         for (final ctrl in controllers) {
-          await ctrl.close().catchError((_) {});
+          await ctrl.close().catchError((Object _) {});
         }
 
         final results = await Future.wait(futures).timeout(
@@ -573,6 +636,13 @@ void main() {
           equals(5),
           reason: 'Cycle $cycle: all 5 streams must settle',
         );
+        for (final r in results) {
+          expectExpectedRpcSettlement(
+            r,
+            reason: 'Each RPC must settle as '
+                'success or known error type',
+          );
+        }
 
         // Clean shutdown of the channel.
         await channel.shutdown();

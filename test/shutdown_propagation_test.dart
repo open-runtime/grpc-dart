@@ -18,6 +18,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
@@ -51,6 +52,33 @@ List<int> encodeStreamBytesRequest(int chunkCount, int chunkSize) {
   bd.setUint32(0, chunkCount);
   bd.setUint32(4, chunkSize);
   return bd.buffer.asUint8List();
+}
+
+/// Waits until all handler lists are empty.
+Future<void> waitForNoHandlers(
+  ConnectionServer server, {
+  Duration timeout = const Duration(seconds: 5),
+  String reason = 'Handler map did not fully drain',
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (totalHandlerCount(server) == 0) return;
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  fail(reason);
+}
+
+/// Asserts that every settled RPC result is payload data or explicit GrpcError.
+void expectHardcoreSettlements(
+  List<Object?> results, {
+  required String reasonPrefix,
+}) {
+  for (var i = 0; i < results.length; i++) {
+    expectHardcoreRpcSettlement(
+      results[i],
+      reason: '$reasonPrefix (index=$i, type=${results[i].runtimeType})',
+    );
+  }
 }
 
 // ================================================================
@@ -116,6 +144,10 @@ void main() {
         onTimeout: () => fail('50 streams did not settle'),
       );
       expect(results, hasLength(50));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'shutdown with 50 active streams',
+      );
     });
 
     testTcpAndUds('shutdown with 3 clients x 20 streams = '
@@ -174,6 +206,10 @@ void main() {
         onTimeout: () => fail('60 streams did not settle'),
       );
       expect(results, hasLength(60));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'shutdown with 60 concurrent streams',
+      );
     });
 
     testTcpAndUds('shutdown propagates through mixed '
@@ -251,6 +287,10 @@ void main() {
         onTimeout: () => fail('Mixed payload RPCs did not settle'),
       );
       expect(results, hasLength(30));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'mixed payload shutdown propagation',
+      );
     });
 
     testTcpAndUds('shutdown during serverStreamBytes with '
@@ -317,6 +357,10 @@ void main() {
         onTimeout: () => fail('serverStreamBytes RPCs did not settle'),
       );
       expect(results, hasLength(10));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'serverStreamBytes sustained data flow',
+      );
     });
   });
 
@@ -342,13 +386,15 @@ void main() {
       await server2.serve(address: address, port: 0);
       addTearDown(() => server2.shutdown());
 
-      expect(
-        server2.port,
-        isNotNull,
-        reason:
-            'Second server must start successfully '
-            'after first server shutdown',
-      );
+      if (address.type != InternetAddressType.unix) {
+        expect(
+          server2.port,
+          isNotNull,
+          reason:
+              'Second TCP server must expose a port '
+              'after first server shutdown',
+        );
+      }
       await server2.shutdown();
     });
 
@@ -384,6 +430,10 @@ void main() {
         onTimeout: () => fail('Handshake-phase RPCs did not settle'),
       );
       expect(results, hasLength(20));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'shutdown during connection handshake',
+      );
     });
 
     testTcpAndUds('shutdown with only completed RPCs '
@@ -408,8 +458,10 @@ void main() {
         expect(result, equals(i % 256));
       }
 
-      // Give handlers time to be removed.
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await waitForNoHandlers(
+        server,
+        reason: 'Unary-only handlers should drain without timing sleeps',
+      );
 
       expect(
         totalHandlerCount(server),
@@ -464,6 +516,10 @@ void main() {
         onTimeout: () => fail('Race-with-completion RPCs did not settle'),
       );
       expect(results, hasLength(30));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'shutdown races with RPC completion',
+      );
     });
   });
 
@@ -596,8 +652,12 @@ void main() {
         );
       }
 
-      // Let data flow for 50ms.
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await waitForHandlers(
+        server,
+        minCount: 20,
+        timeout: const Duration(seconds: 10),
+        reason: 'All 20 bidi handlers must be active before shutdown',
+      );
 
       // Shutdown while data is in flight.
       await server.shutdown();
@@ -620,6 +680,10 @@ void main() {
         ),
       );
       expect(results, hasLength(20));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'bidi data flow during shutdown',
+      );
     });
   });
 
@@ -729,6 +793,10 @@ void main() {
         onTimeout: () => fail('Mixed RPC types did not settle'),
       );
       expect(results, hasLength(20));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'handler map tracks mixed RPC types',
+      );
     });
 
     testTcpAndUds('handler map empty after 100 sequential RPCs', (
@@ -754,8 +822,10 @@ void main() {
         expect(result, equals(i % 256));
       }
 
-      // Give time for handler cleanup.
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await waitForNoHandlers(
+        server,
+        reason: 'Sequential unary handlers should fully drain before assertion',
+      );
 
       expect(
         totalHandlerCount(server),
@@ -840,6 +910,10 @@ void main() {
         onTimeout: () => fail('Multi-connection streams did not settle'),
       );
       expect(results, hasLength(50));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'handler map tracks multi-connection streams',
+      );
     });
   });
 }

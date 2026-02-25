@@ -130,6 +130,12 @@ class ConnectionServer {
     ).handle();
     connection.incomingStreams.listen(
       (stream) {
+        // Guard: onError may have already cleaned up this connection.
+        // Without this check, handlers[connection]! throws a null check
+        // error after onError removed the entry, and the handler leaks
+        // untracked (never cancelled on shutdown).
+        final connectionHandlers = handlers[connection];
+        if (connectionHandlers == null) return;
         final handler = serveStream_(
           stream: stream,
           clientCertificate: clientCertificate,
@@ -137,7 +143,7 @@ class ConnectionServer {
           onDataReceived: onDataReceivedController.sink,
         );
         handler.onCanceled.then((_) => handlers[connection]?.remove(handler));
-        handlers[connection]!.add(handler);
+        connectionHandlers.add(handler);
       },
       onError: (error, stackTrace) {
         if (error is Error) {
@@ -153,7 +159,10 @@ class ConnectionServer {
         // Clean up connection state on stream error — mirrors onDone
         // cleanup. Without this, the connection and its handlers leak
         // permanently in the _connections list and handlers map.
-        final connectionHandlers = handlers[connection] ?? [];
+        // Snapshot via List.of() avoids ConcurrentModificationError:
+        // handler.cancel() triggers onCanceled.then() which removes
+        // from the live list while we iterate.
+        final connectionHandlers = List.of(handlers[connection] ?? <ServerHandler>[]);
         for (final handler in connectionHandlers) {
           handler.cancel();
         }

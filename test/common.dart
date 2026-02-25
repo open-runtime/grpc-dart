@@ -100,9 +100,27 @@ void expectExpectedRpcSettlement(Object? result, {required String reason}) {
     anyOf(
       isA<int>(),
       isA<List<int>>(),
+      isA<List<List<int>>>(),
       isA<GrpcError>(),
       isA<Exception>(),
       isA<Error>(),
+    ),
+    reason: reason,
+  );
+}
+
+/// Stricter settlement assertion for adversarial shutdown tests.
+///
+/// Hardcore transport tests should settle to a valid payload type or explicit
+/// [GrpcError], never arbitrary [Exception]/[Error] values.
+void expectHardcoreRpcSettlement(Object? result, {required String reason}) {
+  expect(
+    result,
+    anyOf(
+      isA<int>(),
+      isA<List<int>>(),
+      isA<List<List<int>>>(),
+      isA<GrpcError>(),
     ),
     reason: reason,
   );
