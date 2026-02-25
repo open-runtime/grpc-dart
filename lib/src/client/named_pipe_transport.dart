@@ -297,7 +297,7 @@ class _NamedPipeStream {
       _writeData,
       onDone: close,
       onError: (error) {
-        if (!_isClosed) {
+        if (!_isClosed && !_incomingController.isClosed) {
           _incomingController.addError(error);
         }
         close();
@@ -368,7 +368,7 @@ class _NamedPipeStream {
         if (peekResult == 0) {
           // PeekNamedPipe failed — pipe is closed or broken.
           final error = GetLastError();
-          if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
+          if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA && !_incomingController.isClosed) {
             _incomingController.addError(NamedPipeException('Peek failed: Win32 error $error', error));
           }
           break;
@@ -392,7 +392,9 @@ class _NamedPipeStream {
           if (error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA) {
             break;
           }
-          _incomingController.addError(NamedPipeException('Read failed: Win32 error $error', error));
+          if (!_incomingController.isClosed) {
+            _incomingController.addError(NamedPipeException('Read failed: Win32 error $error', error));
+          }
           break;
         }
 
@@ -438,13 +440,17 @@ class _NamedPipeStream {
 
         if (success == 0) {
           final error = GetLastError();
-          _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
+          if (!_incomingController.isClosed) {
+            _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
+          }
           close();
           return;
         }
 
         if (bytesWritten.value == 0) {
-          _incomingController.addError(NamedPipeException('Write stalled: 0 bytes written', 0));
+          if (!_incomingController.isClosed) {
+            _incomingController.addError(NamedPipeException('Write stalled: 0 bytes written', 0));
+          }
           close();
           return;
         }

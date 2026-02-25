@@ -65,7 +65,9 @@ class ServerKeepAlive {
     // If we don't care about bad pings, there is not point in listening to
     // events.
     if (_enforcesMaxBadPings) {
-      pingNotifier.listen((_) => _onPingReceived());
+      pingNotifier.listen((_) {
+        _onPingReceived().catchError((_) {});
+      });
       dataNotifier.listen((_) => _onDataReceived());
     }
   }

@@ -133,7 +133,7 @@ class ServerHandler extends ServiceCall {
         .transform(GrpcHttpDecoder())
         .transform(grpcDecompressor(codecRegistry: _codecRegistry))
         .listen(_onDataIdle, onError: _onError, onDone: _onDoneError, cancelOnError: true);
-    _stream.outgoingMessages.done.then((_) {
+    _stream.outgoingMessages.done.whenComplete(() {
       cancel();
     });
   }
@@ -185,54 +185,62 @@ class ServerHandler extends ServiceCall {
   // -- Idle state, incoming data --
 
   void _onDataIdle(GrpcMessage headerMessage) async {
-    onDataReceived?.add(null);
-    if (headerMessage is! GrpcMetadata) {
-      _sendError(GrpcError.unimplemented('Expected header frame'));
+    try {
+      onDataReceived?.add(null);
+      if (headerMessage is! GrpcMetadata) {
+        _sendError(GrpcError.unimplemented('Expected header frame'));
+        _sinkIncoming();
+        return;
+      }
+      _incomingSubscription!.pause();
+
+      _clientMetadata = headerMessage.metadata;
+      final path = _clientMetadata![':path']!;
+      final pathSegments = path.split('/');
+      if (pathSegments.length < 3) {
+        _sendError(GrpcError.unimplemented('Invalid path'));
+        _sinkIncoming();
+        return;
+      }
+      final serviceName = pathSegments[1];
+      final methodName = pathSegments[2];
+      if (_codecRegistry != null) {
+        final acceptedEncodings = clientMetadata!['grpc-accept-encoding']?.split(',') ?? [];
+        _callEncodingCodec = acceptedEncodings
+            .map(_codecRegistry.lookup)
+            .firstWhere((c) => c != null, orElse: () => null);
+      }
+
+      final service = _serviceLookup(serviceName);
+      final descriptor = service?.$lookupMethod(methodName);
+      if (descriptor == null) {
+        _sendError(GrpcError.unimplemented('Path $path not found'));
+        _sinkIncoming();
+        return;
+      }
+      _service = service!;
+      _descriptor = descriptor;
+
+      final error = await _applyInterceptors();
+      if (error != null) {
+        _sendError(error);
+        _sinkIncoming();
+        return;
+      }
+
+      // Guard: cancel() may have run during the async interceptor await.
+      // Without this check, the handler continues processing indefinitely,
+      // potentially blocking Server.shutdown().
+      if (isCanceled) return;
+
+      _startStreamingRequest();
+    } catch (error) {
+      // Async data handler errors are silently discarded by the stream
+      // subscription. Catch and convert to a gRPC error so the client
+      // sees a proper status instead of a hang.
+      _sendError(GrpcError.internal('Error processing request: $error'));
       _sinkIncoming();
-      return;
     }
-    _incomingSubscription!.pause();
-
-    _clientMetadata = headerMessage.metadata;
-    final path = _clientMetadata![':path']!;
-    final pathSegments = path.split('/');
-    if (pathSegments.length < 3) {
-      _sendError(GrpcError.unimplemented('Invalid path'));
-      _sinkIncoming();
-      return;
-    }
-    final serviceName = pathSegments[1];
-    final methodName = pathSegments[2];
-    if (_codecRegistry != null) {
-      final acceptedEncodings = clientMetadata!['grpc-accept-encoding']?.split(',') ?? [];
-      _callEncodingCodec = acceptedEncodings
-          .map(_codecRegistry.lookup)
-          .firstWhere((c) => c != null, orElse: () => null);
-    }
-
-    final service = _serviceLookup(serviceName);
-    final descriptor = service?.$lookupMethod(methodName);
-    if (descriptor == null) {
-      _sendError(GrpcError.unimplemented('Path $path not found'));
-      _sinkIncoming();
-      return;
-    }
-    _service = service!;
-    _descriptor = descriptor;
-
-    final error = await _applyInterceptors();
-    if (error != null) {
-      _sendError(error);
-      _sinkIncoming();
-      return;
-    }
-
-    // Guard: cancel() may have run during the async interceptor await.
-    // Without this check, the handler continues processing indefinitely,
-    // potentially blocking Server.shutdown().
-    if (isCanceled) return;
-
-    _startStreamingRequest();
   }
 
   GrpcError? _onMetadata() {

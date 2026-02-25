@@ -257,10 +257,14 @@ class NamedPipeServer extends ConnectionServer {
     // Remove from tracking when the stream closes (broken pipe, shutdown, etc.)
     stream._closeFuture.then((_) => _activeStreams.remove(stream));
 
-    // Create HTTP/2 connection and serve it
-    final transportConnection = ServerTransportConnection.viaStreams(stream.incoming, stream.outgoingSink);
-
-    serveConnection(connection: transportConnection);
+    try {
+      // Create HTTP/2 connection and serve it
+      final transportConnection = ServerTransportConnection.viaStreams(stream.incoming, stream.outgoingSink);
+      serveConnection(connection: transportConnection);
+    } catch (e) {
+      // HTTP/2 initialization failure — clean up the pipe handle.
+      stream.close(force: true);
+    }
   }
 
   /// Shuts down the server gracefully.
