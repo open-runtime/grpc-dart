@@ -88,7 +88,9 @@ void main() {
 
       // Close all controllers so streams can finish.
       for (final ctrl in controllers) {
-        await ctrl.close().catchError((Object _) {});
+        if (!ctrl.isClosed) {
+          await ctrl.close();
+        }
       }
 
       final results = await Future.wait(futures).timeout(
@@ -102,7 +104,7 @@ void main() {
         reason: 'All 10 bidi streams must settle',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -151,7 +153,7 @@ void main() {
         reason: 'All 5 echoBytes RPCs must settle',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -209,11 +211,28 @@ void main() {
 
       // Close controllers so streams finish.
       for (final ctrl in controllers) {
-        await ctrl.close().catchError((Object _) {});
+        if (!ctrl.isClosed) {
+          await ctrl.close();
+        }
       }
 
       // Wait for all feed futures too.
-      await Future.wait(feedFutures).catchError((Object _) => <void>[]);
+      final feedResults =
+          await Future.wait(
+            feedFutures.map(
+              (future) =>
+                  future.then<Object?>((_) => null, onError: (Object e) => e),
+            ),
+          );
+      for (var i = 0; i < feedResults.length; i++) {
+        expect(
+          feedResults[i],
+          isNull,
+          reason:
+              'Chunk feeder $i should not fail while transport is '
+              'shutting down',
+        );
+      }
 
       final results = await Future.wait(futures).timeout(
         const Duration(seconds: 15),
@@ -226,7 +245,7 @@ void main() {
         reason: 'All 10 bidiStreamBytes streams must settle',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -281,7 +300,9 @@ void main() {
 
       // Close controllers.
       for (final ctrl in controllers) {
-        await ctrl.close().catchError((Object _) {});
+        if (!ctrl.isClosed) {
+          await ctrl.close();
+        }
       }
 
       final results = await Future.wait(futures).timeout(
@@ -297,7 +318,7 @@ void main() {
             'without crash',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -353,7 +374,7 @@ void main() {
             'settle without crashes',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -407,7 +428,7 @@ void main() {
             'settle without StateError',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -457,7 +478,7 @@ void main() {
             '(success or error), no crashes',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -528,7 +549,7 @@ void main() {
             'unhandled exceptions',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -576,7 +597,7 @@ void main() {
         reason: 'All 50 bidi streams must settle',
       );
       for (final r in results) {
-        expectExpectedRpcSettlement(
+        expectHardcoreRpcSettlement(
           r,
           reason: 'Each RPC must settle as '
               'success or known error type',
@@ -623,7 +644,9 @@ void main() {
 
         // Close controllers.
         for (final ctrl in controllers) {
-          await ctrl.close().catchError((Object _) {});
+          if (!ctrl.isClosed) {
+            await ctrl.close();
+          }
         }
 
         final results = await Future.wait(futures).timeout(
@@ -637,7 +660,7 @@ void main() {
           reason: 'Cycle $cycle: all 5 streams must settle',
         );
         for (final r in results) {
-          expectExpectedRpcSettlement(
+          expectHardcoreRpcSettlement(
             r,
             reason: 'Each RPC must settle as '
                 'success or known error type',
