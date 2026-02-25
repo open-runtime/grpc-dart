@@ -215,14 +215,23 @@ class ConnectionServer {
   @protected
   Future<void> shutdownActiveConnections() async {
     final activeConnections = List.of(_connections);
+    final cancelFutures = <Future<void>>[];
     for (final connection in activeConnections) {
       final connectionHandlers = handlers[connection];
       if (connectionHandlers != null) {
         for (final handler in connectionHandlers) {
           handler.cancel();
+          cancelFutures.add(handler.onResponseCancelDone);
         }
       }
     }
+
+    // Wait for all response subscription cancellations to complete.
+    // async* generators (e.g. server-streaming RPCs) need event loop
+    // turns to process the cancel signal and stop yielding values.
+    // Without this, connection.finish() can block indefinitely because
+    // HTTP/2 streams remain open while generators are still producing.
+    await Future.wait(cancelFutures);
 
     // Yield to let the http2 outgoing queue flush RST_STREAM frames
     // before connection.finish() enqueues GOAWAY and closes the socket.

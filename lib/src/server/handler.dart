@@ -67,6 +67,11 @@ class ServerHandler extends ServiceCall {
   bool _streamTerminated = false;
   Timer? _timeoutTimer;
 
+  /// Future that completes when the response subscription cancel finishes.
+  /// Stored by [cancel] so [shutdownActiveConnections] can await it to
+  /// ensure async* generators are fully stopped before finishing connections.
+  Future<void>? _responseCancelFuture;
+
   final X509Certificate? _clientCertificate;
   final InternetAddress? _remoteAddress;
 
@@ -76,6 +81,10 @@ class ServerHandler extends ServiceCall {
   final Completer<void> _isCanceledCompleter = Completer<void>();
 
   Future<void> get onCanceled => _isCanceledCompleter.future;
+
+  /// Completes when the response subscription cancel has finished.
+  /// Call after [cancel] to ensure async* generators are fully stopped.
+  Future<void> get onResponseCancelDone => _responseCancelFuture ?? Future.value();
 
   set isCanceled(bool value) {
     if (!isCanceled) {
@@ -143,7 +152,7 @@ class ServerHandler extends ServiceCall {
   /// We need the catchError() handler here, since otherwise the error would
   /// be an unhandled exception.
   void _cancelResponseSubscription() {
-    _responseSubscription?.cancel().catchError((_) {});
+    _responseCancelFuture = _responseSubscription?.cancel().catchError((_) {});
   }
 
   /// Attempts to add [error] to [requests] and then close it. Each operation
@@ -576,9 +585,17 @@ class ServerHandler extends ServiceCall {
     // _onTimedOut, _onDone) closes _requests — cancel() must too,
     // otherwise Server.shutdown() can hang indefinitely.
     _addErrorAndClose(_requests, GrpcError.cancelled('Cancelled'), null, 'cancel', 'deliver_cancellation');
-    _cancelResponseSubscription();
+    // Store the cancel future so shutdownActiveConnections() can await
+    // it — async* generators need event loop turns to process the cancel
+    // signal and stop yielding values.
+    _responseCancelFuture = _responseSubscription?.cancel().catchError((_) {});
     _incomingSubscription?.cancel();
-    _terminateStream();
+    // If trailers already started the graceful end-of-stream path, avoid
+    // racing that close with an immediate RST_STREAM from cancel().
+    // We still run all cleanup above so shutdown does not leak handlers.
+    if (!_trailersSent) {
+      _terminateStream();
+    }
   }
 
   /// Terminates the underlying HTTP/2 stream by sending RST_STREAM.
