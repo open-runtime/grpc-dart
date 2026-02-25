@@ -64,6 +64,11 @@ abstract class ClientChannelBase implements ClientChannel {
     _isShutdown = true;
     if (_connected) {
       await _connection.shutdown();
+    }
+    // Always close the stream controller — even if never connected.
+    // Without this, the broadcast controller leaks when the channel
+    // is created but no RPC is ever made.
+    if (!_connectionStateStreamController.isClosed) {
       await _connectionStateStreamController.close();
     }
     _channelShutdownHandler?.call();
@@ -71,9 +76,13 @@ abstract class ClientChannelBase implements ClientChannel {
 
   @override
   Future<void> terminate() async {
+    if (_isShutdown) return;
     _isShutdown = true;
     if (_connected) {
       await _connection.terminate();
+    }
+    // Guard: shutdown() may have already closed the controller.
+    if (!_connectionStateStreamController.isClosed) {
       await _connectionStateStreamController.close();
     }
     _channelShutdownHandler?.call();

@@ -521,9 +521,6 @@ void main() {
     // unexpected sessions.
     testTcpAndUds(
       '10 concurrent RPCs on fresh channel converge to single connection',
-      // UDS variant deadlocks on Linux x64 CI — 10 unary RPCs hang
-      // permanently. Root cause tracked in #36 (HTTP/2 backpressure).
-      udsSkip: 'UDS deadlock — see issue #36',
       (address) async {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);

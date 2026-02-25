@@ -470,6 +470,89 @@ void main() {
   });
 
   // ===========================================================================
+  // 2b. Connect/Shutdown Race Stress
+  // ===========================================================================
+  //
+  // Repeated-iteration stress tests around connect/shutdown race behavior at
+  // channel level. Increases confidence that repeated shutdown/connect races
+  // do not leave usable or lingering transports. Non-overlapping with
+  // named_pipe_adversarial_test.dart (which covers connector-level and
+  // single-shot patterns).
+
+  group('Connect/Shutdown Race Stress', () {
+    // Repeated channel-level connect/shutdown race: N iterations of
+    // fire-first-RPC + shutdown concurrently. Asserts: no hangs; no
+    // successful RPCs after shutdown; clean lifecycle transitions.
+    testNamedPipe(
+      'repeated channel connect/shutdown race does not leave usable transports',
+      timeout: const Timeout(Duration(seconds: 60)),
+      (pipeName) async {
+        const iterations = 8;
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        addTearDown(() => server.shutdown());
+        await server.serve(pipeName: pipeName);
+
+        for (var i = 0; i < iterations; i++) {
+          final channel = NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          );
+          final client = EchoClient(channel);
+
+          // Race: fire first RPC (triggers lazy connect) and shutdown
+          // concurrently.
+          final rpcFuture = client
+              .echo(i % 256)
+              .then((v) => v, onError: (_) => null);
+          final shutdownFuture = channel.shutdown();
+
+          // Both must settle within timeout — no hang. Both run concurrently
+          // (started above); we await each with a timeout.
+          final rpcResult = await rpcFuture.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () =>
+                fail('RPC hung on iteration $i (connect/shutdown race)'),
+          );
+          await shutdownFuture.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => fail('channel.shutdown() hung on iteration $i'),
+          );
+
+          // RPC either succeeded (connect won) or failed (shutdown won).
+          expect(
+            rpcResult,
+            anyOf(equals(i % 256), isNull),
+            reason: 'iteration $i: RPC must return value or null (error)',
+          );
+
+          // After shutdown, channel must not be usable — no successful RPCs.
+          try {
+            final postShutdown = await client
+                .echo(99)
+                .timeout(
+                  const Duration(seconds: 2),
+                  onTimeout: () => throw TimeoutException('post-shutdown hung'),
+                );
+            fail(
+              'Post-shutdown RPC must not succeed; got $postShutdown '
+              'on iteration $i',
+            );
+          } on GrpcError {
+            // Expected: channel is dead after shutdown.
+          } on TimeoutException {
+            // Also acceptable: transport may hang rather than fail cleanly.
+          }
+
+          // Brief pause between iterations to let OS release resources.
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+        }
+
+        await server.shutdown();
+      },
+    );
+  });
+
+  // ===========================================================================
   // 3. Error Handling Tests
   // ===========================================================================
 
@@ -606,6 +689,62 @@ void main() {
         () => server.serve(pipeName: pipeName),
         throwsA(isA<StateError>()),
       );
+
+      await server.shutdown();
+    });
+
+    // 15a. shutdown cleans up: further RPCs throw GrpcError.
+    //      Equivalent to connection_lifecycle_test "shutdown cleans up all
+    //      resources" for TCP/UDS.
+    testNamedPipe('shutdown cleans up: further RPCs throw GrpcError', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
+
+      expect(await client.echo(42), equals(42));
+      await channel.shutdown();
+
+      try {
+        await client.echo(1);
+        fail('Expected GrpcError after shutdown');
+      } on GrpcError catch (_) {
+        // Expected.
+      }
+
+      await server.shutdown();
+    });
+
+    // 15b. terminate cleans up: further RPCs fail.
+    //      Equivalent to connection_lifecycle_test "terminate cleans up all
+    //      resources" for TCP/UDS.
+    testNamedPipe('terminate cleans up: further RPCs fail', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
+
+      expect(await client.echo(42), equals(42));
+      await channel.terminate();
+
+      try {
+        await client.echo(1);
+        fail('Expected error after terminate');
+      } on GrpcError catch (_) {
+        // Expected.
+      }
 
       await server.shutdown();
     });

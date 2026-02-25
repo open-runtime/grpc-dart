@@ -32,10 +32,79 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
+import 'package:grpc/src/client/http2_connection.dart'
+    show Http2ClientConnection;
+import 'package:http2/transport.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
 import 'src/echo_service.dart';
+
+/// Connector that returns a pre-built transport (used to verify post-shutdown
+/// transport is not usable).
+class _SingleTransportConnector implements ClientTransportConnector {
+  final ClientTransportConnection transport;
+  final Completer<void> _done = Completer<void>();
+
+  _SingleTransportConnector(this.transport);
+
+  @override
+  Future<ClientTransportConnection> connect() async => transport;
+
+  @override
+  Future<void> get done => _done.future;
+
+  @override
+  void shutdown() {
+    if (!_done.isCompleted) _done.complete();
+  }
+
+  @override
+  String get authority => 'localhost';
+}
+
+/// Asserts that [transport] is NOT usable for RPCs after a shutdown race.
+///
+/// Pre-fix post-guard race: connect() could return a transport after
+/// shutdown() ran; without proper cleanup that transport would appear live
+/// and RPCs would succeed. This helper attempts multiple RPCs and fails if
+/// any succeeds.
+///
+/// [rpcAttempts]: number of unary RPC attempts (catches intermittent live
+/// behavior). [timeout]: per-RPC timeout.
+Future<void> _assertTransportNotUsableForRpc(
+  ClientTransportConnection transport, {
+  int rpcAttempts = 3,
+  Duration timeout = const Duration(seconds: 3),
+}) async {
+  final wrapper = _SingleTransportConnector(transport);
+  final connection = Http2ClientConnection.fromClientTransportConnector(
+    wrapper,
+    const ChannelOptions(credentials: ChannelCredentials.insecure()),
+  );
+  final channel = TestClientChannel(connection);
+  final client = EchoClient(channel);
+
+  for (var i = 0; i < rpcAttempts; i++) {
+    try {
+      final value = await client
+          .echo(100 + i)
+          .timeout(
+            timeout,
+            onTimeout: () => throw TimeoutException('RPC hung'),
+          );
+      // If we reach here without throwing, the RPC completed — fail.
+      fail(
+        'Post-shutdown transport must not be usable; '
+        'echo(${100 + i}) returned $value (attempt ${i + 1}/$rpcAttempts)',
+      );
+    } on GrpcError {
+      // Expected: transport correctly reports failure.
+    } on TimeoutException {
+      // Also acceptable: transport may hang rather than fail cleanly.
+    }
+  }
+}
 
 // =============================================================================
 // Tests
@@ -47,6 +116,181 @@ void main() {
   // ===========================================================================
 
   group('Shutdown-During-Connect Races', () {
+    // -------------------------------------------------------------------------
+    // Test 0: Raw connector connect() racing with shutdown()
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: NamedPipeTransportConnector.connect() is in progress
+    // (CreateFile, SetNamedPipeHandleState, stream setup) when shutdown() is
+    // called. shutdown() calls _disposeCurrentPipeResources() which closes
+    // handles and completes _doneCompleter. A connect() that wins the race
+    // may return a transport; one that loses may throw or return a transport
+    // that is immediately invalid. Either way: no hang, no crash, done
+    // completes.
+    //
+    // EXPECTED: All connect/shutdown futures settle within timeout. No
+    // deadlock. connector.done completes.
+    //
+    // REGRESSION: If connect() returns a transport after shutdown without
+    // cleanup, that transport must NOT be usable for RPCs. We assert that
+    // any returned transport fails when used (not a live connection).
+    testNamedPipe(
+      'connector connect racing with shutdown settles without hang',
+      timeout: const Timeout(Duration(seconds: 30)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        final connector = NamedPipeTransportConnector(pipeName);
+        addTearDown(() => connector.shutdown());
+
+        // Fire connect() and shutdown() concurrently. Multiple connect
+        // attempts increase race surface (post-guard race: more in-flight
+        // connects increase chance of returning a transport before shutdown).
+        final connectFutures = <Future<Object?>>[];
+        for (var i = 0; i < 8; i++) {
+          connectFutures.add(
+            connector.connect().then((t) => t, onError: (e, _) => e),
+          );
+        }
+        // shutdown() is synchronous; call it immediately to race with connect.
+        connector.shutdown();
+
+        // All connect futures and done must settle within timeout — no hang.
+        final connectResults = await Future.wait(connectFutures).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => fail('connect() futures did not settle within 10s'),
+        );
+        await connector.done.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () =>
+              fail('connector.done did not complete after shutdown'),
+        );
+
+        // connect() either returned a transport or threw. Either is valid.
+        // Typed assertions: success yields ClientTransportConnection; failure
+        // yields Exception or Error (e.g. GrpcError, NamedPipeException).
+        for (final r in connectResults) {
+          expect(
+            r,
+            anyOf(
+              isA<ClientTransportConnection>(),
+              isA<Exception>(),
+              isA<Error>(),
+            ),
+            reason:
+                'each connect() must return ClientTransportConnection or '
+                'throw Exception/Error',
+          );
+        }
+
+        // CRITICAL: Any transport returned from the race must NOT be usable.
+        // Post-guard race: connect() could return a transport after shutdown()
+        // ran; without proper cleanup that transport would appear live and RPCs
+        // would succeed. We assert every returned transport fails when used,
+        // with multiple RPC attempts to catch intermittent live behavior.
+        for (final r in connectResults) {
+          if (r is! ClientTransportConnection) continue;
+          await _assertTransportNotUsableForRpc(r);
+        }
+
+        await server.shutdown();
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 0b: Post-shutdown transport must not be usable for RPCs
+    // -------------------------------------------------------------------------
+    // REGRESSION TARGETED: If connect() returns a ClientTransportConnection
+    // after shutdown() has run (race where connect wins but resources are
+    // already disposed), that transport must NOT allow successful RPCs.
+    // Without proper cleanup, the transport could appear "live" and succeed,
+    // leading to use-after-close or orphaned connections.
+    //
+    // ASSERTION: Attempt RPC on any transport returned from connect/shutdown
+    // race. RPC must fail (GrpcError) or hang (timeout), never succeed.
+    testNamedPipe(
+      'post-shutdown connect race: returned transport is not usable for RPC',
+      timeout: const Timeout(Duration(seconds: 30)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        final connector = NamedPipeTransportConnector(pipeName);
+        addTearDown(() => connector.shutdown());
+
+        // Single connect + immediate shutdown to maximize race window.
+        final connectFuture = connector.connect().then(
+          (t) => t,
+          onError: (e, _) => e,
+        );
+        connector.shutdown();
+
+        final Object result = await connectFuture.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => fail('connect() did not settle within 10s'),
+        );
+        await connector.done.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () =>
+              fail('connector.done did not complete after shutdown'),
+        );
+
+        // When connect() threw, onError returned the exception — no transport.
+        if (result is! ClientTransportConnection) {
+          await server.shutdown();
+          return;
+        }
+
+        // Transport returned: must NOT be usable. Multiple RPC attempts
+        // catch intermittent live behavior (post-guard race regression).
+        await _assertTransportNotUsableForRpc(result);
+
+        await server.shutdown();
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 0c: Connect-then-shutdown ordered (deterministic transport test)
+    // -------------------------------------------------------------------------
+    // DETERMINISTIC: Connect first, await, then shutdown. Guarantees we get
+    // a transport to test. Post-guard race: without proper cleanup, shutdown()
+    // would not invalidate the returned transport and RPCs could succeed.
+    //
+    // ASSERTION: After shutdown, the transport must NOT be usable. No sleeps;
+    // ordering is explicit and bounded.
+    testNamedPipe(
+      'connect-then-shutdown ordered: returned transport is not usable',
+      timeout: const Timeout(Duration(seconds: 30)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        final connector = NamedPipeTransportConnector(pipeName);
+        addTearDown(() => connector.shutdown());
+
+        // Deterministic: connect first, then shutdown. Guarantees transport.
+        final transport = await connector.connect().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => fail('connect() did not complete within 10s'),
+        );
+        connector.shutdown();
+        await connector.done.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () =>
+              fail('connector.done did not complete after shutdown'),
+        );
+
+        // Post-shutdown: transport must NOT be usable. Pre-fix would allow
+        // successful RPC here (use-after-close).
+        await _assertTransportNotUsableForRpc(transport);
+
+        await server.shutdown();
+      },
+    );
+
     // -------------------------------------------------------------------------
     // Test 1: Server shutdown while client is mid-CreateFile handshake
     // -------------------------------------------------------------------------
@@ -865,6 +1109,83 @@ void main() {
 
         await recoveryChannel.shutdown();
         await server.shutdown();
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Test 14: Server shutdown during deferred close (timer not yet fired)
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: Enter the deferred close path (read loop exits, outgoing
+    // subscription still draining or stalled, 5s safety timer armed), then
+    // invoke server.shutdown() before the timer naturally fires. shutdown()
+    // must force-close streams, cancelling the timer and cleaning up without
+    // waiting for the full 5s window.
+    //
+    // EXPECTED: No hang. shutdown() completes within a short timeout (well
+    // under 5s). activePipeStreamCount returns to 0. Server remains usable
+    // for new clients until shutdown completes.
+    testNamedPipe(
+      'server shutdown during deferred close completes without hang',
+      timeout: const Timeout(Duration(seconds: 30)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        // Request a large server-stream and do not consume the response.
+        // Client terminate triggers deferred close: read loop exits, timer
+        // armed (5s). We call shutdown() before the timer fires.
+        final bd = ByteData(8)
+          ..setUint32(0, 256) // chunkCount
+          ..setUint32(4, 65536); // chunkSize (64KB)
+        client.serverStreamBytes(bd.buffer.asUint8List());
+
+        Future<void> waitForActiveStreams({
+          required int expected,
+          required Duration timeout,
+          required String onTimeoutMessage,
+        }) async {
+          final deadline = DateTime.now().add(timeout);
+          while (DateTime.now().isBefore(deadline)) {
+            if (server.activePipeStreamCount == expected) return;
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+          }
+          fail(
+            '$onTimeoutMessage (activePipeStreamCount='
+            '${server.activePipeStreamCount})',
+          );
+        }
+
+        await waitForActiveStreams(
+          expected: 1,
+          timeout: const Duration(seconds: 3),
+          onTimeoutMessage: 'Server never observed active stream',
+        );
+
+        // Abrupt client teardown — enters deferred close path.
+        await channel.terminate();
+
+        // Brief delay to let read loop exit and deferred timer arm.
+        // Platform timing varies; 200ms is enough for the path to be entered
+        // but well before the 5s timer.
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+
+        // Shutdown must complete without waiting for the 5s deferred timer.
+        // Assert no hang: shutdown finishes within 3s (well under 5s).
+        await server.shutdown().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () =>
+              fail('server.shutdown() hung during deferred close race'),
+        );
+
+        // Verify server is fully shut down.
+        expect(server.isRunning, isFalse);
       },
     );
   });

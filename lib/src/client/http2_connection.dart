@@ -99,11 +99,22 @@ class Http2ClientConnection implements connection.ClientConnection {
     // incorrectly abandon a perfectly good new connection.
     final generation = ++_connectionGeneration;
     final connection = await _transportConnector.connect();
-    _transportConnector.done.then((_) {
-      if (generation == _connectionGeneration) {
-        _abandonConnection();
-      }
-    });
+    _transportConnector.done.then(
+      (_) {
+        if (generation == _connectionGeneration) {
+          _abandonConnection();
+        }
+      },
+      onError: (_) {
+        // socket.done can complete with an error (e.g. broken pipe,
+        // connection reset). Without this handler the error is unhandled
+        // and the connection becomes a zombie — never abandoned, never
+        // reconnected. Treat error-completion the same as normal closure.
+        if (generation == _connectionGeneration) {
+          _abandonConnection();
+        }
+      },
+    );
 
     // Wait for the peer's initial SETTINGS frame rather than guessing
     // with a fixed delay. The http2 package (v2.3.1+) exposes
@@ -151,10 +162,22 @@ class Http2ClientConnection implements connection.ClientConnection {
           _setState(ConnectionState.ready);
 
           if (_hasPendingCalls()) {
-            // Take all pending calls out, and reschedule.
             final pendingCalls = _pendingCalls.toList();
             _pendingCalls.clear();
-            pendingCalls.forEach(dispatchCall);
+            for (final call in pendingCalls) {
+              // If the connection state changed during a yield (e.g.,
+              // shutdown or abandonment), stop dispatching. Remaining
+              // calls have their own timeout timers that will fire
+              // GrpcError.deadlineExceeded.
+              if (_state != ConnectionState.ready) break;
+              dispatchCall(call);
+              // Yield to the event loop so the HTTP/2 transport can
+              // process incoming frames (WINDOW_UPDATE, SETTINGS ACK)
+              // between call dispatches. Without this yield, a burst
+              // of pending calls exhausts the flow-control window on
+              // transports without TCP_NODELAY (UDS, named pipes).
+              await Future.delayed(Duration.zero);
+            }
           }
         })
         .catchError(_handleConnectionFailure);

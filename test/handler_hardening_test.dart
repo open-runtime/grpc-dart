@@ -307,10 +307,12 @@ class _ThrowingAddErrorMethod extends ServiceMethod<int, int> {
 class _OnErrorCatchBidiService extends Service {
   final void Function() onAddErrorAttempt;
   final Completer<void> onFirstRequestSeen;
+  final Completer<void> onExited;
 
   _OnErrorCatchBidiService({
     required this.onAddErrorAttempt,
     required this.onFirstRequestSeen,
+    required this.onExited,
   }) {
     $addMethod(_ThrowingAddErrorMethod(onAddErrorAttempt, _bidiStream));
   }
@@ -319,11 +321,126 @@ class _OnErrorCatchBidiService extends Service {
   String get $name => 'test.EchoService';
 
   Stream<int> _bidiStream(ServiceCall call, Stream<int> requests) async* {
-    await for (final value in requests) {
-      if (!onFirstRequestSeen.isCompleted) {
-        onFirstRequestSeen.complete();
+    try {
+      await for (final value in requests) {
+        if (!onFirstRequestSeen.isCompleted) {
+          onFirstRequestSeen.complete();
+        }
+        yield value;
       }
-      yield value;
+    } finally {
+      if (!onExited.isCompleted) onExited.complete();
+    }
+  }
+}
+
+/// ServiceMethod that triggers _onResponse serialization error (encoder throws)
+/// and uses _ThrowingAddErrorController so addError throws.
+class _ThrowingAddErrorResponseErrorMethod extends ServiceMethod<int, int> {
+  final void Function() onAddErrorAttempt;
+
+  _ThrowingAddErrorResponseErrorMethod(
+    this.onAddErrorAttempt,
+    Stream<int> Function(ServiceCall, Stream<int>) handler,
+  ) : super(
+        'ResponseError',
+        handler,
+        true,
+        true,
+        (List<int> value) => value[0],
+        (int value) => throw 'Failed',
+      );
+
+  @override
+  StreamController<int> createRequestStream(StreamSubscription incoming) {
+    // ignore: close_sinks — lifecycle managed by _ThrowingAddErrorController
+    final delegate = super.createRequestStream(incoming);
+    return _ThrowingAddErrorController<int>(delegate, onAddErrorAttempt);
+  }
+}
+
+/// ServiceMethod for unary that uses _ThrowingAddErrorController so addError
+/// throws. Used to exercise _onDoneExpected addError-throw path.
+class _ThrowingAddErrorUnaryMethod extends ServiceMethod<int, int> {
+  final void Function() onAddErrorAttempt;
+
+  _ThrowingAddErrorUnaryMethod(
+    this.onAddErrorAttempt,
+    Future<int> Function(ServiceCall, Future<int>) handler,
+  ) : super(
+        'NoRequestUnary',
+        handler,
+        false,
+        false,
+        (List<int> value) => value[0],
+        (int value) => [value],
+      );
+
+  @override
+  StreamController<int> createRequestStream(StreamSubscription incoming) {
+    // ignore: close_sinks — lifecycle managed by _ThrowingAddErrorController
+    final delegate = super.createRequestStream(incoming);
+    return _ThrowingAddErrorController<int>(delegate, onAddErrorAttempt);
+  }
+}
+
+/// Unary service that triggers _onDoneExpected (no request received) with
+/// _ThrowingAddErrorController so addError throws. Validates that close() is
+/// still attempted when addError fails, allowing handler to exit.
+class _OnDoneExpectedCatchService extends Service {
+  final void Function() onAddErrorAttempt;
+  final Completer<void> onExited;
+
+  _OnDoneExpectedCatchService({
+    required this.onAddErrorAttempt,
+    required this.onExited,
+  }) {
+    $addMethod(_ThrowingAddErrorUnaryMethod(onAddErrorAttempt, _unary));
+  }
+
+  @override
+  String get $name => 'test.EchoService';
+
+  Future<int> _unary(ServiceCall call, Future<int> request) async {
+    try {
+      return await request;
+    } finally {
+      if (!onExited.isCompleted) onExited.complete();
+    }
+  }
+}
+
+/// Bidi service that triggers _onResponse path (serialization throws on yield)
+/// with _ThrowingAddErrorController so addError throws. Validates that close()
+/// is still attempted when addError fails, allowing handler to exit.
+class _OnResponseCatchBidiService extends Service {
+  final void Function() onAddErrorAttempt;
+  final Completer<void> onFirstRequestSeen;
+  final Completer<void> onExited;
+
+  _OnResponseCatchBidiService({
+    required this.onAddErrorAttempt,
+    required this.onFirstRequestSeen,
+    required this.onExited,
+  }) {
+    $addMethod(
+      _ThrowingAddErrorResponseErrorMethod(onAddErrorAttempt, _bidiStream),
+    );
+  }
+
+  @override
+  String get $name => 'test.EchoService';
+
+  Stream<int> _bidiStream(ServiceCall call, Stream<int> requests) async* {
+    try {
+      await for (final value in requests) {
+        if (!onFirstRequestSeen.isCompleted) {
+          onFirstRequestSeen.complete();
+        }
+        yield value; // Serializer throws here → _onResponse catch path
+      }
+    } finally {
+      if (!onExited.isCompleted) onExited.complete();
     }
   }
 }
@@ -1154,6 +1271,69 @@ void main() {
 
       expect(sawNoRequestError, isTrue);
     });
+
+    test('_onDoneExpected path tolerates request-stream addError failure, '
+        'handler exits', () async {
+      final toServer = StreamController<StreamMessage>();
+      final fromServer = StreamController<StreamMessage>();
+      final handlerExited = Completer<void>();
+      final wireDone = Completer<void>();
+      var addErrorAttempted = false;
+
+      final service = _OnDoneExpectedCatchService(
+        onAddErrorAttempt: () => addErrorAttempted = true,
+        onExited: handlerExited,
+      );
+      final server = Server.create(
+        services: [service],
+        errorHandler: (_, _) {},
+      );
+      final stream = TestServerStream(toServer.stream, fromServer.sink);
+      server.serveStream_(stream: stream);
+
+      addTearDown(() async {
+        if (!toServer.isClosed) await toServer.close();
+        if (!fromServer.isClosed) await fromServer.close();
+      });
+
+      fromServer.stream.listen(
+        (_) {},
+        onError: (_) {},
+        onDone: () {
+          if (!wireDone.isCompleted) wireDone.complete();
+        },
+      );
+
+      // Send headers only, no data — triggers _onDoneExpected "no request"
+      final headers = Http2ClientConnection.createCallHeaders(
+        true,
+        'test',
+        '/test.EchoService/NoRequestUnary',
+        null,
+        null,
+        null,
+        userAgent: 'dart-grpc/1.0.0 test',
+      );
+      toServer.add(HeadersStreamMessage(headers));
+      await toServer.close();
+
+      await wireDone.future.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () =>
+            fail('Wire did not settle after _onDoneExpected no-request path'),
+      );
+
+      expect(addErrorAttempted, isTrue);
+
+      // Critical: _addErrorAndClose must still close _requests even when
+      // addError throws, so the handler exits and does not block.
+      await handlerExited.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail(
+          'Handler did not exit after _onDoneExpected with addError throw',
+        ),
+      );
+    });
   });
 
   // ===========================================================================
@@ -1658,12 +1838,14 @@ void main() {
         final toServer = StreamController<StreamMessage>();
         final fromServer = StreamController<StreamMessage>();
         final firstRequestSeen = Completer<void>();
+        final handlerExited = Completer<void>();
         final wireDone = Completer<void>();
         var addErrorAttempted = false;
 
         final service = _OnErrorCatchBidiService(
           onAddErrorAttempt: () => addErrorAttempted = true,
           onFirstRequestSeen: firstRequestSeen,
+          onExited: handlerExited,
         );
         final server = Server.create(services: [service]);
         final stream = TestServerStream(toServer.stream, fromServer.sink);
@@ -1708,6 +1890,140 @@ void main() {
 
         expect(addErrorAttempted, isTrue);
         expect(handler.isCanceled, isTrue);
+
+        // Critical: handler must exit even when addError throws.
+        // close() is attempted in a separate try block, unblocking the
+        // await-for so the handler can complete.
+        await handlerExited.future.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () =>
+              fail('Handler did not exit after _onError with addError throw'),
+        );
+      },
+    );
+
+    test(
+      'cancel() path tolerates request-stream addError failure, handler exits',
+      () async {
+        final toServer = StreamController<StreamMessage>();
+        final fromServer = StreamController<StreamMessage>();
+        final firstRequestSeen = Completer<void>();
+        final handlerExited = Completer<void>();
+        var addErrorAttempted = false;
+
+        final service = _OnErrorCatchBidiService(
+          onAddErrorAttempt: () => addErrorAttempted = true,
+          onFirstRequestSeen: firstRequestSeen,
+          onExited: handlerExited,
+        );
+        final server = Server.create(services: [service]);
+        final stream = TestServerStream(toServer.stream, fromServer.sink);
+        final handler = server.serveStream_(stream: stream);
+
+        addTearDown(() async {
+          if (!toServer.isClosed) await toServer.close();
+          if (!fromServer.isClosed) await fromServer.close();
+        });
+
+        fromServer.stream.listen((_) {}, onError: (_) {});
+
+        final headers = Http2ClientConnection.createCallHeaders(
+          true,
+          'test',
+          '/test.EchoService/BidiStream',
+          null,
+          null,
+          null,
+          userAgent: 'dart-grpc/1.0.0 test',
+        );
+        toServer.add(HeadersStreamMessage(headers));
+        toServer.add(DataStreamMessage(frame(<int>[1])));
+
+        await firstRequestSeen.future.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => fail('Handler never processed initial request'),
+        );
+
+        handler.cancel();
+
+        expect(addErrorAttempted, isTrue);
+        expect(handler.isCanceled, isTrue);
+
+        // Critical: cancel() must still close _requests even when addError
+        // throws, so the handler exits and does not block indefinitely.
+        await handlerExited.future.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () =>
+              fail('Handler did not exit after cancel() with addError throw'),
+        );
+      },
+    );
+
+    test(
+      '_onResponse path tolerates request-stream addError failure, handler exits',
+      () async {
+        final toServer = StreamController<StreamMessage>();
+        final fromServer = StreamController<StreamMessage>();
+        final firstRequestSeen = Completer<void>();
+        final handlerExited = Completer<void>();
+        final wireDone = Completer<void>();
+        var addErrorAttempted = false;
+
+        final service = _OnResponseCatchBidiService(
+          onAddErrorAttempt: () => addErrorAttempted = true,
+          onFirstRequestSeen: firstRequestSeen,
+          onExited: handlerExited,
+        );
+        final server = Server.create(services: [service]);
+        final stream = TestServerStream(toServer.stream, fromServer.sink);
+        server.serveStream_(stream: stream);
+
+        addTearDown(() async {
+          if (!toServer.isClosed) await toServer.close();
+          if (!fromServer.isClosed) await fromServer.close();
+        });
+
+        fromServer.stream.listen(
+          (_) {},
+          onError: (_) {},
+          onDone: () {
+            if (!wireDone.isCompleted) wireDone.complete();
+          },
+        );
+
+        final headers = Http2ClientConnection.createCallHeaders(
+          true,
+          'test',
+          '/test.EchoService/ResponseError',
+          null,
+          null,
+          null,
+          userAgent: 'dart-grpc/1.0.0 test',
+        );
+        toServer.add(HeadersStreamMessage(headers));
+        toServer.add(DataStreamMessage(frame(mockEncode(1))));
+
+        await firstRequestSeen.future.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => fail('Handler never processed initial request'),
+        );
+
+        await wireDone.future.timeout(
+          const Duration(seconds: 3),
+          onTimeout: () =>
+              fail('Wire did not settle after _onResponse serialization error'),
+        );
+
+        expect(addErrorAttempted, isTrue);
+
+        // Critical: _onResponse must still close _requests even when addError
+        // throws, so the handler exits and does not block indefinitely.
+        await handlerExited.future.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => fail(
+            'Handler did not exit after _onResponse with addError throw',
+          ),
+        );
       },
     );
 

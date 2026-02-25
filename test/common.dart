@@ -102,20 +102,15 @@ void testUds(
   final skipReason = Platform.isWindows
       ? 'Unix domain sockets are not supported on Windows'
       : skip;
-  test(
-    name,
-    timeout: timeout,
-    skip: skipReason,
-    () async {
-      final tempDir = await Directory.systemTemp.createTemp();
-      final address = InternetAddress(
-        '${tempDir.path}/socket',
-        type: InternetAddressType.unix,
-      );
-      addTearDown(() => tempDir.delete(recursive: true));
-      await testCase(address);
-    },
-  );
+  test(name, timeout: timeout, skip: skipReason, () async {
+    final tempDir = await Directory.systemTemp.createTemp();
+    final address = InternetAddress(
+      '${tempDir.path}/socket',
+      type: InternetAddressType.unix,
+    );
+    addTearDown(() => tempDir.delete(recursive: true));
+    await testCase(address);
+  });
 }
 
 /// Test functionality for both TCP and Unix domain sockets.
@@ -131,12 +126,7 @@ void testTcpAndUds(
     await testCase(address.first);
   });
 
-  testUds(
-    '$name (over uds)',
-    testCase,
-    timeout: udsTimeout,
-    skip: udsSkip,
-  );
+  testUds('$name (over uds)', testCase, timeout: udsTimeout, skip: udsSkip);
 }
 
 /// Monotonically increasing counter used by [testNamedPipe] to guarantee

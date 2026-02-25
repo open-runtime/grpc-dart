@@ -124,6 +124,22 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
       // (server crashed, wrong pipe name, etc.) and should fail immediately.
       final hPipe = await _openPipeWithRetry(pipePathPtr);
 
+      // First shutdown race guard: connect() yields in _openPipeWithRetry (retry
+      // delays on PIPE_BUSY). If shutdown() runs during that wait, it completes
+      // _doneCompleter and disposes resources. When we resume, we must not
+      // assign the newly opened handle to _pipeHandle (would cause double-close
+      // in shutdown's _disposeCurrentPipeResources). Instead: close the handle
+      // directly and fail deterministically. Per-connect done lifecycle: we
+      // reset _doneCompleter at connect start, so completion here means
+      // shutdown() ran during our async wait.
+      if (_doneCompleter.isCompleted) {
+        CloseHandle(hPipe);
+        throw NamedPipeException(
+          'Connect aborted: connector was shutdown during connect',
+          995, // ERROR_OPERATION_ABORTED
+        );
+      }
+
       // Set pipe to byte-read mode for stream-oriented HTTP/2 framing.
       // IMPORTANT: Do not assign _pipeHandle until SetNamedPipeHandleState
       // succeeds — otherwise shutdown() would double-close an already-closed
@@ -144,6 +160,25 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 
       // Create bidirectional stream wrapper
       _pipeStream = _NamedPipeStream(hPipe, _doneCompleter);
+
+      // Second shutdown race guard: between the first guard (after
+      // _openPipeWithRetry) and this return, connect() performs synchronous
+      // work (SetNamedPipeHandleState, handle assignment, stream creation).
+      // In single-threaded Dart this block does not yield, but defense-in-depth
+      // protects against: (a) future awaits added to this path, (b) cross-
+      // isolate usage. If shutdown() ran during this window, _doneCompleter
+      // is completed. We must not return a transport — clean any resources
+      // we just created (shutdown may have run before we assigned _pipeHandle,
+      // so our handle might not have been disposed yet) and fail deterministically.
+      // _disposeCurrentPipeResources is idempotent; if shutdown already closed
+      // the handle, it is a no-op. Avoids double-close.
+      if (_doneCompleter.isCompleted) {
+        _disposeCurrentPipeResources();
+        throw NamedPipeException(
+          'Connect aborted: connector was shutdown during connect',
+          995, // ERROR_OPERATION_ABORTED
+        );
+      }
 
       // Create HTTP/2 connection over the pipe streams
       return ClientTransportConnection.viaStreams(_pipeStream!.incoming, _pipeStream!.outgoingSink);
