@@ -97,13 +97,15 @@ void testUds(
   String name,
   FutureOr<void> Function(InternetAddress) testCase, {
   Timeout? timeout,
+  String? skip,
 }) {
+  final skipReason = Platform.isWindows
+      ? 'Unix domain sockets are not supported on Windows'
+      : skip;
   test(
     name,
     timeout: timeout,
-    skip: Platform.isWindows
-        ? 'Unix domain sockets are not supported on Windows'
-        : null,
+    skip: skipReason,
     () async {
       final tempDir = await Directory.systemTemp.createTemp();
       final address = InternetAddress(
@@ -122,13 +124,19 @@ void testTcpAndUds(
   FutureOr<void> Function(InternetAddress) testCase, {
   String host = 'localhost',
   Timeout? udsTimeout,
+  String? udsSkip,
 }) {
   test(name, () async {
     final address = await InternetAddress.lookup(host);
     await testCase(address.first);
   });
 
-  testUds('$name (over uds)', testCase, timeout: udsTimeout);
+  testUds(
+    '$name (over uds)',
+    testCase,
+    timeout: udsTimeout,
+    skip: udsSkip,
+  );
 }
 
 /// Monotonically increasing counter used by [testNamedPipe] to guarantee
