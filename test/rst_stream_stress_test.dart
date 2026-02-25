@@ -258,14 +258,11 @@ void main() {
         ),
       );
 
-      // Unary RPCs may have completed before shutdown;
-      // streaming ones must have terminated (possibly
-      // with GrpcError).
       for (var i = 0; i < results.length; i++) {
-        final r = results[i];
-        if (r is Error && r is! GrpcError) {
-          fail('RPC $i settled with unexpected Error: $r');
-        }
+        expectHardcoreRpcSettlement(
+          results[i],
+          reason: 'Mixed RPC $i settled with unexpected type',
+        );
       }
 
       // Close bidi controllers, then cleanup.
@@ -401,15 +398,11 @@ void main() {
       );
 
       for (var i = 0; i < results.length; i++) {
-        final r = results[i];
-        // Each settles with either an int sum or
-        // a GrpcError — both are acceptable.
-        expect(
-          r is int || r is GrpcError,
-          isTrue,
+        expectHardcoreRpcSettlement(
+          results[i],
           reason:
               'Client-stream RPC $i settled with '
-              'unexpected type: ${r.runtimeType}',
+              'unexpected type: ${results[i].runtimeType}',
         );
       }
 
@@ -630,5 +623,94 @@ void main() {
         await channel.shutdown();
       }
     });
+  });
+
+  group('Named pipe RST_STREAM propagation', () {
+    testNamedPipe(
+      '20 active server streams terminate on server.shutdown() alone',
+      (pipeName) async {
+        const streamCount = 20;
+
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        final doneCompleters = List.generate(
+          streamCount,
+          (_) => Completer<void>(),
+        );
+        final firstItemCompleters = List.generate(
+          streamCount,
+          (_) => Completer<void>(),
+        );
+        final itemCounts = List.filled(streamCount, 0);
+        final unexpectedErrors = <Object>[];
+
+        for (var i = 0; i < streamCount; i++) {
+          final idx = i;
+          client
+              .serverStream(255)
+              .listen(
+                (_) {
+                  itemCounts[idx]++;
+                  if (!firstItemCompleters[idx].isCompleted) {
+                    firstItemCompleters[idx].complete();
+                  }
+                },
+                onError: (Object e) {
+                  if (e is! GrpcError) {
+                    unexpectedErrors.add(e);
+                  }
+                  if (!firstItemCompleters[idx].isCompleted) {
+                    firstItemCompleters[idx].complete();
+                  }
+                  if (!doneCompleters[idx].isCompleted) {
+                    doneCompleters[idx].complete();
+                  }
+                },
+                onDone: () {
+                  if (!doneCompleters[idx].isCompleted) {
+                    doneCompleters[idx].complete();
+                  }
+                },
+              );
+        }
+
+        await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
+          const Duration(seconds: 20),
+          onTimeout: () =>
+              fail('Named-pipe streams did not all start before shutdown'),
+        );
+
+        await server.shutdown();
+
+        await Future.wait(doneCompleters.map((c) => c.future)).timeout(
+          const Duration(seconds: 20),
+          onTimeout: () => fail(
+            'Named-pipe streams did not terminate after server shutdown',
+          ),
+        );
+
+        expect(
+          unexpectedErrors,
+          isEmpty,
+          reason: 'No non-GrpcError failures expected in named-pipe shutdown',
+        );
+        for (var i = 0; i < itemCounts.length; i++) {
+          expect(
+            itemCounts[i],
+            lessThan(255),
+            reason: 'Named-pipe stream $i should be truncated by shutdown',
+          );
+        }
+
+        await channel.shutdown();
+      },
+    );
   });
 }

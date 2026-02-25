@@ -916,4 +916,54 @@ void main() {
       );
     });
   });
+
+  group('Named pipe shutdown propagation', () {
+    testNamedPipe('shutdown with 30 active streams empties handler map', (
+      pipeName,
+    ) async {
+      const streamCount = 30;
+
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client = EchoClient(channel);
+
+      final futures = <Future<Object?>>[];
+      for (var i = 0; i < streamCount; i++) {
+        futures.add(
+          settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)),
+        );
+      }
+
+      await waitForHandlers(
+        server,
+        minCount: streamCount,
+        timeout: const Duration(seconds: 15),
+        reason: 'Named-pipe handlers must be registered before shutdown',
+      );
+
+      await server.shutdown();
+      expectHandlersEmpty(
+        server,
+        reason: 'Named-pipe handler map should be empty after shutdown',
+      );
+
+      final results = await Future.wait(futures).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () =>
+            fail('Named-pipe server streams did not settle after shutdown'),
+      );
+      expect(results, hasLength(streamCount));
+      expectHardcoreSettlements(
+        results,
+        reasonPrefix: 'named pipe shutdown with active streams',
+      );
+
+      await channel.shutdown();
+    });
+  });
 }

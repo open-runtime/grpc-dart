@@ -48,7 +48,7 @@ void main() {
   // Server.shutdown() with concurrent active handlers
   // ---------------------------------------------------------------------------
   group('Server.shutdown() with active handlers', () {
-    testTcpAndUds('shutdown cancels 10 concurrent server-streaming handlers', (
+    testTcpAndUds('shutdown cancels 25 concurrent server-streaming handlers', (
       address,
     ) async {
       final server = Server.create(services: [EchoService()]);
@@ -59,11 +59,11 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      // Start 10 concurrent server-streaming RPCs. Each streams 255
+      // Start 25 concurrent server-streaming RPCs. Each streams 255
       // items at 1ms/item = ~0.255 seconds. We manually collect items
       // per-stream so we can use a concrete "all items arrived"
       // signal instead of a flaky time-based delay.
-      const streamCount = 10;
+      const streamCount = 25;
       final collectors = <List<int>>[];
       final doneCompleters = <Completer<void>>[];
       final perStreamFirstItem = <Completer<void>>[];
@@ -101,7 +101,7 @@ void main() {
       }
 
       // Wait until ALL streams have received at least one item.
-      // This proves all 10 handlers are active and data is flowing.
+      // This proves all 25 handlers are active and data is flowing.
       await Future.wait(perStreamFirstItem.map((c) => c.future)).timeout(
         const Duration(seconds: 10),
         onTimeout: () => fail(
@@ -111,14 +111,14 @@ void main() {
         ),
       );
 
-      // Shutdown must cancel all 10 handlers and complete.
+      // Shutdown must cancel all 25 handlers and complete.
       await server.shutdown().timeout(
         const Duration(seconds: 10),
         onTimeout: () =>
-            fail('server.shutdown() hung with 10 active streaming handlers'),
+            fail('server.shutdown() hung with 25 active streaming handlers'),
       );
 
-      // All 10 streams must have terminated (not hung).
+      // All 25 streams must have terminated (not hung).
       // The server's shutdownActiveConnections() now yields between
       // handler.cancel() and connection.finish(), giving the http2
       // outgoing queue time to flush RST_STREAM frames before GOAWAY
@@ -171,9 +171,9 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      // Start 5 concurrent streaming RPCs.
+      // Start 15 concurrent streaming RPCs.
       final streamFutures = <Future<Object?>>[];
-      for (var i = 0; i < 5; i++) {
+      for (var i = 0; i < 15; i++) {
         streamFutures.add(settleRpc(client.serverStream(255).toList()));
       }
 
@@ -190,9 +190,9 @@ void main() {
         onTimeout: () => fail('shutdown hung'),
       );
 
-      // Verify handler map is completely empty — no leaked references.
-      // We already proved the map was non-empty above, so this is not
-      // vacuously true.
+      // Verify handler map is completely empty — no leaked
+      // references. We already proved the map was non-empty
+      // above, so this is not vacuously true.
       expect(
         server.handlers.values.every((list) => list.isEmpty),
         isTrue,
@@ -207,7 +207,8 @@ void main() {
         expectExpectedRpcSettlement(
           result,
           reason:
-              'shutdown verifies map test should settle with known result/error',
+              'shutdown verifies map test should settle '
+              'with known result/error',
         );
       }
       await channel.shutdown();
@@ -216,8 +217,8 @@ void main() {
     testTcpAndUds(
       'stress: repeated shutdown cycles cancel active handlers cleanly',
       (address) async {
-        const cycles = 12;
-        const streamCount = 6;
+        const cycles = 16;
+        const streamCount = 12;
         final shutdownRaceTimeout = address.type == InternetAddressType.unix
             ? const Duration(seconds: 20)
             : const Duration(seconds: 10);
@@ -389,7 +390,7 @@ void main() {
       },
     );
 
-    testNamedPipe('shutdown cancels 10 concurrent server-streaming handlers', (
+    testNamedPipe('shutdown cancels 25 concurrent server-streaming handlers', (
       pipeName,
     ) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
@@ -411,7 +412,7 @@ void main() {
       final firstItemSeen = Completer<void>();
       final unexpectedErrors = <Object>[];
 
-      for (var i = 0; i < 10; i++) {
+      for (var i = 0; i < 25; i++) {
         final items = <int>[];
         collectors.add(items);
         final done = Completer<void>();
@@ -422,11 +423,13 @@ void main() {
             .listen(
               (value) {
                 items.add(value);
-                if (!firstItemSeen.isCompleted) firstItemSeen.complete();
+                if (!firstItemSeen.isCompleted) {
+                  firstItemSeen.complete();
+                }
               },
               onError: (e) {
                 // Complete the done completer FIRST to unblock
-                // Future.wait (same rationale as TCP variant above).
+                // Future.wait (same rationale as TCP variant).
                 if (e is! GrpcError) unexpectedErrors.add(e);
                 if (!done.isCompleted) done.complete();
               },
@@ -447,16 +450,16 @@ void main() {
         ),
       );
 
-      // Shutdown must cancel all 10 handlers and complete.
+      // Shutdown must cancel all 25 handlers and complete.
       await server.shutdown().timeout(
         const Duration(seconds: 10),
         onTimeout: () => fail(
-          'server.shutdown() hung with 10 active streaming handlers '
-          '(named pipe)',
+          'server.shutdown() hung with 25 active streaming '
+          'handlers (named pipe)',
         ),
       );
 
-      // All 10 streams must have terminated (not hung).
+      // All 25 streams must have terminated (not hung).
       await Future.wait(doneCompleters.map((c) => c.future)).timeout(
         const Duration(seconds: 5),
         onTimeout: () => fail('streams still active after shutdown'),
@@ -508,7 +511,7 @@ void main() {
       final client = EchoClient(channel);
 
       final streamFutures = <Future<Object?>>[];
-      for (var i = 0; i < 5; i++) {
+      for (var i = 0; i < 15; i++) {
         streamFutures.add(settleRpc(client.serverStream(255).toList()));
       }
 
@@ -539,7 +542,8 @@ void main() {
         expectExpectedRpcSettlement(
           result,
           reason:
-              'named-pipe shutdown verifies map should settle with known result/error',
+              'named-pipe shutdown verifies map should '
+              'settle with known result/error',
         );
       }
       await channel.shutdown();
@@ -617,8 +621,8 @@ void main() {
     testNamedPipe(
       'stress: repeated shutdown cycles cancel active handlers cleanly',
       (pipeName) async {
-        const cycles = 12;
-        const streamCount = 6;
+        const cycles = 16;
+        const streamCount = 12;
 
         for (var cycle = 0; cycle < cycles; cycle++) {
           final server = NamedPipeServer.create(services: [EchoService()]);
@@ -712,8 +716,8 @@ void main() {
   // Rapid start/shutdown cycles
   // ---------------------------------------------------------------------------
   group('Rapid server lifecycle', () {
-    testTcpAndUds('10 rapid sequential start/shutdown cycles', (address) async {
-      for (var cycle = 0; cycle < 10; cycle++) {
+    testTcpAndUds('20 rapid sequential start/shutdown cycles', (address) async {
+      for (var cycle = 0; cycle < 20; cycle++) {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);
 
@@ -760,8 +764,10 @@ void main() {
         reason: 'Handler must be active before concurrent shutdown test',
       );
 
-      // Call shutdown() 3 times concurrently — all must complete.
+      // Call shutdown() 5 times concurrently — all must complete.
       await Future.wait([
+        server.shutdown(),
+        server.shutdown(),
         server.shutdown(),
         server.shutdown(),
         server.shutdown(),
@@ -781,5 +787,142 @@ void main() {
       );
       await channel.shutdown();
     });
+  });
+
+  // -------------------------------------------------------------------
+  // Extreme concurrency
+  // -------------------------------------------------------------------
+  group('Extreme concurrency', () {
+    testTcpAndUds(
+      '50 concurrent bidi streams with shutdown',
+      (address) async {
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
+
+        final channel = createTestChannel(address, server.port!);
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+
+        // 50 bidi streams, each with its own controller.
+        // Each handler blocks in await-for after the first
+        // item, so all 50 are alive concurrently.
+        const streamCount = 50;
+        final controllers = <StreamController<int>>[];
+        final streamFutures = <Future<Object?>>[];
+
+        for (var i = 0; i < streamCount; i++) {
+          final ctrl = StreamController<int>();
+          controllers.add(ctrl);
+          streamFutures.add(settleRpc(client.bidiStream(ctrl.stream).toList()));
+          // Send one item so the handler starts processing.
+          ctrl.add(i);
+        }
+
+        // Wait for handlers to be registered.
+        await waitForHandlers(
+          server,
+          minCount: streamCount,
+          timeout: const Duration(seconds: 15),
+          reason:
+              '50 bidi handlers must be registered '
+              'before shutdown',
+        );
+
+        // Shutdown must cancel all 50 handlers.
+        await server.shutdown().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => fail('server.shutdown() hung with 50 bidi streams'),
+        );
+
+        // Close all client-side controllers.
+        for (final ctrl in controllers) {
+          await ctrl.close();
+        }
+
+        // All 50 must settle without hanging.
+        final settled = await Future.wait(streamFutures).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => fail(
+            '50 bidi streams did not settle after '
+            'shutdown',
+          ),
+        );
+        for (final result in settled) {
+          expectExpectedRpcSettlement(
+            result,
+            reason:
+                '50-bidi shutdown should settle with '
+                'known result/error',
+          );
+        }
+
+        await channel.shutdown();
+      },
+      udsTimeout: const Timeout(Duration(seconds: 90)),
+    );
+
+    testTcpAndUds('20 clients x 5 streams = 100 concurrent streams '
+        'under shutdown', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      // 20 separate channels, 5 server-streams each.
+      const clientCount = 20;
+      const streamsPerClient = 5;
+      final channels = <TestClientChannel>[];
+      final allStreamFutures = <Future<Object?>>[];
+
+      for (var c = 0; c < clientCount; c++) {
+        final ch = createTestChannel(address, server.port!);
+        channels.add(ch);
+        addTearDown(() => ch.shutdown());
+        final cl = EchoClient(ch);
+
+        for (var s = 0; s < streamsPerClient; s++) {
+          allStreamFutures.add(settleRpc(cl.serverStream(255).toList()));
+        }
+      }
+
+      // Not all 100 may register before we proceed —
+      // wait for a reasonable subset.
+      await waitForHandlers(
+        server,
+        minCount: 50,
+        timeout: const Duration(seconds: 15),
+        reason:
+            'At least 50 of 100 handlers must register '
+            'before shutdown',
+      );
+
+      await server.shutdown().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => fail(
+          'server.shutdown() hung with 100 streams '
+          'across 20 clients',
+        ),
+      );
+
+      // All 100 must settle.
+      final settled = await Future.wait(allStreamFutures).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail('100 streams did not settle after shutdown'),
+      );
+      for (final result in settled) {
+        expectExpectedRpcSettlement(
+          result,
+          reason:
+              '100-stream multi-client shutdown should '
+              'settle with known result/error',
+        );
+      }
+
+      // All 20 channels must shutdown cleanly.
+      await Future.wait(channels.map((ch) => ch.shutdown())).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail('channel shutdown hung after server shutdown'),
+      );
+    }, udsTimeout: const Timeout(Duration(seconds: 90)));
   });
 }

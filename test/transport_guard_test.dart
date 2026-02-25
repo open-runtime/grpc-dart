@@ -106,7 +106,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -155,7 +156,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -217,13 +219,12 @@ void main() {
       }
 
       // Wait for all feed futures too.
-      final feedResults =
-          await Future.wait(
-            feedFutures.map(
-              (future) =>
-                  future.then<Object?>((_) => null, onError: (Object e) => e),
-            ),
-          );
+      final feedResults = await Future.wait(
+        feedFutures.map(
+          (future) =>
+              future.then<Object?>((_) => null, onError: (Object e) => e),
+        ),
+      );
       for (var i = 0; i < feedResults.length; i++) {
         expect(
           feedResults[i],
@@ -247,7 +248,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -320,7 +322,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -376,7 +379,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -430,7 +434,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -480,7 +485,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -551,7 +557,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -572,15 +579,33 @@ void main() {
       // of 50 items (values 0-127).
       final items = List.generate(50, (i) => i % 128);
       final futures = <Future<Object?>>[];
+      final firstResponses = List.generate(50, (_) => Completer<void>());
       for (var i = 0; i < 50; i++) {
+        final idx = i;
         final stream = pacedStream(items, yieldEvery: 1);
         futures.add(
-          settleRpc(client.bidiStream(stream).toList().then<Object?>((v) => v)),
+          settleRpc(
+            client
+                .bidiStream(stream)
+                .map((value) {
+                  if (!firstResponses[idx].isCompleted) {
+                    firstResponses[idx].complete();
+                  }
+                  return value;
+                })
+                .toList()
+                .then<Object?>((v) => v),
+          ),
         );
       }
 
-      // Let data flow for a bit.
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future.wait(firstResponses.map((c) => c.future)).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail(
+          'All sustained-throughput streams must emit a first response '
+          'before shutdown',
+        ),
+      );
 
       // Abrupt terminate while sustained throughput
       // is in progress.
@@ -599,7 +624,8 @@ void main() {
       for (final r in results) {
         expectHardcoreRpcSettlement(
           r,
-          reason: 'Each RPC must settle as '
+          reason:
+              'Each RPC must settle as '
               'success or known error type',
         );
       }
@@ -662,7 +688,8 @@ void main() {
         for (final r in results) {
           expectHardcoreRpcSettlement(
             r,
-            reason: 'Each RPC must settle as '
+            reason:
+                'Each RPC must settle as '
                 'success or known error type',
           );
         }
@@ -671,5 +698,86 @@ void main() {
         await channel.shutdown();
       }
     });
+  });
+
+  group('Named pipe transport guard', () {
+    testNamedPipe(
+      'server shutdown during active bidi data flow does not crash',
+      (pipeName) async {
+        const streamCount = 12;
+        const itemsPerStream = 40;
+
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        final controllers = List.generate(
+          streamCount,
+          (_) => StreamController<int>(),
+        );
+        final futures = <Future<Object?>>[];
+
+        for (final ctrl in controllers) {
+          futures.add(
+            settleRpc(
+              client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
+            ),
+          );
+        }
+
+        for (var i = 0; i < itemsPerStream; i++) {
+          for (final ctrl in controllers) {
+            if (!ctrl.isClosed) {
+              ctrl.add(i % 128);
+            }
+          }
+          if (i % 4 == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
+        }
+
+        await waitForHandlers(
+          server,
+          minCount: streamCount,
+          timeout: const Duration(seconds: 10),
+          reason: 'Named-pipe bidi handlers must be active before shutdown',
+        );
+
+        await server.shutdown();
+
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            await ctrl.close();
+          }
+        }
+
+        final results = await Future.wait(futures).timeout(
+          const Duration(seconds: 20),
+          onTimeout: () =>
+              fail('Named-pipe bidi streams did not settle after shutdown'),
+        );
+
+        expect(results, hasLength(streamCount));
+        for (var i = 0; i < results.length; i++) {
+          expectHardcoreRpcSettlement(
+            results[i],
+            reason: 'Named-pipe stream $i settled with invalid result type',
+          );
+        }
+
+        expect(
+          server.handlers.values.every((list) => list.isEmpty),
+          isTrue,
+          reason: 'Named-pipe handler map should be empty after shutdown',
+        );
+
+        await channel.shutdown();
+      },
+    );
   });
 }

@@ -248,14 +248,16 @@ void main() {
       // each requesting 10 items (yields 1..10).
       final futures = List.generate(
         100,
-        (i) => client
-            .serverStream(10)
-            .toList()
-            .timeout(
-              const Duration(seconds: 30),
-              onTimeout: () => fail('serverStream($i) timed out'),
-            )
-            .then<Object?>((v) => v, onError: (Object e) => e),
+        (i) => settleRpc(
+          client
+              .serverStream(10)
+              .toList()
+              .timeout(
+                const Duration(seconds: 30),
+                onTimeout: () => fail('serverStream($i) timed out'),
+              )
+              .then<Object?>((v) => v),
+        ),
       );
       final results = await Future.wait(futures);
 
@@ -729,6 +731,59 @@ void main() {
 
       await channel.shutdown();
       await server.shutdown();
+    });
+  });
+
+  group('Named pipe dispatch re-queue hardening', () {
+    testNamedPipe('single channel survives 6 named-pipe server restarts', (
+      pipeName,
+    ) async {
+      const cycles = 6;
+      const rpcsPerCycle = 25;
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      for (var cycle = 0; cycle < cycles; cycle++) {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        try {
+          final settled =
+              await Future.wait(
+                List.generate(rpcsPerCycle, (i) {
+                  final value = (cycle * rpcsPerCycle + i) % 256;
+                  return settleRpc(client.echo(value).then<Object?>((v) => v));
+                }),
+              ).timeout(
+                const Duration(seconds: 20),
+                onTimeout: () =>
+                    fail('Cycle $cycle: named-pipe RPC batch did not settle'),
+              );
+
+          for (var i = 0; i < settled.length; i++) {
+            final expected = (cycle * rpcsPerCycle + i) % 256;
+            expectHardcoreRpcSettlement(
+              settled[i],
+              reason: 'Cycle $cycle RPC $i settled with unexpected type',
+            );
+            expect(
+              settled[i],
+              equals(expected),
+              reason:
+                  'Cycle $cycle RPC $i should return $expected '
+                  'after reconnect and re-dispatch',
+            );
+          }
+        } finally {
+          await server.shutdown();
+          // Yield once so pipe teardown can complete before next cycle.
+          await Future<void>.delayed(Duration.zero);
+        }
+      }
     });
   });
 }

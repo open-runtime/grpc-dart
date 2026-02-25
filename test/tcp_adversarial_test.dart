@@ -243,7 +243,7 @@ void main() {
     // Test 4: Client cancellation during active server stream
     // -------------------------------------------------------------------------
     // RACE TARGETED: The server is yielding items from _serverStream at
-    // 10ms intervals. The client subscribes, receives a few items, then
+    // 1ms intervals. The client subscribes, receives a few items, then
     // cancels the subscription. If the client transport does not properly
     // send a RST_STREAM to the server, the server's async* generator
     // continues running indefinitely, leaking resources. Additionally,
@@ -263,7 +263,7 @@ void main() {
       final client = EchoClient(channel);
 
       // Request 255 items (max single-byte value). The server yields
-      // at 10ms intervals, so this stream runs for ~2.5 seconds.
+      // at 1ms intervals, so this stream runs for roughly 255ms.
       final received = <int>[];
       final streamErrors = <Object>[];
       final firstItem = Completer<void>();
@@ -1229,7 +1229,7 @@ void main() {
     // Test 17: 255-item server stream with full data integrity
     // -------------------------------------------------------------------------
     // RACE TARGETED: The maximum single-byte count (255) creates a
-    // server stream that yields items at 10ms intervals for ~2.5 seconds.
+    // server stream that yields items at 1ms intervals for roughly 255ms.
     // This is 255 gRPC messages on a single HTTP/2 stream, testing
     // stream ID lifecycle, flow control WINDOW_UPDATE accumulation, and
     // message framing over a sustained period. If the client fails to
@@ -1850,6 +1850,361 @@ void main() {
         }
       },
       udsTimeout: const Timeout(Duration(seconds: 60)),
+    );
+  });
+
+  // ===========================================================================
+  // 7. Compressed Adversarial Scenarios
+  // ===========================================================================
+
+  group('Compressed adversarial scenarios', () {
+    // -----------------------------------------------------------------------
+    // Test 23: Shutdown during 255-item compressed server stream
+    // -----------------------------------------------------------------------
+    // RACE TARGETED: A 255-item gzip-compressed server stream is mid-
+    // flight when server.shutdown() fires. The decompressor is actively
+    // inflating sequential gzip frames when the HTTP/2 transport sends
+    // GOAWAY and tears down the connection. If the zlib inflate context
+    // is not properly finalized on early close, native resources leak.
+    // If the client transport does not drain or cancel the response
+    // stream after GOAWAY, the toList() future hangs indefinitely.
+    //
+    // EXPECTED: Stream terminates (not hang), at least 1 item arrived
+    // before shutdown, items < 255, and each item[i] == i + 1.
+    testTcpAndUds('shutdown during 255-item compressed server stream', (
+      address,
+    ) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = createTestChannel(
+        address,
+        server.port!,
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      final received = <int>[];
+      final firstItem = Completer<void>();
+      final streamDone = Completer<void>();
+      final unexpectedErrors = <Object>[];
+
+      client
+          .serverStream(
+            255,
+            options: CallOptions(compression: const GzipCodec()),
+          )
+          .listen(
+            (value) {
+              received.add(value);
+              if (!firstItem.isCompleted) {
+                firstItem.complete();
+              }
+            },
+            onError: (Object error) {
+              if (error is! GrpcError) {
+                unexpectedErrors.add(error);
+              }
+              if (!streamDone.isCompleted) {
+                streamDone.complete();
+              }
+            },
+            onDone: () {
+              if (!streamDone.isCompleted) {
+                streamDone.complete();
+              }
+            },
+          );
+
+      // Concrete signal: wait for at least 1 item.
+      await firstItem.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail('compressed server stream produced no items'),
+      );
+
+      // Kill the server while decompression is active.
+      await server.shutdown();
+
+      await streamDone.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => fail(
+          'compressed server stream did not terminate '
+          'after shutdown',
+        ),
+      );
+
+      expect(
+        unexpectedErrors,
+        isEmpty,
+        reason: 'only GrpcError expected on shutdown',
+      );
+      expect(
+        received.length,
+        greaterThan(0),
+        reason: 'must receive at least 1 item',
+      );
+      expect(
+        received.length,
+        lessThanOrEqualTo(255),
+        reason: 'cannot exceed 255 items',
+      );
+
+      // Data integrity: each item[i] == i + 1.
+      for (var i = 0; i < received.length; i++) {
+        expect(
+          received[i],
+          equals(i + 1),
+          reason:
+              'compressed server stream item $i: '
+              'expected ${i + 1}, got ${received[i]}',
+        );
+      }
+
+      await channel.shutdown();
+    });
+
+    // -----------------------------------------------------------------------
+    // Test 24: 100-item compressed bidi stream with shutdown race
+    // -----------------------------------------------------------------------
+    // RACE TARGETED: A 100-item gzip bidi stream is actively compressing
+    // outbound frames and decompressing inbound frames when the server
+    // is shut down after a brief delay. The shutdown races against the
+    // bidirectional data flow — the compressor may have buffered partial
+    // output, the decompressor may be mid-inflate, and HTTP/2 flow
+    // control windows may be exhausted in one or both directions. This
+    // triple-race (compress + decompress + shutdown) is the worst case
+    // for zlib context lifecycle management.
+    //
+    // EXPECTED: settleRpc resolves without hang; result is a known
+    // settlement type via expectExpectedRpcSettlement.
+    testTcpAndUds('100-item compressed bidi stream with shutdown race', (
+      address,
+    ) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = createTestChannel(
+        address,
+        server.port!,
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      final input = pacedStream(
+        List<int>.generate(100, (i) => i % 128),
+        yieldEvery: 1,
+      );
+
+      final rpcFuture = settleRpc(
+        client
+            .bidiStream(
+              input,
+              options: CallOptions(compression: const GzipCodec()),
+            )
+            .toList(),
+      );
+
+      // Brief delay so data starts flowing, then kill.
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await server.shutdown();
+
+      final result = await rpcFuture.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => fail('compressed bidi + shutdown race hung'),
+      );
+
+      expectExpectedRpcSettlement(
+        result,
+        reason:
+            'compressed bidi shutdown must settle to '
+            'data or GrpcError',
+      );
+
+      await channel.shutdown();
+    });
+
+    // -----------------------------------------------------------------------
+    // Test 25: 5 concurrent channels with mixed RPC types under shutdown
+    // -----------------------------------------------------------------------
+    // RACE TARGETED: 5 independent channels each fire 4 RPC types
+    // (echo, serverStream, clientStream, bidiStream) = 20 concurrent
+    // RPCs. After handlers register, server.shutdown() fires while all
+    // 20 RPCs are in-flight across 5 separate HTTP/2 connections. This
+    // tests the server's ability to issue GOAWAY on all 5 connections
+    // simultaneously without deadlocking on a shared mutex or leaving
+    // any connection's streams in a half-closed state. Cross-connection
+    // shutdown ordering is non-deterministic — some connections receive
+    // GOAWAY before others, creating asymmetric teardown timing.
+    //
+    // EXPECTED: All 20 RPCs settle (not hang), each result is a known
+    // settlement type.
+    testTcpAndUds('5 concurrent channels with mixed RPCs under shutdown', (
+      address,
+    ) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channels = List.generate(
+        5,
+        (_) => createTestChannel(address, server.port!),
+      );
+      for (final ch in channels) {
+        addTearDown(() => ch.shutdown());
+      }
+      final clients = channels.map(EchoClient.new).toList();
+
+      final rpcFutures = <Future<Object?>>[];
+      for (var i = 0; i < 5; i++) {
+        final c = clients[i];
+
+        // Unary
+        rpcFutures.add(settleRpc(c.echo(i)));
+
+        // Server stream (50 items)
+        rpcFutures.add(settleRpc(c.serverStream(50).toList()));
+
+        // Client stream (10 items)
+        rpcFutures.add(
+          settleRpc(
+            c.clientStream(
+              pacedStream(
+                List<int>.generate(10, (j) => (j + i) % 256),
+                yieldEvery: 1,
+              ),
+            ),
+          ),
+        );
+
+        // Bidi stream (20 items)
+        rpcFutures.add(
+          settleRpc(
+            c
+                .bidiStream(
+                  pacedStream(
+                    List<int>.generate(20, (j) => (j + i) % 128),
+                    yieldEvery: 1,
+                  ),
+                )
+                .toList(),
+          ),
+        );
+      }
+
+      // Wait for at least some handlers to register.
+      await waitForHandlers(
+        server,
+        minCount: 1,
+        reason:
+            'at least 1 handler must register before '
+            'shutdown',
+      );
+
+      // Kill the server while 20 RPCs are in-flight.
+      await server.shutdown();
+
+      final settled = await Future.wait(rpcFutures).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => fail(
+          '20 concurrent RPCs did not settle after '
+          'shutdown -- possible deadlock',
+        ),
+      );
+
+      expect(settled.length, equals(20), reason: 'all 20 RPCs must settle');
+      for (var i = 0; i < settled.length; i++) {
+        expectExpectedRpcSettlement(
+          settled[i],
+          reason: 'RPC $i must be a known settlement',
+        );
+      }
+
+      for (final ch in channels) {
+        await ch.shutdown();
+      }
+    });
+
+    // -----------------------------------------------------------------------
+    // Test 26: 500KB compressed unary payload during server shutdown race
+    // -----------------------------------------------------------------------
+    // RACE TARGETED: Three 500KB echoBytes RPCs are fired with gzip
+    // compression. The server is shut down concurrently with the third
+    // RPC's initiation. Each 500KB payload exceeds the default HTTP/2
+    // flow control window (65535 bytes) by ~7.6x BEFORE compression.
+    // The shutdown may arrive while the HTTP/2 transport is mid-DATA-
+    // frame, with partial gzip output buffered. If the transport does
+    // not cleanly abort in-progress DATA frame writes, the connection
+    // can deadlock waiting for WINDOW_UPDATE that will never arrive.
+    //
+    // EXPECTED: All 3 RPCs settle (data or GrpcError, not hang).
+    testTcpAndUds(
+      '500KB compressed unary payload during server shutdown race',
+      (address) async {
+        final server = Server.create(
+          services: [EchoService()],
+          codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+        );
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
+
+        final channel = createTestChannel(
+          address,
+          server.port!,
+          codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+        );
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+
+        // Build a 500KB payload with a pseudo-random pattern
+        // that resists gzip compression.
+        final payload = Uint8List(500 * 1024);
+        var seed = 0xCAFEBABE;
+        for (var i = 0; i < payload.length; i++) {
+          seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
+          payload[i] = (seed >> 16) & 0xFF;
+        }
+
+        final opts = CallOptions(compression: const GzipCodec());
+
+        // Fire 3 concurrent 500KB echoBytes RPCs.
+        final rpc1 = settleRpc(client.echoBytes(payload, options: opts));
+        final rpc2 = settleRpc(client.echoBytes(payload, options: opts));
+
+        // Fire the 3rd RPC and shutdown concurrently.
+        final rpc3 = settleRpc(client.echoBytes(payload, options: opts));
+        // Do not await — let shutdown race with the 3rd
+        // RPC's DATA frames.
+        unawaited(server.shutdown());
+
+        final settled = await Future.wait([rpc1, rpc2, rpc3]).timeout(
+          const Duration(seconds: 20),
+          onTimeout: () => fail(
+            '500KB compressed unary shutdown race hung '
+            '-- HTTP/2 flow control deadlock',
+          ),
+        );
+
+        for (var i = 0; i < settled.length; i++) {
+          expectExpectedRpcSettlement(
+            settled[i],
+            reason:
+                '500KB echoBytes RPC $i must settle to '
+                'data or GrpcError',
+          );
+        }
+
+        await channel.shutdown();
+      },
     );
   });
 }

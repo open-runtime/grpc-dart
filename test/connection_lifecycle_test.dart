@@ -457,13 +457,13 @@ void main() {
   // Generation counter stress
   // ---------------------------------------------------------------------------
   group('Generation counter stress', () {
-    // 20 rapid reconnection cycles force the generation counter far
+    // 30 rapid reconnection cycles force the generation counter far
     // beyond 2. Each cycle: RPC succeeds → connection ages out →
     // next RPC triggers a new generation. If the generation guard in
     // _handleSocketDone is wrong (e.g., uses == instead of <, or
     // wraps around), a stale socket.done callback from an early
     // generation will corrupt a much later connection.
-    testTcpAndUds('rapid reconnection forces generation counter to 20+', (
+    testTcpAndUds('rapid reconnection forces generation counter to 30+', (
       address,
     ) async {
       const connectionTimeout = Duration(milliseconds: 20);
@@ -486,10 +486,10 @@ void main() {
 
       final client = EchoClient(channel);
 
-      // 20 cycles: RPC + wait for connection to age out.
+      // 30 cycles: RPC + wait for connection to age out.
       // Use 50ms (slightly > 2x connectionTimeout) for reliable aging.
       const cycleWait = Duration(milliseconds: 50);
-      for (var i = 0; i < 20; i++) {
+      for (var i = 0; i < 30; i++) {
         final result = await client
             .echo(i % 256)
             .timeout(
@@ -512,10 +512,10 @@ void main() {
           .length;
       expect(
         readyCount,
-        greaterThanOrEqualTo(15),
+        greaterThanOrEqualTo(22),
         reason:
-            'Should have reconnected at least 15 times '
-            'across 20 cycles (got $readyCount)',
+            'Should have reconnected at least 22 times '
+            'across 30 cycles (got $readyCount)',
       );
 
       await channel.shutdown();
@@ -578,14 +578,14 @@ void main() {
       await channel.shutdown();
     });
 
-    // 10 RPCs fired simultaneously on a brand-new channel. All 10
+    // 50 RPCs fired simultaneously on a brand-new channel. All 50
     // trigger the lazy connect path concurrently. The channel must
-    // coalesce all 10 into a single connection attempt (not 10
+    // coalesce all 50 into a single connection attempt (not 50
     // parallel TCP connects). If the channel creates multiple
     // connections, stream IDs may collide or the server may see
     // unexpected sessions.
     testTcpAndUds(
-      '10 concurrent RPCs on fresh channel converge to single connection',
+      '50 concurrent RPCs on fresh channel converge to single connection',
       (address) async {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);
@@ -601,13 +601,13 @@ void main() {
 
         final client = EchoClient(channel);
 
-        // Fire 10 RPCs simultaneously on the fresh (unconnected)
-        // channel. All 10 hit the lazy-connect path at the same
+        // Fire 50 RPCs simultaneously on the fresh (unconnected)
+        // channel. All 50 hit the lazy-connect path at the same
         // time.
         final futures = List.generate(
-          10,
+          50,
           (i) => client
-              .echo(i)
+              .echo(i % 256)
               .timeout(
                 const Duration(seconds: 10),
                 onTimeout: () {
@@ -622,10 +622,10 @@ void main() {
         final results = await Future.wait(futures);
 
         for (var i = 0; i < results.length; i++) {
-          expect(results[i], equals(i), reason: 'concurrent RPC $i');
+          expect(results[i], equals(i % 256), reason: 'concurrent RPC $i');
         }
 
-        // Verify only 1 ready state transition occurred (all 10
+        // Verify only 1 ready state transition occurred (all 50
         // RPCs shared the same connection).
         final readyCount = channel.states
             .where((s) => s == ConnectionState.ready)
@@ -634,7 +634,7 @@ void main() {
           readyCount,
           equals(1),
           reason:
-              'All 10 concurrent RPCs should share a single '
+              'All 50 concurrent RPCs should share a single '
               'connection (got $readyCount ready transitions)',
         );
 
@@ -729,7 +729,7 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      const callCount = 200;
+      const callCount = 500;
       final rpcFutures = List.generate(
         callCount,
         (i) => client
@@ -777,8 +777,8 @@ void main() {
         await server.serve(address: address, port: 0);
         addTearDown(() => server.shutdown());
 
-        const cycles = 14;
-        const callCountPerCycle = 140;
+        const cycles = 20;
+        const callCountPerCycle = 200;
 
         for (var cycle = 0; cycle < cycles; cycle++) {
           final channel = TestClientChannel(
@@ -832,7 +832,165 @@ void main() {
           );
         }
       },
-      udsTimeout: const Timeout(Duration(seconds: 120)),
+      udsTimeout: const Timeout(Duration(seconds: 180)),
     );
+
+    // Fire 50 RPCs, wait for reconnection, fire 50 more. All 100
+    // must succeed. The second batch requires the channel to
+    // transparently reconnect while under concurrent load. If the
+    // generation guard or pending-dispatch logic has a gap, some
+    // RPCs from the second batch will hang or error unexpectedly.
+    testTcpAndUds('50 concurrent RPCs during reconnection cycle', (
+      address,
+    ) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            connectionTimeout: const Duration(milliseconds: 30),
+          ),
+        ),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // Round 1: 50 concurrent RPCs on a fresh channel.
+      final round1 = List.generate(
+        50,
+        (i) => client
+            .echo(i % 256)
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                fail(
+                  'round 1 RPC $i timed out '
+                  '-- lazy-connect deadlock',
+                );
+              },
+            ),
+      );
+      final r1 = await Future.wait(round1);
+      for (var i = 0; i < r1.length; i++) {
+        expect(r1[i], equals(i % 256), reason: 'round 1 RPC $i');
+      }
+
+      // Wait for connection to age out (> connectionTimeout).
+      await Future.delayed(const Duration(milliseconds: 80));
+
+      // Round 2: 50 more concurrent RPCs — forces reconnection.
+      final round2 = List.generate(
+        50,
+        (i) => client
+            .echo((i + 50) % 256)
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                fail(
+                  'round 2 RPC $i timed out '
+                  '-- reconnection stalled',
+                );
+              },
+            ),
+      );
+      final r2 = await Future.wait(round2);
+      for (var i = 0; i < r2.length; i++) {
+        expect(r2[i], equals((i + 50) % 256), reason: 'round 2 RPC $i');
+      }
+
+      // Verify at least 2 ready transitions (original + reconnect).
+      final readyCount = channel.states
+          .where((s) => s == ConnectionState.ready)
+          .length;
+      expect(
+        readyCount,
+        greaterThanOrEqualTo(2),
+        reason:
+            'Should have reconnected at least once '
+            '(got $readyCount ready transitions)',
+      );
+
+      await channel.shutdown();
+    });
+
+    // Build up 5 generations via echo cycles, then on the 6th
+    // cycle fire 20 concurrent RPCs and immediately terminate the
+    // channel. All 20 must settle (to int or GrpcError, not hang).
+    // This verifies that terminate() during an active generation
+    // transition does not leave orphaned futures or corrupt the
+    // state machine.
+    testTcpAndUds('terminate during active generation counter advancement', (
+      address,
+    ) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          address,
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            connectionTimeout: const Duration(milliseconds: 20),
+          ),
+        ),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // 5 echo cycles to build up generation counter.
+      for (var i = 0; i < 5; i++) {
+        final result = await client
+            .echo(i % 256)
+            .timeout(
+              const Duration(seconds: 5),
+              onTimeout: () {
+                fail('setup echo hung at cycle $i');
+              },
+            );
+        expect(result, equals(i % 256), reason: 'setup cycle $i');
+        // Wait for connection to age out.
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      // 6th cycle: fire 20 concurrent RPCs + immediately
+      // terminate the channel. The RPCs race against
+      // terminate() during a generation transition.
+      final rpcFutures = List.generate(
+        20,
+        (i) => client.echo(i % 256).then<Object?>((v) => v, onError: (e) => e),
+      );
+
+      // Terminate immediately — do not wait for RPCs.
+      await channel.terminate();
+
+      // All 20 must settle (success or GrpcError).
+      final settled = await Future.wait(rpcFutures).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          fail(
+            'RPCs did not settle after terminate() '
+            'during generation advancement',
+          );
+        },
+      );
+
+      expect(settled.length, equals(20));
+      for (var i = 0; i < settled.length; i++) {
+        expect(
+          settled[i],
+          anyOf(isA<int>(), isA<GrpcError>()),
+          reason:
+              'RPC $i must settle to int or GrpcError, '
+              'not hang or throw arbitrary error',
+        );
+      }
+    });
   });
 }

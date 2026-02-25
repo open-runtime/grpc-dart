@@ -477,11 +477,6 @@ class ServerHandler extends ServiceCall {
       );
     }
 
-    // Mark stream as terminated: endStream: true already closes the
-    // HTTP/2 stream from our side. A subsequent cancel() (e.g. from
-    // Server.shutdown()) must not send a redundant RST_STREAM.
-    _streamTerminated = true;
-
     // Signal completion so Server.handlers cleanup fires.
     // The server tracks handlers via onCanceled.then(remove). On normal
     // completion (_onResponseDone → sendTrailers), isCanceled was never
@@ -565,7 +560,6 @@ class ServerHandler extends ServiceCall {
   }
 
   void cancel() {
-    if (_streamTerminated) return;
     isCanceled = true;
     _timeoutTimer?.cancel();
     // Close the request stream so that handler methods blocked on

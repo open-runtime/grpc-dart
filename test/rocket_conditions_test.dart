@@ -481,8 +481,7 @@ void main() {
       final firstItems =
           await Future.wait(
             firstItemCompleters.map(
-              (c) =>
-                  c.future.then<Object?>((v) => v).catchError((Object e) => e),
+              (c) => settleRpc(c.future.then<Object?>((v) => v)),
             ),
           ).timeout(
             const Duration(seconds: 30),
@@ -687,6 +686,102 @@ void main() {
             );
           }
         }
+      }
+    });
+  });
+
+  group('Named pipe rocket-grade stress', () {
+    testNamedPipe('mixed high-concurrency workloads stay lossless', (
+      pipeName,
+    ) async {
+      const unaryCount = 120;
+      const serverStreamCount = 24;
+      const bidiCount = 24;
+      const streamItems = 40;
+
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      final unarySettled = List.generate(
+        unaryCount,
+        (i) => settleRpc(client.echo(i % 256).then<Object?>((v) => v)),
+      );
+      final serverStreamSettled = List.generate(
+        serverStreamCount,
+        (_) => settleRpc(
+          client.serverStream(streamItems).toList().then<Object?>((v) => v),
+        ),
+      );
+      final bidiInput = List.generate(streamItems, (i) => i % 128);
+      final bidiSettled = List.generate(
+        bidiCount,
+        (_) => settleRpc(
+          client
+              .bidiStream(pacedStream(bidiInput, yieldEvery: 4))
+              .toList()
+              .then<Object?>((v) => v),
+        ),
+      );
+
+      final settled =
+          await Future.wait([
+            ...unarySettled,
+            ...serverStreamSettled,
+            ...bidiSettled,
+          ]).timeout(
+            const Duration(seconds: 90),
+            onTimeout: () =>
+                fail('Named-pipe mixed rocket workload did not settle in time'),
+          );
+
+      for (var i = 0; i < unaryCount; i++) {
+        expectHardcoreRpcSettlement(
+          settled[i],
+          reason: 'Named-pipe unary RPC $i settled unexpectedly',
+        );
+        expect(
+          settled[i],
+          equals(i % 256),
+          reason:
+              'Named-pipe unary RPC $i returned ${settled[i]}, '
+              'expected ${i % 256}',
+        );
+      }
+
+      final expectedServerStream = List.generate(streamItems, (i) => i + 1);
+      for (var i = 0; i < serverStreamCount; i++) {
+        final idx = unaryCount + i;
+        expectHardcoreRpcSettlement(
+          settled[idx],
+          reason: 'Named-pipe server-stream RPC $i settled unexpectedly',
+        );
+        expect(
+          settled[idx],
+          equals(expectedServerStream),
+          reason: 'Named-pipe server-stream RPC $i returned bad payload',
+        );
+      }
+
+      final expectedBidi = bidiInput.map((v) => (v * 2) % 256).toList();
+      for (var i = 0; i < bidiCount; i++) {
+        final idx = unaryCount + serverStreamCount + i;
+        expectHardcoreRpcSettlement(
+          settled[idx],
+          reason: 'Named-pipe bidi RPC $i settled unexpectedly',
+        );
+        expect(
+          settled[idx],
+          equals(expectedBidi),
+          reason: 'Named-pipe bidi RPC $i returned bad payload',
+        );
       }
     });
   });

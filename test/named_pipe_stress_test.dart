@@ -173,7 +173,7 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      // Request a long server stream (1000 items, ~10ms each = ~10 seconds).
+      // Request a long server stream (1000 items, ~1ms each = ~1 second).
       // Using 1000 instead of 100 makes it impossible for the stream to
       // complete before the server is shut down, eliminating flakiness on
       // fast machines.
@@ -184,6 +184,7 @@ void main() {
       // is inherently racy.
       final receivedFirst = Completer<void>();
       final results = <int>[];
+      final unexpectedErrors = <Object>[];
 
       final subscription = client
           .serverStream(1000)
@@ -194,8 +195,11 @@ void main() {
                 receivedFirst.complete();
               }
             },
-            onError: (_) {
+            onError: (Object e) {
               // Expected: GrpcError when server shuts down mid-stream.
+              if (e is! GrpcError) {
+                unexpectedErrors.add(e);
+              }
               if (!receivedFirst.isCompleted) {
                 receivedFirst.complete();
               }
@@ -209,10 +213,15 @@ void main() {
       // Cancel the client subscription to prevent dangling listeners.
       await subscription.cancel();
 
-      // The stream should have been cut short — 1000 items at 10ms each
-      // would take ~10 seconds, but we shut down almost immediately after
+      // The stream should have been cut short — 1000 items at 1ms each
+      // would take about 1 second, but we shut down almost immediately after
       // the first item. Verify we got at least 1 (confirmed by
       // receivedFirst) and fewer than 1000 (confirmed by early shutdown).
+      expect(
+        unexpectedErrors,
+        isEmpty,
+        reason: 'Only GrpcError is expected during forced mid-stream shutdown',
+      );
       expect(
         results.length,
         greaterThan(0),
