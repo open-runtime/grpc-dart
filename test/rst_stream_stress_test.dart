@@ -43,8 +43,18 @@ void main() {
         'on server.shutdown() alone', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        try {
+          await server.shutdown();
+        } catch (_) {}
+      });
 
       final channel = createTestChannel(address, server.port!);
+      addTearDown(() async {
+        try {
+          await channel.shutdown();
+        } catch (_) {}
+      });
       final client = EchoClient(channel);
 
       final doneCompleters = List.generate(50, (_) => Completer<void>());
