@@ -283,12 +283,17 @@ void main() {
       return dummyValue;
     }
 
+    // Capture errors from the stream; assert after stream completes
+    // to avoid expect() throwing TestFailure inside onError, which
+    // would prevent completers from completing and hang the test.
+    final streamErrors = <dynamic>[];
+
     harness
       ..service.unaryHandler = methodHandler
       ..fromServer.stream.listen(
         expectAsync1((_) {}, count: 0),
         onError: expectAsync1((dynamic error) {
-          expect(error, 'TERMINATED');
+          streamErrors.add(error);
         }, count: 1),
         onDone: expectAsync0(() {}, count: 1),
       )
@@ -298,6 +303,9 @@ void main() {
     expect(await success.future, isTrue);
     await harness.toServer.close();
     await harness.fromServer.done;
+
+    expect(streamErrors, hasLength(1));
+    expect(streamErrors.first, 'TERMINATED');
   });
 
   test(

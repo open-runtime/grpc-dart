@@ -52,6 +52,7 @@ class ServerKeepAlive {
 
   int _badPings = 0;
   Stopwatch? _timeOfLastReceivedPing;
+  bool _tooManyBadPingsTriggered = false;
 
   ServerKeepAlive({
     this.tooManyBadPings,
@@ -64,7 +65,9 @@ class ServerKeepAlive {
     // If we don't care about bad pings, there is not point in listening to
     // events.
     if (_enforcesMaxBadPings) {
-      pingNotifier.listen((_) => _onPingReceived());
+      pingNotifier.listen((_) {
+        _onPingReceived().catchError((_) {});
+      });
       dataNotifier.listen((_) => _onDataReceived());
     }
   }
@@ -77,10 +80,25 @@ class ServerKeepAlive {
         _timeOfLastReceivedPing = clock.stopwatch()
           ..reset()
           ..start();
-      } else if (_timeOfLastReceivedPing!.elapsed > options.minIntervalBetweenPingsWithoutData) {
+      } else if (_timeOfLastReceivedPing!.elapsed < options.minIntervalBetweenPingsWithoutData) {
+        // Strike: ping arrived faster than the minimum allowed interval.
+        // Reference: gRPC C++ ping_abuse_policy.cc — pings below the
+        // minimum interval increment the bad-ping counter.
         _badPings++;
+        _timeOfLastReceivedPing!
+          ..reset()
+          ..start();
+      } else {
+        // Legitimate ping: reset the stopwatch for the next interval
+        // measurement. Without this reset, elapsed time accumulates
+        // across pings, causing subsequent fast pings to appear slow
+        // (C++ reference resets last_ping_recv_time_ = now on every ping).
+        _timeOfLastReceivedPing!
+          ..reset()
+          ..start();
       }
-      if (_badPings > options.maxBadPings!) {
+      if (_badPings > options.maxBadPings! && !_tooManyBadPingsTriggered) {
+        _tooManyBadPingsTriggered = true;
         await tooManyBadPings?.call();
       }
     }

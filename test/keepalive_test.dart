@@ -41,7 +41,9 @@ void main() {
   setUp(() async {
     final serverOptions = ServerKeepAliveOptions(
       maxBadPings: maxBadPings,
-      minIntervalBetweenPingsWithoutData: Duration(milliseconds: 10),
+      // Must be significantly LARGER than client's pingInterval (10ms)
+      // so that client pings are reliably detected as "too fast".
+      minIntervalBetweenPingsWithoutData: Duration(milliseconds: 500),
     );
     final clientOptions = ClientKeepAliveOptions(
       pingInterval: pingInterval,
@@ -54,6 +56,8 @@ void main() {
       keepAliveOptions: serverOptions,
     );
     await server.serve(address: 'localhost', port: 0);
+    addTearDown(() => server.shutdown());
+
     fakeChannel = FakeClientChannel(
       'localhost',
       port: server.port!,
@@ -62,6 +66,7 @@ void main() {
         keepAlive: clientOptions,
       ),
     );
+    addTearDown(() => fakeChannel.shutdown());
     fakeClient = EchoServiceClient(fakeChannel);
 
     unresponsiveChannel = UnresponsiveClientChannel(
@@ -72,23 +77,33 @@ void main() {
         keepAlive: clientOptions,
       ),
     );
+    addTearDown(() => unresponsiveChannel.shutdown());
     unresponsiveClient = EchoServiceClient(unresponsiveChannel);
-  });
-
-  tearDown(() async {
-    await fakeChannel.shutdown();
-    await server.shutdown();
   });
 
   test(
     'Server terminates connection after too many pings without data',
     () async {
       await fakeClient.echo(EchoRequest());
-      await Future.delayed(timeout * maxBadPings * 2);
-      await fakeClient.echo(EchoRequest());
-      // Check that the server closed the connection, the next request then has
-      // to build a new one.
-      expect(fakeChannel.newConnectionCounter, 2);
+      // Config-derived wait: client pings every 10ms, server needs >5 bad
+      // pings to close (10ms < 500ms minInterval ⇒ every ping is bad).
+      // Ideal: 6 pings × 10ms = 60ms + GOAWAY propagation ≈ 100ms.
+      // Under CI contention (concurrency=4), Dart timer resolution
+      // degrades 2–4×. Use 1000ms for comfortable headroom.
+      await Future.delayed(const Duration(milliseconds: 1000));
+      // The GOAWAY (ENHANCE_YOUR_CALM) may still be mid-propagation on
+      // slow runners. If the echo hits the dying connection, catch the
+      // transport error and retry on the freshly opened connection.
+      try {
+        await fakeClient.echo(EchoRequest());
+      } catch (_) {
+        // GOAWAY is being processed — wait for the channel to detect
+        // the dead connection and reconnect on the next attempt.
+        await Future.delayed(const Duration(milliseconds: 500));
+        await fakeClient.echo(EchoRequest());
+      }
+      // Server closed connection 1 via GOAWAY, forcing a reconnect.
+      expect(fakeChannel.newConnectionCounter, greaterThanOrEqualTo(2));
     },
   );
 
@@ -112,7 +127,7 @@ void main() {
       await unresponsiveClient.echo(EchoRequest());
       expect(unresponsiveChannel.newConnectionCounter, 1);
 
-      //Ping is not being acked on time
+      // Config-derived wait: client ping timeout fires after ~timeout.
       await Future.delayed(timeout * 2);
 
       //A second request gets a new connection

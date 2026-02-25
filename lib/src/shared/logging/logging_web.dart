@@ -13,8 +13,84 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// Platform-specific logging for web/browser environments
-/// Uses print since dart:io is unavailable in web
-void logGrpcError(String message) {
+/// Callback type for gRPC internal error logging.
+///
+/// Replace [grpcErrorLogger] to integrate with your application's logging
+/// framework.
+typedef GrpcErrorLogger = void Function(String message);
+
+/// The active gRPC error logger. Defaults to print for web environments.
+///
+/// Override this to capture gRPC internal errors in your logging framework:
+/// ```dart
+/// grpcErrorLogger = (message) => myLogger.warning(message);
+/// ```
+GrpcErrorLogger grpcErrorLogger = _defaultLogger;
+
+void _defaultLogger(String message) {
   print(message);
+}
+
+/// Logs a gRPC internal error using the configured [grpcErrorLogger].
+void logGrpcError(String message) {
+  grpcErrorLogger(message);
+}
+
+// ==========================================================================
+// Structured event logging (opt-in)
+// ==========================================================================
+
+/// A structured gRPC log event for production observability.
+///
+/// See [GrpcLogEvent] in `logging_io.dart` for full documentation.
+class GrpcLogEvent {
+  /// Component that generated the event.
+  final String component;
+
+  /// What happened.
+  final String event;
+
+  /// Where it happened — typically the method name.
+  final String context;
+
+  /// The underlying error, if any.
+  final Object? error;
+
+  /// The pre-formatted log message string.
+  final String formattedMessage;
+
+  const GrpcLogEvent({
+    required this.component,
+    required this.event,
+    required this.context,
+    required this.formattedMessage,
+    this.error,
+  });
+
+  @override
+  String toString() => formattedMessage;
+}
+
+/// Callback type for structured gRPC event logging.
+typedef GrpcEventLogger = void Function(GrpcLogEvent event);
+
+/// Optional structured event logger. See `logging_io.dart` for full docs.
+GrpcEventLogger? grpcEventLogger;
+
+/// Logs a structured gRPC event.
+///
+/// Always calls [grpcErrorLogger] with [message]. Additionally calls
+/// [grpcEventLogger] with a structured [GrpcLogEvent] if set.
+void logGrpcEvent(
+  String message, {
+  required String component,
+  required String event,
+  required String context,
+  Object? error,
+}) {
+  logGrpcError(message);
+  final logger = grpcEventLogger;
+  if (logger != null) {
+    logger(GrpcLogEvent(component: component, event: event, context: context, formattedMessage: message, error: error));
+  }
 }

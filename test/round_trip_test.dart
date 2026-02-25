@@ -121,6 +121,7 @@ Future<void> main() async {
     // round trip test of insecure connection.
     final server = Server.create(services: [TestService()]);
     await server.serve(address: address, port: 0);
+    addTearDown(() => server.shutdown());
 
     final channel = FixedConnectionClientChannel(
       Http2ClientConnection(
@@ -129,13 +130,14 @@ Future<void> main() async {
         ChannelOptions(credentials: ChannelCredentials.insecure()),
       ),
     );
+    addTearDown(() => channel.shutdown());
     final testClient = TestClient(channel);
     expect(await testClient.stream(TestService.requestFiniteStream).toList(), [
       1,
       2,
       3,
     ]);
-    server.shutdown();
+    await server.shutdown();
   });
 
   testUds('UDS provides valid default authority', (address) async {
@@ -144,6 +146,7 @@ Future<void> main() async {
       services: [TestService(expectedAuthority: 'localhost')],
     );
     await server.serve(address: address, port: 0);
+    addTearDown(() => server.shutdown());
 
     final channel = FixedConnectionClientChannel(
       Http2ClientConnection(
@@ -152,13 +155,14 @@ Future<void> main() async {
         ChannelOptions(credentials: ChannelCredentials.insecure()),
       ),
     );
+    addTearDown(() => channel.shutdown());
     final testClient = TestClient(channel);
     expect(await testClient.stream(TestService.requestFiniteStream).toList(), [
       1,
       2,
       3,
     ]);
-    server.shutdown();
+    await server.shutdown();
   });
 
   testTcpAndUds('round trip with outgoing and incoming compression', (
@@ -169,6 +173,7 @@ Future<void> main() async {
       codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
     );
     await server.serve(address: address, port: 0);
+    addTearDown(() => server.shutdown());
 
     final channel = FixedConnectionClientChannel(
       Http2ClientConnection(
@@ -180,6 +185,7 @@ Future<void> main() async {
         ),
       ),
     );
+    addTearDown(() => channel.shutdown());
     final testClient = TestClient(channel);
     expect(
       await testClient
@@ -204,6 +210,7 @@ Future<void> main() async {
         privateKey: File('test/data/localhost.key').readAsBytesSync(),
       ),
     );
+    addTearDown(() => server.shutdown());
 
     final channel = FixedConnectionClientChannel(
       Http2ClientConnection(
@@ -217,20 +224,23 @@ Future<void> main() async {
         ),
       ),
     );
+    addTearDown(() => channel.shutdown());
     final testClient = TestClient(channel);
     expect(await testClient.stream(TestService.requestFiniteStream).toList(), [
       1,
       2,
       3,
     ]);
-    server.shutdown();
+    await server.shutdown();
   });
 
-  test('exception in onMetadataException', () async {
+  test('exception in onMetadataException',
+      timeout: const Timeout(Duration(seconds: 60)), () async {
     final server = Server.create(
       services: [TestServiceWithOnMetadataException()],
     );
     await server.serve(address: 'localhost', port: 0);
+    addTearDown(() => server.shutdown());
 
     final channel = FixedConnectionClientChannel(
       Http2ClientConnection(
@@ -239,6 +249,7 @@ Future<void> main() async {
         ChannelOptions(credentials: ChannelCredentials.insecure()),
       ),
     );
+    addTearDown(() => channel.shutdown());
     final testClient = TestClient(channel);
     await expectLater(
       testClient.stream(TestService.requestFiniteStream).toList(),
@@ -250,6 +261,7 @@ Future<void> main() async {
   test('cancellation of streaming subscription propagates properly', () async {
     final server = Server.create(services: [TestService()]);
     await server.serve(address: 'localhost', port: 0);
+    addTearDown(() => server.shutdown());
 
     final channel = FixedConnectionClientChannel(
       Http2ClientConnection(
@@ -258,6 +270,7 @@ Future<void> main() async {
         ChannelOptions(credentials: ChannelCredentials.insecure()),
       ),
     );
+    addTearDown(() => channel.shutdown());
     final testClient = TestClient(channel);
     expect(await testClient.stream(TestService.requestInfiniteStream).first, 1);
     await channel.shutdown();
@@ -267,6 +280,7 @@ Future<void> main() async {
   test('trailers on server GrpcError', () async {
     final server = Server.create(services: [TestServiceWithGrpcError()]);
     await server.serve(address: 'localhost', port: 0);
+    addTearDown(() => server.shutdown());
 
     final channel = FixedConnectionClientChannel(
       Http2ClientConnection(
@@ -275,6 +289,7 @@ Future<void> main() async {
         ChannelOptions(credentials: ChannelCredentials.insecure()),
       ),
     );
+    addTearDown(() => channel.shutdown());
     final testClient = TestClient(channel);
     await expectLater(
       testClient.stream(TestService.requestFiniteStream).toList(),

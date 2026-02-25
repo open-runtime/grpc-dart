@@ -1,5 +1,5 @@
-// Copyright (c) 2025, the gRPC project authors. Please see the AUTHORS file
-// for details. All rights reserved.
+// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba.,
+// Pieces.app. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,16 +16,28 @@
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:io' show Platform;
-import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:http2/transport.dart';
 import 'package:win32/win32.dart';
 
+import '../shared/named_pipe_io.dart';
 import 'client_transport_connector.dart';
 
-/// Buffer size for pipe I/O operations.
-const int _kBufferSize = 65536;
+/// Maximum number of retry attempts when the pipe is busy.
+///
+/// Uses exponential backoff starting at 100ms: 100ms, 200ms, 400ms.
+/// This is a defense-in-depth measure for production scenarios where all pipe
+/// instances are briefly in use (between the server accepting one connection
+/// and creating the next pipe instance). The server's serve() method
+/// guarantees the pipe exists, so ERROR_FILE_NOT_FOUND is NOT retried.
+const int _kMaxPipeBusyRetries = 3;
+
+/// Computes the backoff delay for a PIPE_BUSY retry attempt.
+///
+/// Uses simple exponential backoff: 100ms * 2^attempt.
+/// attempt 0 → 100ms, attempt 1 → 200ms, attempt 2 → 400ms.
+Duration _pipeBusyRetryDelay(int attempt) => Duration(milliseconds: 100 * (1 << attempt));
 
 /// A [ClientTransportConnector] implementation for Windows named pipes.
 ///
@@ -50,8 +62,11 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   /// The name of the pipe (without the `\\.\pipe\` prefix).
   final String pipeName;
 
-  /// Completer that signals when the connection is closed.
-  final Completer<void> _doneCompleter = Completer<void>();
+  /// Completer that signals when the active connection is closed.
+  ///
+  /// This is reset at the start of every [connect] call so each logical
+  /// transport generation has its own done Future.
+  Completer<void> _doneCompleter = Completer<void>();
 
   /// The underlying pipe handle (valid only after connect).
   int? _pipeHandle;
@@ -66,7 +81,7 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   NamedPipeTransportConnector(this.pipeName);
 
   /// The full Windows path for the named pipe.
-  String get pipePath => r'\\.\pipe\' + pipeName;
+  String get pipePath => namedPipePath(pipeName);
 
   @override
   String get authority => 'localhost';
@@ -80,28 +95,55 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
       );
     }
 
-    final pipePathPtr = pipePath.toNativeUtf16();
+    // Reconnection path safety: if a previous stream/handle is still tracked
+    // in this connector instance, dispose it before creating a new transport.
+    // This prevents stale handle retention across reconnect generations.
+    _disposeCurrentPipeResources();
+    _doneCompleter = Completer<void>();
+
+    // Use calloc allocator so the matching calloc.free() is correct.
+    // toNativeUtf16() defaults to malloc — passing calloc explicitly
+    // avoids an allocator mismatch.
+    final pipePathPtr = pipePath.toNativeUtf16(allocator: calloc);
 
     try {
-      // Open the named pipe for reading and writing
-      final hPipe = CreateFile(
-        pipePathPtr,
-        GENERIC_READ | GENERIC_WRITE,
-        0, // No sharing
-        nullptr, // Default security
-        OPEN_EXISTING,
-        0, // Normal attributes
-        NULL, // No template
-      );
+      // Open the named pipe for reading and writing.
+      //
+      // The server's serve() method guarantees the pipe exists in the Windows
+      // namespace before returning, so CreateFile should succeed immediately
+      // in the common case.
+      //
+      // Defense-in-depth: In production under load, ERROR_PIPE_BUSY (231) can
+      // legitimately occur when all pipe instances are briefly in use — the
+      // window between the server accepting one connection and creating the
+      // next pipe instance. We retry with exponential backoff for this
+      // specific error only.
+      //
+      // ERROR_FILE_NOT_FOUND is NOT retried because serve() guarantees the
+      // pipe exists. If the pipe doesn't exist, that indicates a real problem
+      // (server crashed, wrong pipe name, etc.) and should fail immediately.
+      final hPipe = await _openPipeWithRetry(pipePathPtr);
 
-      if (hPipe == INVALID_HANDLE_VALUE) {
-        final error = GetLastError();
-        throw NamedPipeException('Failed to connect to named pipe "$pipePath": Win32 error $error', error);
+      // First shutdown race guard: connect() yields in _openPipeWithRetry (retry
+      // delays on PIPE_BUSY). If shutdown() runs during that wait, it completes
+      // _doneCompleter and disposes resources. When we resume, we must not
+      // assign the newly opened handle to _pipeHandle (would cause double-close
+      // in shutdown's _disposeCurrentPipeResources). Instead: close the handle
+      // directly and fail deterministically. Per-connect done lifecycle: we
+      // reset _doneCompleter at connect start, so completion here means
+      // shutdown() ran during our async wait.
+      if (_doneCompleter.isCompleted) {
+        CloseHandle(hPipe);
+        throw NamedPipeException(
+          'Connect aborted: connector was shutdown during connect',
+          995, // ERROR_OPERATION_ABORTED
+        );
       }
 
-      _pipeHandle = hPipe;
-
-      // Set pipe mode to message mode for better framing
+      // Set pipe to byte-read mode for stream-oriented HTTP/2 framing.
+      // IMPORTANT: Do not assign _pipeHandle until SetNamedPipeHandleState
+      // succeeds — otherwise shutdown() would double-close an already-closed
+      // handle if this step fails.
       final mode = calloc<DWORD>();
       mode.value = PIPE_READMODE_BYTE;
       final success = SetNamedPipeHandleState(hPipe, mode, nullptr, nullptr);
@@ -113,8 +155,30 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
         throw NamedPipeException('Failed to set pipe mode: Win32 error $error', error);
       }
 
+      // Handle is fully initialized — safe to track for shutdown cleanup.
+      _pipeHandle = hPipe;
+
       // Create bidirectional stream wrapper
       _pipeStream = _NamedPipeStream(hPipe, _doneCompleter);
+
+      // Second shutdown race guard: between the first guard (after
+      // _openPipeWithRetry) and this return, connect() performs synchronous
+      // work (SetNamedPipeHandleState, handle assignment, stream creation).
+      // In single-threaded Dart this block does not yield, but defense-in-depth
+      // protects against: (a) future awaits added to this path, (b) cross-
+      // isolate usage. If shutdown() ran during this window, _doneCompleter
+      // is completed. We must not return a transport — clean any resources
+      // we just created (shutdown may have run before we assigned _pipeHandle,
+      // so our handle might not have been disposed yet) and fail deterministically.
+      // _disposeCurrentPipeResources is idempotent; if shutdown already closed
+      // the handle, it is a no-op. Avoids double-close.
+      if (_doneCompleter.isCompleted) {
+        _disposeCurrentPipeResources();
+        throw NamedPipeException(
+          'Connect aborted: connector was shutdown during connect',
+          995, // ERROR_OPERATION_ABORTED
+        );
+      }
 
       // Create HTTP/2 connection over the pipe streams
       return ClientTransportConnection.viaStreams(_pipeStream!.incoming, _pipeStream!.outgoingSink);
@@ -123,20 +187,85 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
     }
   }
 
+  /// Opens the named pipe, retrying only on ERROR_PIPE_BUSY.
+  ///
+  /// This is a defense-in-depth retry for production scenarios where all
+  /// server pipe instances are transiently occupied. The server creates
+  /// PIPE_UNLIMITED_INSTANCES, so busy is always a transient condition
+  /// that resolves once the server's accept loop creates the next instance.
+  ///
+  /// All other errors (including ERROR_FILE_NOT_FOUND) fail immediately.
+  Future<int> _openPipeWithRetry(Pointer<Utf16> pipePathPtr) async {
+    for (var attempt = 0; attempt <= _kMaxPipeBusyRetries; attempt++) {
+      final hPipe = CreateFile(
+        pipePathPtr,
+        GENERIC_READ | GENERIC_WRITE,
+        0, // No sharing
+        nullptr, // Default security
+        OPEN_EXISTING,
+        0, // Normal attributes
+        NULL, // No template
+      );
+
+      if (hPipe != INVALID_HANDLE_VALUE) {
+        return hPipe;
+      }
+
+      final error = GetLastError();
+
+      // Only retry on ERROR_PIPE_BUSY — all pipe instances are temporarily
+      // in use. This is a normal transient condition under load.
+      if (error == ERROR_PIPE_BUSY && attempt < _kMaxPipeBusyRetries) {
+        await Future<void>.delayed(_pipeBusyRetryDelay(attempt));
+        continue;
+      }
+
+      // All other errors fail immediately. ERROR_FILE_NOT_FOUND means
+      // the pipe doesn't exist (server not running or wrong name).
+      // ERROR_PIPE_BUSY after all retries exhausted also fails here.
+      throw NamedPipeException(
+        'Failed to connect to named pipe "$pipePath"'
+        '${error == ERROR_PIPE_BUSY ? " (all $_kMaxPipeBusyRetries retries exhausted)" : ""}'
+        ': Win32 error $error',
+        error,
+      );
+    }
+    // Required for Dart flow analysis — the loop above always returns or
+    // throws, but the analyzer cannot prove this statically.
+    throw StateError('Unreachable');
+  }
+
   @override
   Future<void> get done => _doneCompleter.future;
 
   @override
   void shutdown() {
-    _pipeStream?.close();
-    final handle = _pipeHandle;
-    if (handle != null && handle != INVALID_HANDLE_VALUE) {
-      FlushFileBuffers(handle);
-      CloseHandle(handle);
-      _pipeHandle = null;
-    }
+    _disposeCurrentPipeResources();
     if (!_doneCompleter.isCompleted) {
       _doneCompleter.complete();
+    }
+  }
+
+  /// Disposes current stream and OS handle tracked by this connector.
+  ///
+  /// Safe to call repeatedly — both stream close and handle close paths
+  /// are idempotent in this connector.
+  void _disposeCurrentPipeResources() {
+    _pipeStream?.close();
+    _pipeStream = null;
+
+    final handle = _pipeHandle;
+    if (handle != null && handle != INVALID_HANDLE_VALUE) {
+      // IMPORTANT: Do NOT call FlushFileBuffers here. It is a synchronous
+      // FFI call that blocks until the server reads ALL pending data from
+      // the pipe buffer. During shutdown/reconnect cleanup, the peer may not
+      // be reading. A blocking flush can freeze the isolate event loop.
+      //
+      // With synchronous pipe mode, WriteFile already ensures data is in
+      // the pipe buffer before returning. CloseHandle releases the handle,
+      // and unread data may be discarded as part of teardown.
+      CloseHandle(handle);
+      _pipeHandle = null;
     }
   }
 }
@@ -151,6 +280,12 @@ class _NamedPipeStream {
   final StreamController<List<int>> _incomingController = StreamController<List<int>>();
   final StreamController<List<int>> _outgoingController = StreamController<List<int>>();
 
+  /// Subscription to outgoing data events, stored so it can be explicitly
+  /// cancelled during [close]. Without explicit cancellation, a dangling
+  /// subscription keeps the event loop alive when [_outgoingController.close]
+  /// throws due to an active `addStream()` from the HTTP/2 transport.
+  StreamSubscription<List<int>>? _outgoingSubscription;
+
   bool _isClosed = false;
 
   _NamedPipeStream(this._handle, this._doneCompleter) {
@@ -158,11 +293,13 @@ class _NamedPipeStream {
     Future.microtask(_readLoop);
 
     // Forward outgoing data to the pipe
-    _outgoingController.stream.listen(
+    _outgoingSubscription = _outgoingController.stream.listen(
       _writeData,
       onDone: close,
       onError: (error) {
-        _incomingController.addError(error);
+        if (!_isClosed && !_incomingController.isClosed) {
+          _incomingController.addError(error);
+        }
         close();
       },
     );
@@ -175,67 +312,150 @@ class _NamedPipeStream {
   StreamSink<List<int>> get outgoingSink => _outgoingController.sink;
 
   /// Continuously reads from the pipe and adds to incoming stream.
+  ///
+  /// Uses [PeekNamedPipe] to poll for data availability before calling
+  /// [ReadFile]. This is critical because ReadFile with a synchronous pipe
+  /// handle is a **blocking FFI call** that freezes the Dart event loop —
+  /// preventing HTTP/2 writes, test timeouts, and all other async work.
+  /// By only calling ReadFile when data is confirmed available, the event
+  /// loop remains responsive between reads.
+  ///
+  /// **Error propagation**: When [ReadFile] fails with an unexpected Win32
+  /// error (not BROKEN_PIPE / NO_DATA), a [NamedPipeException] is added to
+  /// [_incomingController] as a stream error. This error propagates through:
+  ///
+  ///  1. [_incomingController.stream] (the [incoming] stream)
+  ///  2. [ClientTransportConnection.viaStreams] — the HTTP/2 transport layer
+  ///  3. The HTTP/2 transport detects the stream error and closes
+  ///  4. [NamedPipeTransportConnector.done] completes, triggering connection
+  ///     abandonment in [Http2ClientConnection]
+  ///  5. Pending gRPC calls are failed with [GrpcError.unavailable], wrapping
+  ///     the original [NamedPipeException] message
+  ///
+  /// This is the correct behavior: transport-level read failures surface as
+  /// gRPC UNAVAILABLE errors, which clients can retry via standard gRPC
+  /// retry policies.
   Future<void> _readLoop() async {
-    final buffer = calloc<Uint8>(_kBufferSize);
+    final buffer = calloc<Uint8>(kNamedPipeBufferSize);
     final bytesRead = calloc<DWORD>();
+    final peekAvail = calloc<DWORD>();
 
     try {
-      while (!_isClosed) {
-        bytesRead.value = 0;
+      while (!_isClosed && !_incomingController.isClosed) {
+        // Non-blocking check: is there data available on the pipe?
+        //
+        // PeekNamedPipe returns immediately without blocking the thread.
+        // This is essential because ReadFile with a synchronous pipe handle
+        // blocks the entire Dart isolate thread (FFI calls cannot be
+        // interrupted), which would prevent:
+        //  - HTTP/2 outgoing writes (request/response framing)
+        //  - dart:test timeout timers
+        //  - Any other scheduled async work
+        //
+        // Without this check, the first ReadFile call would deadlock: the
+        // client blocks waiting for server data, but the server is waiting
+        // for the client's HTTP/2 connection preface that can never be sent.
+        peekAvail.value = 0;
+        final peekResult = PeekNamedPipe(
+          _handle,
+          nullptr, // Don't read data, just check availability
+          0,
+          nullptr,
+          peekAvail,
+          nullptr,
+        );
 
-        // Read from pipe (blocking call)
-        final success = ReadFile(_handle, buffer, _kBufferSize, bytesRead, nullptr);
+        if (peekResult == 0) {
+          // PeekNamedPipe failed — pipe is closed or broken.
+          final error = GetLastError();
+          if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA && !_incomingController.isClosed) {
+            _incomingController.addError(NamedPipeException('Peek failed: Win32 error $error', error));
+          }
+          break;
+        }
+
+        if (peekAvail.value == 0) {
+          // No data available yet. Yield to the event loop so HTTP/2
+          // writes and other async work can proceed. Use 1ms delay
+          // instead of Duration.zero to yield to the full event queue
+          // (not just microtasks).
+          await Future.delayed(const Duration(milliseconds: 1));
+          continue;
+        }
+
+        // Data confirmed available — ReadFile will return immediately.
+        bytesRead.value = 0;
+        final success = ReadFile(_handle, buffer, kNamedPipeBufferSize, bytesRead, nullptr);
 
         if (success == 0) {
           final error = GetLastError();
           if (error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA) {
-            // Pipe closed gracefully
             break;
           }
-          _incomingController.addError(NamedPipeException('Read failed: Win32 error $error', error));
+          if (!_incomingController.isClosed) {
+            _incomingController.addError(NamedPipeException('Read failed: Win32 error $error', error));
+          }
           break;
         }
 
         final count = bytesRead.value;
-        if (count == 0) {
-          // No data, yield to event loop
-          await Future.delayed(Duration.zero);
-          continue;
+        if (count > 0) {
+          final data = copyFromNativeBuffer(buffer, count);
+          _incomingController.add(data);
         }
-
-        // Copy bytes and add to stream
-        final data = Uint8List(count);
-        for (var i = 0; i < count; i++) {
-          data[i] = buffer[i];
-        }
-        _incomingController.add(data);
       }
     } finally {
       calloc.free(buffer);
       calloc.free(bytesRead);
+      calloc.free(peekAvail);
       close();
     }
   }
 
-  /// Writes data to the pipe.
+  /// Writes data to the pipe, handling partial writes.
+  ///
+  /// [WriteFile] can succeed but write fewer bytes than requested when the
+  /// pipe's internal buffer is nearly full. A partial write silently drops
+  /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
+  /// until all bytes are written or an error occurs.
   void _writeData(List<int> data) {
     if (_isClosed) return;
+
+    // Guard against zero-length writes: calloc<Uint8>(0) is undefined
+    // behavior (may return nullptr on some platforms).
+    if (data.isEmpty) return;
 
     final buffer = calloc<Uint8>(data.length);
     final bytesWritten = calloc<DWORD>();
 
     try {
       // Copy data to native buffer
-      for (var i = 0; i < data.length; i++) {
-        buffer[i] = data[i];
-      }
+      copyToNativeBuffer(buffer, data);
 
-      final success = WriteFile(_handle, buffer, data.length, bytesWritten, nullptr);
+      var offset = 0;
+      while (offset < data.length) {
+        bytesWritten.value = 0;
+        final remaining = data.length - offset;
+        final success = WriteFile(_handle, buffer + offset, remaining, bytesWritten, nullptr);
 
-      if (success == 0) {
-        final error = GetLastError();
-        _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
-        close();
+        if (success == 0) {
+          final error = GetLastError();
+          if (!_incomingController.isClosed) {
+            _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
+          }
+          close();
+          return;
+        }
+
+        if (bytesWritten.value == 0) {
+          if (!_incomingController.isClosed) {
+            _incomingController.addError(NamedPipeException('Write stalled: 0 bytes written', 0));
+          }
+          close();
+          return;
+        }
+
+        offset += bytesWritten.value;
       }
     } finally {
       calloc.free(buffer);
@@ -244,12 +464,43 @@ class _NamedPipeStream {
   }
 
   /// Closes the pipe streams.
+  ///
+  /// This method is safe to call from any context — including during active
+  /// HTTP/2 `addStream()` operations. The HTTP/2 transport pipes frames into
+  /// [outgoingSink] via `addStream()`, which locks the [StreamController].
+  ///
+  /// By cancelling [_outgoingSubscription] first, we trigger the cascade:
+  ///  1. The single-subscription controller detects no listeners
+  ///  2. The active `addStream()` cancels its source subscription
+  ///  3. The `addStream()` Future completes, unlocking the controller
+  ///  4. `_outgoingController.close()` succeeds normally
+  ///
+  /// Without this explicit cancellation, the subscription keeps the event
+  /// loop alive indefinitely — causing the test process to hang for 20+
+  /// minutes until the CI timeout kills it.
+  ///
+  /// Note: This does NOT close the underlying Win32 handle. The handle is
+  /// owned by [NamedPipeTransportConnector] and closed by connector-level
+  /// teardown (shutdown and reconnect cleanup).
   void close() {
     if (_isClosed) return;
     _isClosed = true;
 
     _incomingController.close();
-    _outgoingController.close();
+
+    // Cancel the outgoing subscription BEFORE closing the controller.
+    // This unlocks the controller if addStream() is active (see doc above).
+    _outgoingSubscription?.cancel();
+    _outgoingSubscription = null;
+
+    // With the subscription cancelled, close() should succeed. Keep the
+    // try-catch as defense-in-depth in case of unexpected edge cases.
+    try {
+      _outgoingController.close();
+    } catch (_) {
+      // Defensive: should not happen after subscription cancellation,
+      // but must not fail during shutdown.
+    }
 
     if (!_doneCompleter.isCompleted) {
       _doneCompleter.complete();

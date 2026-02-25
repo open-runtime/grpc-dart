@@ -29,6 +29,7 @@ class Http2TransportStream extends GrpcTransportStream {
   final Stream<GrpcMessage> incomingMessages;
   final StreamController<List<int>> _outgoingMessages = StreamController();
   final ErrorHandler _onError;
+  late final StreamSubscription _outgoingSubscription;
 
   @override
   StreamSink<List<int>> get outgoingMessages => _outgoingMessages.sink;
@@ -37,20 +38,39 @@ class Http2TransportStream extends GrpcTransportStream {
     : incomingMessages = _transportStream.incomingMessages
           .transform(GrpcHttpDecoder(forResponse: true))
           .transform(grpcDecompressor(codecRegistry: codecRegistry)) {
-    _outgoingMessages.stream
+    final outSink = _transportStream.outgoingMessages;
+    _outgoingSubscription = _outgoingMessages.stream
         .map((payload) => frame(payload, compression))
         .map<StreamMessage>((bytes) => DataStreamMessage(bytes))
         .handleError(_onError)
         .listen(
-          _transportStream.outgoingMessages.add,
-          onError: _transportStream.outgoingMessages.addError,
-          onDone: _transportStream.outgoingMessages.close,
+          // Guard against "Cannot add event after closing": the
+          // transport stream's outgoing sink may be closed externally
+          // (e.g. RST_STREAM received, connection teardown) while we
+          // still have outgoing data queued. The direct method
+          // references would throw an unguarded StateError.
+          (message) {
+            try {
+              outSink.add(message);
+            } catch (_) {}
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            try {
+              outSink.addError(error, stackTrace);
+            } catch (_) {}
+          },
+          onDone: () {
+            try {
+              outSink.close();
+            } catch (_) {}
+          },
           cancelOnError: true,
         );
   }
 
   @override
   Future<void> terminate() async {
+    await _outgoingSubscription.cancel();
     await _outgoingMessages.close();
     _transportStream.terminate();
   }

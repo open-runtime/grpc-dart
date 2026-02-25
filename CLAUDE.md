@@ -42,6 +42,44 @@ The AOT monorepo **cannot** use the pub.dev version. This fork contains:
 | `WHY_USE_OPEN_RUNTIME_FORK.md` | Detailed justification document |
 | `FORK_CHANGES.md` | Maintenance guide for fork changes |
 
+## CRITICAL: Fork-Only Issue & PR Management
+
+**NEVER create issues, comments, labels, or PRs on the upstream `grpc/grpc-dart` repository.**
+
+All issue triage, bug reports, enhancement requests, PR comments, and project management
+must ONLY target `open-runtime/grpc-dart`. This is a hard rule with no exceptions.
+
+**Always use `--repo open-runtime/grpc-dart` on every `gh` command** to prevent
+accidental upstream leakage. Never rely on git remote auto-detection.
+
+```bash
+# CORRECT - always explicit
+gh issue create --repo open-runtime/grpc-dart --title "..."
+gh issue comment 42 --repo open-runtime/grpc-dart --body "..."
+gh pr comment 23 --repo open-runtime/grpc-dart --body "..."
+
+# WRONG - may resolve to upstream
+gh issue create --title "..."
+```
+
+**Rationale**: This is a fork. Upstream issues/PRs are managed by the gRPC team.
+Our fork-specific bugs, features, and named pipe work belong exclusively on our fork.
+
+### Named Pipe Transport (Windows)
+
+Key files for the Windows named pipe transport:
+
+| File | Purpose |
+|------|---------|
+| `lib/src/server/named_pipe_server.dart` | Server with two-isolate architecture |
+| `lib/src/client/named_pipe_transport.dart` | Client transport connector |
+| `lib/src/shared/named_pipe_io.dart` | Shared constants and buffer helpers |
+| `test/named_pipe_adversarial_test.dart` | 10 adversarial race condition tests |
+| `test/named_pipe_stress_test.dart` | Lifecycle, concurrency, error handling tests |
+| `test/transport_test.dart` | Cross-transport protocol tests (TCP, UDS, pipes) |
+
+**Copyright**: All named pipe code is copyright Tsavo Knott, Mesh Intelligent Technologies, Inc. dba., Pieces.app
+
 ## Development
 
 ### Code Style

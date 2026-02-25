@@ -14,15 +14,177 @@
 // limitations under the License.
 import 'dart:async';
 import 'dart:io';
+
+import 'package:grpc/grpc.dart';
+import 'package:grpc/src/client/channel.dart' hide ClientChannel;
+import 'package:grpc/src/client/connection.dart';
+import 'package:grpc/src/client/http2_connection.dart';
 import 'package:test/test.dart';
 
-/// Test functionality for Unix domain socket.
-void testUds(String name, FutureOr<void> Function(InternetAddress) testCase) {
-  if (Platform.isWindows) {
-    return;
+/// Paced stream producer that yields to the event loop periodically.
+///
+/// Use in flow-control-sensitive contexts (client streams, bidi streams)
+/// instead of [Stream.fromIterable] to avoid exhausting HTTP/2 flow-control
+/// windows. [Stream.fromIterable] delivers all items synchronously in a
+/// single microtask, which can deadlock on transports with limited buffering
+/// (e.g. Unix domain sockets, named pipes).
+///
+/// **Yield semantics**: After every [yieldEvery] items, the generator
+/// performs `await Future.delayed(Duration.zero)` so the event loop can
+/// process HTTP/2 frames (DATA, WINDOW_UPDATE). This allows the peer to
+/// consume data and send flow-control updates before more data is produced.
+///
+/// **Recommended usage**:
+/// - `yieldEvery: 1` for bidi streams, compression, or large payloads
+///   (both directions compete for window space).
+/// - `yieldEvery: 5` to `yieldEvery: 10` for client-only streams with small
+///   messages.
+/// - Prefer [pacedStream] over manual [StreamController] loops in tests
+///   when the values are known upfront.
+Stream<T> pacedStream<T>(Iterable<T> values, {int yieldEvery = 10}) async* {
+  var count = 0;
+  for (final value in values) {
+    yield value;
+    count++;
+    if (count % yieldEvery == 0) {
+      await Future.delayed(Duration.zero);
+    }
+  }
+}
+
+// =============================================================================
+// Shared test helpers
+// =============================================================================
+
+/// Deterministic wait for at least [minCount] handlers to be registered on
+/// [server].
+///
+/// Replaces arbitrary `Future.delayed(milliseconds: N)` calls with a bounded
+/// poll loop that checks the concrete `server.handlers` map. This ensures
+/// tests advance as soon as the server has accepted and begun processing RPCs,
+/// rather than guessing an appropriate sleep duration.
+///
+/// Throws a [TestFailure] if the handler count does not reach [minCount]
+/// within [timeout].
+Future<void> waitForHandlers(
+  ConnectionServer server, {
+  int minCount = 1,
+  Duration timeout = const Duration(seconds: 5),
+  String reason = 'Handlers must be registered',
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final handlerCount = server.handlers.values.fold<int>(
+      0,
+      (sum, list) => sum + list.length,
+    );
+    if (handlerCount >= minCount) return;
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  fail(reason);
+}
+
+/// Wraps an RPC future so errors become return values instead of throwing.
+///
+/// This allows tests to inspect errors after `Future.wait` without the first
+/// error aborting the wait. Use with [expectExpectedRpcSettlement] to verify
+/// each result is a known success/error type.
+Future<Object?> settleRpc(Future<Object?> future) {
+  return future.then<Object?>((value) => value, onError: (Object e) => e);
+}
+
+/// Asserts that an RPC result from [settleRpc] is one of the expected types.
+///
+/// Accepts valid payload types, gRPC errors, and known transport exceptions.
+/// Does NOT accept arbitrary Exception/Error — this catches programming bugs
+/// like TypeError, RangeError, and NoSuchMethodError.
+void expectExpectedRpcSettlement(
+  Object? result, {
+  required String reason,
+}) {
+  expect(
+    result,
+    anyOf(
+      isA<int>(),
+      isA<List<int>>(),
+      isA<List<List<int>>>(),
+      isA<GrpcError>(),
+      isA<SocketException>(),
+      isA<TimeoutException>(),
+      isA<StateError>(),
+    ),
+    reason: reason,
+  );
+}
+
+/// Stricter settlement assertion for adversarial shutdown tests.
+///
+/// Hardcore transport tests should settle to a valid payload type or explicit
+/// [GrpcError], never arbitrary [Exception]/[Error] values.
+void expectHardcoreRpcSettlement(Object? result, {required String reason}) {
+  expect(
+    result,
+    anyOf(
+      isA<int>(),
+      isA<List<int>>(),
+      isA<List<List<int>>>(),
+      isA<GrpcError>(),
+    ),
+    reason: reason,
+  );
+}
+
+// =============================================================================
+// Shared TestClientChannel (used by all end-to-end test files)
+// =============================================================================
+
+/// Channel wrapper that records [ConnectionState] transitions for assertions.
+class TestClientChannel extends ClientChannelBase {
+  final Http2ClientConnection clientConnection;
+  final List<ConnectionState> states = [];
+
+  TestClientChannel(this.clientConnection) {
+    onConnectionStateChanged.listen((state) => states.add(state));
   }
 
-  test(name, () async {
+  @override
+  ClientConnection createConnection() => clientConnection;
+}
+
+/// Creates a [TestClientChannel] connected to the given [address] and [port]
+/// with insecure credentials.
+///
+/// An optional [codecRegistry] can be provided for compression tests.
+TestClientChannel createTestChannel(
+  Object address,
+  int port, {
+  ChannelOptions? options,
+  CodecRegistry? codecRegistry,
+}) {
+  return TestClientChannel(
+    Http2ClientConnection(
+      address,
+      port,
+      options ??
+          ChannelOptions(
+            credentials: ChannelCredentials.insecure(),
+            codecRegistry: codecRegistry,
+          ),
+    ),
+  );
+}
+
+/// Test functionality for Unix domain socket.
+void testUds(
+  String name,
+  FutureOr<void> Function(InternetAddress) testCase, {
+  Timeout? timeout,
+  String? skip,
+}) {
+  final skipReason = Platform.isWindows
+      ? 'Unix domain sockets are not supported on Windows'
+      : skip;
+  test(name, timeout: timeout, skip: skipReason, () async {
     final tempDir = await Directory.systemTemp.createTemp();
     final address = InternetAddress(
       '${tempDir.path}/socket',
@@ -38,33 +200,58 @@ void testTcpAndUds(
   String name,
   FutureOr<void> Function(InternetAddress) testCase, {
   String host = 'localhost',
+  Timeout? udsTimeout,
+  String? udsSkip,
 }) {
   test(name, () async {
     final address = await InternetAddress.lookup(host);
     await testCase(address.first);
   });
 
-  testUds('$name (over uds)', testCase);
+  testUds('$name (over uds)', testCase, timeout: udsTimeout, skip: udsSkip);
 }
+
+/// Monotonically increasing counter used by [testNamedPipe] to guarantee
+/// globally unique pipe names even when tests start within the same
+/// microsecond (e.g., parallel test execution via `dart test --concurrency`).
+int _pipeNameCounter = 0;
 
 /// Test functionality for Windows named pipes.
 ///
 /// [pipeName] is the base name for the pipe. A unique suffix will be added.
 /// Only runs on Windows.
+///
+/// Each test has a 30-second timeout to prevent CI hangs. Named pipe tests
+/// can hang indefinitely if the server isolate's blocking ConnectNamedPipe
+/// call is never satisfied (e.g., due to a race condition or resource leak).
 void testNamedPipe(
   String name,
   FutureOr<void> Function(String pipeName) testCase, {
   String basePipeName = 'grpc-test',
+  Timeout timeout = const Timeout(Duration(seconds: 30)),
 }) {
-  if (!Platform.isWindows) {
-    return;
-  }
-
-  test('$name (over named pipe)', () async {
-    // Generate unique pipe name to avoid conflicts
-    final uniquePipeName = '$basePipeName-${DateTime.now().millisecondsSinceEpoch}';
-    await testCase(uniquePipeName);
-  });
+  test(
+    '$name (over named pipe)',
+    timeout: timeout,
+    skip: Platform.isWindows ? null : 'Named pipes are Windows-only',
+    () async {
+      // Generate unique pipe name to avoid conflicts between parallel tests.
+      //
+      // Uniqueness is ensured by combining three components:
+      //  1. microsecondsSinceEpoch — coarse time-based uniqueness
+      //  2. _pipeNameCounter — monotonic counter for same-microsecond starts
+      //  3. pid — differentiates across parallel test runner processes
+      //
+      // Previous approach used two separate DateTime.now() calls and
+      // DateTime.microsecond (0-999 within the current second) which could
+      // collide when tests start within the same millisecond.
+      final now = DateTime.now();
+      final counter = _pipeNameCounter++;
+      final uniquePipeName =
+          '$basePipeName-${now.microsecondsSinceEpoch}-$counter-$pid';
+      await testCase(uniquePipeName);
+    },
+  );
 }
 
 /// Test functionality for all supported transports: TCP, Unix domain sockets, and named pipes.

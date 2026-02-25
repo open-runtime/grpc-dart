@@ -21,7 +21,7 @@ import 'package:http2/transport.dart';
 import '../shared/codec.dart';
 import '../shared/codec_registry.dart';
 import '../shared/io_bits/io_bits.dart' show InternetAddress, X509Certificate;
-import '../shared/logging/logging.dart' show logGrpcError;
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/message.dart';
 import '../shared/status.dart';
 import '../shared/streams.dart';
@@ -57,6 +57,7 @@ class ServerHandler extends ServiceCall {
   late Stream _responses;
   StreamSubscription? _responseSubscription;
   bool _headersSent = false;
+  bool _trailersSent = false;
 
   Map<String, String>? _customHeaders = {};
   Map<String, String>? _customTrailers = {};
@@ -65,6 +66,11 @@ class ServerHandler extends ServiceCall {
   bool _isTimedOut = false;
   bool _streamTerminated = false;
   Timer? _timeoutTimer;
+
+  /// Future that completes when the response subscription cancel finishes.
+  /// Stored by [cancel] so [shutdownActiveConnections] can await it to
+  /// ensure async* generators are fully stopped before finishing connections.
+  Future<void>? _responseCancelFuture;
 
   final X509Certificate? _clientCertificate;
   final InternetAddress? _remoteAddress;
@@ -75,6 +81,10 @@ class ServerHandler extends ServiceCall {
   final Completer<void> _isCanceledCompleter = Completer<void>();
 
   Future<void> get onCanceled => _isCanceledCompleter.future;
+
+  /// Completes when the response subscription cancel has finished.
+  /// Call after [cancel] to ensure async* generators are fully stopped.
+  Future<void> get onResponseCancelDone => _responseCancelFuture ?? Future.value();
 
   set isCanceled(bool value) {
     if (!isCanceled) {
@@ -132,7 +142,7 @@ class ServerHandler extends ServiceCall {
         .transform(GrpcHttpDecoder())
         .transform(grpcDecompressor(codecRegistry: _codecRegistry))
         .listen(_onDataIdle, onError: _onError, onDone: _onDoneError, cancelOnError: true);
-    _stream.outgoingMessages.done.then((_) {
+    _stream.outgoingMessages.done.whenComplete(() {
       cancel();
     });
   }
@@ -142,55 +152,104 @@ class ServerHandler extends ServiceCall {
   /// We need the catchError() handler here, since otherwise the error would
   /// be an unhandled exception.
   void _cancelResponseSubscription() {
-    _responseSubscription?.cancel().catchError((_) {});
+    _responseCancelFuture = _responseSubscription?.cancel().catchError((_) {});
+  }
+
+  /// Attempts to add [error] to [requests] and then close it. Each operation
+  /// is in its own try block so that if addError throws, close is still
+  /// attempted. This ensures handlers blocked on await-for are unblocked
+  /// even when addError fails.
+  void _addErrorAndClose(
+    StreamController<dynamic>? requests,
+    GrpcError error, [
+    StackTrace? trace,
+    String context = '',
+    String event = 'deliver_error',
+  ]) {
+    if (requests == null || requests.isClosed) return;
+    try {
+      requests.addError(error, trace);
+    } catch (e) {
+      logGrpcEvent(
+        '[gRPC] Failed to deliver error to request stream in $context: $e',
+        component: 'ServerHandler',
+        event: event,
+        context: context,
+        error: e,
+      );
+    }
+    try {
+      requests.close();
+    } catch (e) {
+      logGrpcEvent(
+        '[gRPC] Failed to close request stream in $context: $e',
+        component: 'ServerHandler',
+        event: 'close_stream',
+        context: context,
+        error: e,
+      );
+    }
   }
 
   // -- Idle state, incoming data --
 
   void _onDataIdle(GrpcMessage headerMessage) async {
-    onDataReceived?.add(null);
-    if (headerMessage is! GrpcMetadata) {
-      _sendError(GrpcError.unimplemented('Expected header frame'));
-      _sinkIncoming();
-      return;
-    }
-    _incomingSubscription!.pause();
+    try {
+      onDataReceived?.add(null);
+      if (headerMessage is! GrpcMetadata) {
+        _sendError(GrpcError.unimplemented('Expected header frame'));
+        _sinkIncoming();
+        return;
+      }
+      _incomingSubscription!.pause();
 
-    _clientMetadata = headerMessage.metadata;
-    final path = _clientMetadata![':path']!;
-    final pathSegments = path.split('/');
-    if (pathSegments.length < 3) {
-      _sendError(GrpcError.unimplemented('Invalid path'));
-      _sinkIncoming();
-      return;
-    }
-    final serviceName = pathSegments[1];
-    final methodName = pathSegments[2];
-    if (_codecRegistry != null) {
-      final acceptedEncodings = clientMetadata!['grpc-accept-encoding']?.split(',') ?? [];
-      _callEncodingCodec = acceptedEncodings
-          .map(_codecRegistry.lookup)
-          .firstWhere((c) => c != null, orElse: () => null);
-    }
+      _clientMetadata = headerMessage.metadata;
+      final path = _clientMetadata![':path']!;
+      final pathSegments = path.split('/');
+      if (pathSegments.length < 3) {
+        _sendError(GrpcError.unimplemented('Invalid path'));
+        _sinkIncoming();
+        return;
+      }
+      final serviceName = pathSegments[1];
+      final methodName = pathSegments[2];
+      if (_codecRegistry != null) {
+        final acceptedEncodings = clientMetadata!['grpc-accept-encoding']?.split(',') ?? [];
+        _callEncodingCodec = acceptedEncodings
+            .map(_codecRegistry.lookup)
+            .firstWhere((c) => c != null, orElse: () => null);
+      }
 
-    final service = _serviceLookup(serviceName);
-    final descriptor = service?.$lookupMethod(methodName);
-    if (descriptor == null) {
-      _sendError(GrpcError.unimplemented('Path $path not found'));
-      _sinkIncoming();
-      return;
-    }
-    _service = service!;
-    _descriptor = descriptor;
+      final service = _serviceLookup(serviceName);
+      final descriptor = service?.$lookupMethod(methodName);
+      if (descriptor == null) {
+        _sendError(GrpcError.unimplemented('Path $path not found'));
+        _sinkIncoming();
+        return;
+      }
+      _service = service!;
+      _descriptor = descriptor;
 
-    final error = await _applyInterceptors();
-    if (error != null) {
-      _sendError(error);
-      _sinkIncoming();
-      return;
-    }
+      final error = await _applyInterceptors();
+      if (error != null) {
+        _sendError(error);
+        _sinkIncoming();
+        return;
+      }
 
-    _startStreamingRequest();
+      // Guard: cancel() may have run during the async interceptor await.
+      // Without this check, the handler continues processing indefinitely,
+      // potentially blocking Server.shutdown().
+      if (isCanceled) return;
+
+      _startStreamingRequest();
+    } catch (error) {
+      // Async data handler errors are silently discarded by the stream
+      // subscription. Catch and convert to a gRPC error so the client
+      // sees a proper status instead of a hang.
+      _sendError(GrpcError.internal('Error processing request: $error'));
+      _sinkIncoming();
+    }
   }
 
   GrpcError? _onMetadata() {
@@ -214,6 +273,10 @@ class ServerHandler extends ServiceCall {
         }
       }
     } catch (error) {
+      // Preserve the original GrpcError (and its status code) if the
+      // interceptor deliberately threw one. Only wrap non-GrpcError
+      // exceptions as INTERNAL.
+      if (error is GrpcError) return error;
       final grpcError = GrpcError.internal(error.toString());
       return grpcError;
     }
@@ -227,11 +290,7 @@ class ServerHandler extends ServiceCall {
 
     final error = _onMetadata();
     if (error != null) {
-      if (!requests.isClosed) {
-        requests
-          ..addError(error)
-          ..close();
-      }
+      _addErrorAndClose(requests, error, null, '_startStreamingRequest');
       _sendError(error);
       _onDone();
       _terminateStream();
@@ -260,33 +319,33 @@ class ServerHandler extends ServiceCall {
     if (isCanceled) return;
     _isTimedOut = true;
     isCanceled = true;
+    // Stop the response handler from yielding more items after timeout.
+    _cancelResponseSubscription();
     final error = GrpcError.deadlineExceeded('Deadline exceeded');
     _sendError(error);
-    if (!_requests!.isClosed) {
-      _requests!
-        ..addError(error)
-        ..close();
-    }
+    _addErrorAndClose(_requests, error, null, '_onTimedOut', 'deliver_timeout_error');
+    // Clean up the incoming subscription and terminate the HTTP/2 stream
+    // to avoid leaking server-side resources after deadline expiry.
+    _incomingSubscription?.cancel();
+    _terminateStream();
   }
 
   // -- Active state, incoming data --
 
   void _onDataActive(GrpcMessage message) {
+    if (_requests == null) return;
+
     if (message is! GrpcData) {
       final error = GrpcError.unimplemented('Expected request');
       _sendError(error);
-      _requests!
-        ..addError(error)
-        ..close();
+      _addErrorAndClose(_requests, error, null, '_onDataActive.badMessage');
       return;
     }
 
     if (_hasReceivedRequest && !_descriptor.streamingRequest) {
       final error = GrpcError.unimplemented('Too many requests');
       _sendError(error);
-      _requests!
-        ..addError(error)
-        ..close();
+      _addErrorAndClose(_requests, error, null, '_onDataActive.tooManyRequests');
       return;
     }
 
@@ -298,12 +357,24 @@ class ServerHandler extends ServiceCall {
     } catch (error, trace) {
       final grpcError = GrpcError.internal('Error deserializing request: $error');
       _sendError(grpcError, trace);
-      _requests!
-        ..addError(grpcError, trace)
-        ..close();
+      _addErrorAndClose(_requests, grpcError, trace, '_onDataActive.deserialize');
       return;
     }
-    _requests!.add(request);
+    if (!_requests!.isClosed) {
+      try {
+        _requests!.add(request);
+      } catch (e) {
+        logGrpcEvent(
+          '[gRPC] Failed to add request to stream'
+          ' in _onDataActive: $e',
+          component: 'ServerHandler',
+          event: 'add_request',
+          context: '_onDataActive',
+          error: e,
+        );
+        return;
+      }
+    }
     _hasReceivedRequest = true;
   }
 
@@ -318,19 +389,10 @@ class ServerHandler extends ServiceCall {
       _stream.sendData(frame(bytes, _callEncodingCodec));
     } catch (error, trace) {
       final grpcError = GrpcError.internal('Error sending response: $error');
-      // Safely attempt to notify the handler about the error
-      // Use try-catch to prevent "Cannot add event after closing" from crashing the server
-      if (_requests != null && !_requests!.isClosed) {
-        try {
-          _requests!
-            ..addError(grpcError)
-            ..close();
-        } catch (e) {
-          // Stream was closed between check and add - ignore this error
-          // The handler has already been notified or terminated
-          logGrpcError('[gRPC] Stream closed during error handling in _onResponse: $e');
-        }
-      }
+      // Safely attempt to notify the handler about the error.
+      // _addErrorAndClose uses separate try blocks so addError failure
+      // cannot skip close — handler must exit even when addError throws.
+      _addErrorAndClose(_requests, grpcError, trace, '_onResponse');
       _sendError(grpcError, trace);
       _cancelResponseSubscription();
     }
@@ -341,18 +403,24 @@ class ServerHandler extends ServiceCall {
   }
 
   void _onResponseError(Object error, StackTrace trace) {
-    if (error is GrpcError) {
-      _sendError(error, trace);
-    } else {
-      _sendError(GrpcError.unknown(error.toString()), trace);
-    }
+    final grpcError = error is GrpcError ? error : GrpcError.unknown(error.toString());
+    // Close _requests so handlers blocked in await-for are unblocked.
+    // Without this, bidi handlers hang indefinitely on response errors
+    // because nothing signals the request stream to close.
+    _addErrorAndClose(_requests, grpcError, trace, '_onResponseError');
+    _sendError(grpcError, trace);
   }
 
   @override
   void sendHeaders() {
     if (_headersSent) throw GrpcError.internal('Headers already sent');
 
-    _customHeaders!
+    // Capture into non-nullable local before nulling the field.
+    // Prevents NPE if _customHeaders is ever null due to a code
+    // path change or concurrent teardown.
+    final customHeaders = _customHeaders ?? {};
+    _customHeaders = null;
+    customHeaders
       ..remove(':status')
       ..remove('content-type');
 
@@ -363,8 +431,7 @@ class ServerHandler extends ServiceCall {
       if (_callEncodingCodec != null) 'grpc-encoding': _callEncodingCodec!.encodingName,
     };
 
-    outgoingHeadersMap.addAll(_customHeaders!);
-    _customHeaders = null;
+    outgoingHeadersMap.addAll(customHeaders);
 
     final outgoingHeaders = <Header>[];
     outgoingHeadersMap.forEach((key, value) => outgoingHeaders.add(Header(ascii.encode(key), utf8.encode(value))));
@@ -374,6 +441,8 @@ class ServerHandler extends ServiceCall {
 
   @override
   void sendTrailers({int? status = 0, String? message, Map<String, String>? errorTrailers}) {
+    if (_trailersSent) return;
+    _trailersSent = true;
     _timeoutTimer?.cancel();
 
     final outgoingTrailersMap = <String, String>{};
@@ -382,18 +451,22 @@ class ServerHandler extends ServiceCall {
       outgoingTrailersMap[':status'] = '200';
       outgoingTrailersMap['content-type'] = 'application/grpc';
 
-      _customHeaders!
+      // Capture into non-nullable local before nulling the field.
+      final customHeaders = _customHeaders ?? {};
+      _customHeaders = null;
+      customHeaders
         ..remove(':status')
         ..remove('content-type');
-      outgoingTrailersMap.addAll(_customHeaders!);
-      _customHeaders = null;
+      outgoingTrailersMap.addAll(customHeaders);
       _headersSent = true;
     }
-    _customTrailers!
+    // Capture into non-nullable local before nulling the field.
+    final customTrailers = _customTrailers ?? {};
+    _customTrailers = null;
+    customTrailers
       ..remove(':status')
       ..remove('content-type');
-    outgoingTrailersMap.addAll(_customTrailers!);
-    _customTrailers = null;
+    outgoingTrailersMap.addAll(customTrailers);
     outgoingTrailersMap['grpc-status'] = status.toString();
     if (message != null) {
       outgoingTrailersMap['grpc-message'] = Uri.encodeFull(message).replaceAll('%20', ' ');
@@ -411,8 +484,22 @@ class ServerHandler extends ServiceCall {
     } catch (e) {
       // Stream is already closed - this can happen during concurrent termination
       // The client is gone, so we can't send the trailers anyway
-      logGrpcError('[gRPC] Stream closed during sendTrailers: $e');
+      logGrpcEvent(
+        '[gRPC] Failed to send trailers'
+        ' (stream may already be closed): $e',
+        component: 'ServerHandler',
+        event: 'send_trailers',
+        context: 'sendTrailers',
+        error: e,
+      );
     }
+
+    // Signal completion so Server.handlers cleanup fires.
+    // The server tracks handlers via onCanceled.then(remove). On normal
+    // completion (_onResponseDone → sendTrailers), isCanceled was never
+    // set, so the handler leaked in the map until the connection closed.
+    // The setter is idempotent — no-op if already completed by cancel().
+    isCanceled = true;
 
     // We're done!
     _cancelResponseSubscription();
@@ -426,9 +513,7 @@ class ServerHandler extends ServiceCall {
     // client, so we treat it as such.
     _timeoutTimer?.cancel();
     isCanceled = true;
-    if (_requests != null && !_requests!.isClosed) {
-      _requests!.addError(GrpcError.cancelled('Cancelled'));
-    }
+    _addErrorAndClose(_requests, GrpcError.cancelled('Cancelled'), null, '_onError', 'deliver_cancellation');
     _cancelResponseSubscription();
     _incomingSubscription!.cancel();
     _terminateStream();
@@ -437,27 +522,32 @@ class ServerHandler extends ServiceCall {
   void _onDoneError() {
     _sendError(GrpcError.unavailable('Request stream closed unexpectedly'));
     _onDone();
+    // Terminate the HTTP/2 stream to avoid resource leaks when the
+    // request stream closes unexpectedly (e.g. client disconnect).
+    _terminateStream();
   }
 
   void _onDoneExpected() {
     if (!(_hasReceivedRequest || _descriptor.streamingRequest)) {
       final error = GrpcError.unimplemented('No request received');
       _sendError(error);
-      // Safely add error to requests stream
-      if (_requests != null && !_requests!.isClosed) {
-        try {
-          _requests!.addError(error);
-        } catch (e) {
-          // Stream was closed - ignore this error
-          logGrpcError('[gRPC] Stream closed in _onDoneExpected: $e');
-        }
-      }
+      _addErrorAndClose(_requests, error, null, '_onDoneExpected', 'deliver_error');
     }
     _onDone();
   }
 
   void _onDone() {
-    _requests?.close();
+    try {
+      _requests?.close();
+    } catch (e) {
+      logGrpcEvent(
+        '[gRPC] Failed to close request stream in _onDone: $e',
+        component: 'ServerHandler',
+        event: 'close_stream',
+        context: '_onDone',
+        error: e,
+      );
+    }
     _incomingSubscription!.cancel();
   }
 
@@ -470,7 +560,18 @@ class ServerHandler extends ServiceCall {
   }
 
   void _sendError(GrpcError error, [StackTrace? trace]) {
-    _errorHandler?.call(error, trace);
+    try {
+      _errorHandler?.call(error, trace);
+    } catch (e) {
+      // Error handler threw — must not prevent sendTrailers().
+      logGrpcEvent(
+        '[gRPC] Error handler threw: $e',
+        component: 'ServerHandler',
+        event: 'error_handler_threw',
+        context: '_sendError',
+        error: e,
+      );
+    }
 
     sendTrailers(status: error.code, message: error.message, errorTrailers: error.trailers);
   }
@@ -478,8 +579,23 @@ class ServerHandler extends ServiceCall {
   void cancel() {
     isCanceled = true;
     _timeoutTimer?.cancel();
-    _cancelResponseSubscription();
-    _terminateStream();
+    // Close the request stream so that handler methods blocked on
+    // `await for (final request in requests)` are unblocked with a
+    // cancellation error. Every other termination path (_onError,
+    // _onTimedOut, _onDone) closes _requests — cancel() must too,
+    // otherwise Server.shutdown() can hang indefinitely.
+    _addErrorAndClose(_requests, GrpcError.cancelled('Cancelled'), null, 'cancel', 'deliver_cancellation');
+    // Store the cancel future so shutdownActiveConnections() can await
+    // it — async* generators need event loop turns to process the cancel
+    // signal and stop yielding values.
+    _responseCancelFuture = _responseSubscription?.cancel().catchError((_) {});
+    _incomingSubscription?.cancel();
+    // If trailers already started the graceful end-of-stream path, avoid
+    // racing that close with an immediate RST_STREAM from cancel().
+    // We still run all cleanup above so shutdown does not leak handlers.
+    if (!_trailersSent) {
+      _terminateStream();
+    }
   }
 
   /// Terminates the underlying HTTP/2 stream by sending RST_STREAM.
@@ -493,9 +609,17 @@ class ServerHandler extends ServiceCall {
     _streamTerminated = true;
     try {
       _stream.terminate();
-    } catch (_) {
+    } catch (e) {
       // Stream sink may already be closed (e.g. response completed with
       // endStream: true before shutdown). Safe to ignore.
+      logGrpcEvent(
+        '[gRPC] Failed to terminate stream'
+        ' (may already be closed): $e',
+        component: 'ServerHandler',
+        event: 'terminate_stream',
+        context: '_terminateStream',
+        error: e,
+      );
     }
   }
 }

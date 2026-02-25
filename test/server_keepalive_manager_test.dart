@@ -50,25 +50,23 @@ void main() {
     dataStream.close();
   });
 
-  final timeAfterPing = Duration(milliseconds: 10);
-
   test('Sending too many pings without data kills connection', () async {
     FakeAsync().run((async) {
       initServer();
-      // Send good ping
+      // Send first ping (starts timer).
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
 
-      // Send [maxBadPings] bad pings, that's still ok
+      // Send [maxBadPings] rapid pings (elapsed ≈ 0 < 5ms → bad).
       for (var i = 0; i < maxBadPings; i++) {
         pingStream.sink.add(null);
       }
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, false);
 
-      // Send another bad ping; that's one too many!
+      // Send another rapid bad ping; that's one too many!
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, true);
     });
   });
@@ -82,15 +80,15 @@ void main() {
             minIntervalBetweenPingsWithoutData: Duration(milliseconds: 5),
           ),
         );
-        // Send good ping
+        // Send first ping.
         pingStream.sink.add(null);
-        async.elapse(timeAfterPing);
+        async.flushMicrotasks();
 
-        // Send a lot of bad pings, that's still ok.
+        // Send a lot of rapid pings, that's still ok.
         for (var i = 0; i < 50; i++) {
           pingStream.sink.add(null);
         }
-        async.elapse(timeAfterPing);
+        async.flushMicrotasks();
         expect(goAway, false);
       });
     },
@@ -100,35 +98,35 @@ void main() {
     FakeAsync().run((async) {
       initServer();
 
-      // Send good ping
+      // Send first ping (starts timer).
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
 
-      // Send [maxBadPings] bad pings, that's still ok
+      // Send [maxBadPings] rapid bad pings.
       for (var i = 0; i < maxBadPings; i++) {
         pingStream.sink.add(null);
       }
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, false);
 
-      // Sending data resets the bad ping count
+      // Sending data resets the bad ping count.
       dataStream.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
 
-      // Send good ping
+      // Send first ping after data reset (starts new timer).
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
 
-      // Send [maxBadPings] bad pings, that's still ok
+      // Send [maxBadPings] rapid bad pings.
       for (var i = 0; i < maxBadPings; i++) {
         pingStream.sink.add(null);
       }
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, false);
 
-      // Send another bad ping; that's one too many!
+      // Send another rapid bad ping; that's one too many!
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, true);
     });
   });

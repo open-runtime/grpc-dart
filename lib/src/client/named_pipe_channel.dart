@@ -1,5 +1,5 @@
-// Copyright (c) 2025, the gRPC project authors. Please see the AUTHORS file
-// for details. All rights reserved.
+// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba.,
+// Pieces.app. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import '../shared/named_pipe_io.dart';
 import 'channel.dart';
 import 'connection.dart';
 import 'http2_connection.dart' show Http2ClientConnection;
@@ -77,7 +78,7 @@ class NamedPipeClientChannel extends ClientChannelBase {
   NamedPipeClientChannel(this.pipeName, {this.options = const ChannelOptions(), super.channelShutdownHandler});
 
   /// The full Windows path for the named pipe.
-  String get pipePath => r'\\.\pipe\' + pipeName;
+  String get pipePath => namedPipePath(pipeName);
 
   @override
   ClientConnection createConnection() {

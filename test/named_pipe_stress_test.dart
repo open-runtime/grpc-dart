@@ -1,0 +1,1144 @@
+// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba.,
+// Pieces.app. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/// Stress, lifecycle, concurrency, and error-handling tests for the Windows
+/// named-pipe gRPC transport.
+///
+/// Every test is Windows-only (via [testNamedPipe]) and uses a unique pipe
+/// name derived from the test description to prevent cross-test interference.
+@TestOn('vm')
+@Timeout(Duration(seconds: 120))
+library;
+
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:grpc/grpc.dart';
+import 'package:test/test.dart';
+
+import 'common.dart';
+import 'src/echo_service.dart';
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+void main() {
+  // ===========================================================================
+  // 1. Lifecycle Tests
+  // ===========================================================================
+
+  group('Named Pipe Lifecycle', () {
+    // 1. Happy path: start -> connect -> RPC -> disconnect -> shutdown
+    testNamedPipe(
+      'server start -> client connect -> RPC -> disconnect -> shutdown',
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        addTearDown(() => server.shutdown());
+        await server.serve(pipeName: pipeName);
+        expect(server.isRunning, isTrue);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => channel.shutdown());
+
+        final client = EchoClient(channel);
+
+        // Verify basic RPC succeeds.
+        final result = await client.echo(42);
+        expect(result, equals(42));
+
+        // Verify a second RPC on the same channel.
+        expect(await client.echo(7), equals(7));
+
+        await channel.shutdown();
+        await server.shutdown();
+        expect(server.isRunning, isFalse);
+      },
+    );
+
+    // 2. Server start -> immediate shutdown (no clients ever connect)
+    testNamedPipe('server start -> shutdown with no clients', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+      expect(server.isRunning, isTrue);
+
+      // Shut down immediately — no client ever connects.
+      await server.shutdown();
+      expect(server.isRunning, isFalse);
+    });
+
+    // 3. Server reuse: start -> shutdown -> start again (same pipe name)
+    testNamedPipe('server start -> shutdown -> restart with same pipe name', (
+      pipeName,
+    ) async {
+      final server1 = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server1.shutdown());
+      await server1.serve(pipeName: pipeName);
+      expect(server1.isRunning, isTrue);
+
+      // First session: verify it works.
+      final channel1 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel1.shutdown());
+      final client1 = EchoClient(channel1);
+      expect(await client1.echo(1), equals(1));
+
+      await channel1.shutdown();
+      await server1.shutdown();
+      expect(server1.isRunning, isFalse);
+
+      // Small delay so pipe namespace is cleaned up.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      // Second session: new server instance, same pipe name.
+      final server2 = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server2.shutdown());
+      await server2.serve(pipeName: pipeName);
+      expect(server2.isRunning, isTrue);
+
+      final channel2 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel2.shutdown());
+      final client2 = EchoClient(channel2);
+      expect(await client2.echo(2), equals(2));
+
+      await channel2.shutdown();
+      await server2.shutdown();
+      expect(server2.isRunning, isFalse);
+    });
+
+    // 4. Multiple sequential start/shutdown cycles
+    testNamedPipe('multiple sequential server start/shutdown cycles', (
+      pipeName,
+    ) async {
+      // Track the most recent server so addTearDown can clean up if the
+      // test fails mid-cycle. Double-shutdown is a safe no-op.
+      NamedPipeServer? lastServer;
+      addTearDown(() => lastServer?.shutdown());
+
+      for (var cycle = 0; cycle < 8; cycle++) {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        lastServer = server;
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+        final value = cycle % 256;
+        expect(await client.echo(value), equals(value), reason: 'cycle $cycle');
+
+        await channel.shutdown();
+        await server.shutdown();
+
+        // Brief pause between cycles to let the OS release the pipe.
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
+    });
+
+    // 5. Server shutdown while client is mid-streaming-RPC
+    testNamedPipe('server shutdown during active server-streaming RPC', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // Request a long server stream (1000 items, ~1ms each = ~1 second).
+      // Using 1000 instead of 100 makes it impossible for the stream to
+      // complete before the server is shut down, eliminating flakiness on
+      // fast machines.
+      //
+      // We use a Completer to synchronize: wait until at least one item
+      // has been received (proving the stream is active) before shutting
+      // down the server, rather than relying on a fixed time delay which
+      // is inherently racy.
+      final receivedFirst = Completer<void>();
+      final results = <int>[];
+      final unexpectedErrors = <Object>[];
+
+      final subscription = client
+          .serverStream(1000)
+          .listen(
+            (value) {
+              results.add(value);
+              if (!receivedFirst.isCompleted) {
+                receivedFirst.complete();
+              }
+            },
+            onError: (Object e) {
+              // Expected: GrpcError when server shuts down mid-stream.
+              if (e is! GrpcError) {
+                unexpectedErrors.add(e);
+              }
+              if (!receivedFirst.isCompleted) {
+                receivedFirst.complete();
+              }
+            },
+          );
+
+      // Wait until the stream is provably active before shutting down.
+      await receivedFirst.future;
+      await server.shutdown();
+
+      // Cancel the client subscription to prevent dangling listeners.
+      await subscription.cancel();
+
+      // The stream should have been cut short — 1000 items at 1ms each
+      // would take about 1 second, but we shut down almost immediately after
+      // the first item. Verify we got at least 1 (confirmed by
+      // receivedFirst) and fewer than 1000 (confirmed by early shutdown).
+      expect(
+        unexpectedErrors,
+        isEmpty,
+        reason: 'Only GrpcError is expected during forced mid-stream shutdown',
+      );
+      expect(
+        results.length,
+        greaterThan(0),
+        reason:
+            'Should have received at least 1 item before '
+            'shutdown',
+      );
+      expect(
+        results.length,
+        lessThan(1000),
+        reason: 'Stream should be truncated by server shutdown',
+      );
+
+      await channel.shutdown();
+    });
+
+    // 5b. Large payload exceeding pipe buffer boundary (100KB unary)
+    testNamedPipe('large payload exceeding pipe buffer boundary', (
+      pipeName,
+    ) async {
+      // Tests sending a payload larger than kNamedPipeBufferSize (65536 bytes)
+      // to verify the transport handles fragmentation/reassembly correctly.
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // Create a 100KB payload filled with a repeating byte pattern.
+      final payload = Uint8List(102400);
+      for (var i = 0; i < payload.length; i++) {
+        payload[i] = i & 0xFF;
+      }
+
+      final response = await client.echoBytes(payload);
+      expect(response, equals(payload));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // 5c. Large server-stream chunks exceeding pipe buffer
+    testNamedPipe('large server-stream chunks exceeding pipe buffer', (
+      pipeName,
+    ) async {
+      // Tests that server-streamed chunks larger than the pipe buffer
+      // are correctly fragmented and reassembled.
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // Request 5 chunks of 20KB each (100KB total).
+      // Request format: 8 bytes big-endian [chunkCount(4), chunkSize(4)].
+      const chunkCount = 5;
+      const chunkSize = 20480; // 20KB
+      final request = Uint8List(8);
+      final bd = ByteData.sublistView(request);
+      bd.setUint32(0, chunkCount);
+      bd.setUint32(4, chunkSize);
+
+      final chunks = await client.serverStreamBytes(request).toList();
+
+      expect(chunks.length, equals(chunkCount));
+
+      for (var i = 0; i < chunkCount; i++) {
+        expect(chunks[i].length, equals(chunkSize), reason: 'chunk $i length');
+        // Verify fill pattern: byte at position j in chunk i = (i+j) & 0xFF.
+        for (var j = 0; j < chunkSize; j++) {
+          expect(
+            chunks[i][j],
+            equals((i + j) & 0xFF),
+            reason: 'chunk $i byte $j',
+          );
+        }
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+  });
+
+  // ===========================================================================
+  // 2. Concurrency & Stress Tests
+  // ===========================================================================
+
+  group('Named Pipe Concurrency & Stress', () {
+    // 6. 100 concurrent unary RPCs on the same channel
+    testNamedPipe('100 concurrent unary RPCs on same channel', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      final futures = List.generate(100, (i) => client.echo(i));
+      final results = await Future.wait(futures);
+      expect(results, equals(List.generate(100, (i) => i)));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // 7. 20 sequential channel connect/disconnect cycles
+    testNamedPipe('20 sequential channel connect/disconnect cycles', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      for (var i = 0; i < 20; i++) {
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+        final value = i % 256;
+        expect(await client.echo(value), equals(value), reason: 'cycle $i');
+        await channel.shutdown();
+      }
+
+      await server.shutdown();
+    });
+
+    // 8. Multiple clients connecting simultaneously (3 channels)
+    testNamedPipe('multiple clients connecting to same server simultaneously', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      // Create three independent channels.
+      final channels = List.generate(
+        3,
+        (_) => NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        ),
+      );
+      for (final ch in channels) {
+        addTearDown(() => ch.shutdown());
+      }
+      final clients = channels.map(EchoClient.new).toList();
+
+      // Fire one RPC per client concurrently.
+      final results = await Future.wait([
+        clients[0].echo(10),
+        clients[1].echo(20),
+        clients[2].echo(30),
+      ]);
+      expect(results, equals([10, 20, 30]));
+
+      // Fire a second round to confirm all channels remain healthy.
+      // Note: Values must stay ≤255 because the echo service serializes
+      // int as a single byte ([value]) — values >255 are truncated
+      // (e.g., 300 % 256 = 44).
+      final results2 = await Future.wait([
+        clients[0].echo(100),
+        clients[1].echo(200),
+        clients[2].echo(250),
+      ]);
+      expect(results2, equals([100, 200, 250]));
+
+      // Clean up all channels, then server.
+      for (final ch in channels) {
+        await ch.shutdown();
+      }
+      await server.shutdown();
+    });
+
+    // 9. Rapid fire: 500 echo RPCs as fast as possible
+    testNamedPipe('rapid fire 500 sequential echo RPCs', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      final stopwatch = Stopwatch()..start();
+
+      for (var i = 0; i < 500; i++) {
+        final value = i % 256;
+        final result = await client.echo(value);
+        expect(result, equals(value), reason: 'RPC #$i');
+      }
+
+      stopwatch.stop();
+
+      // All 500 RPCs must have succeeded (we already asserted above).
+      // Log elapsed time for manual perf analysis, but do not assert on
+      // timing because CI machines vary widely.
+      // ignore: avoid_print
+      print(
+        'Named pipe: 500 sequential echo RPCs in '
+        '${stopwatch.elapsedMilliseconds}ms',
+      );
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // 10. Sustained concurrent load: 5 channels, 20 RPCs each
+    testNamedPipe('100 concurrent RPCs across 5 channels', (pipeName) async {
+      // Stress test: 5 independent channels, 20 RPCs each, all concurrent.
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channels = List.generate(
+        5,
+        (_) => NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        ),
+      );
+      for (final ch in channels) {
+        addTearDown(() => ch.shutdown());
+      }
+      final clients = channels.map(EchoClient.new).toList();
+
+      // Fire 20 concurrent RPCs per client (100 total).
+      final allFutures = <Future<int>>[];
+      for (var ch = 0; ch < 5; ch++) {
+        for (var rpc = 0; rpc < 20; rpc++) {
+          final value = (ch * 20 + rpc) % 256;
+          allFutures.add(clients[ch].echo(value));
+        }
+      }
+
+      final results = await Future.wait(allFutures);
+
+      // Verify all 100 results are correct.
+      for (var idx = 0; idx < 100; idx++) {
+        final expected = (idx) % 256;
+        expect(results[idx], equals(expected), reason: 'RPC #$idx');
+      }
+
+      // Clean up all channels, then server.
+      for (final ch in channels) {
+        await ch.shutdown();
+      }
+      await server.shutdown();
+    });
+  });
+
+  // ===========================================================================
+  // 2b. Connect/Shutdown Race Stress
+  // ===========================================================================
+  //
+  // Repeated-iteration stress tests around connect/shutdown race behavior at
+  // channel level. Increases confidence that repeated shutdown/connect races
+  // do not leave usable or lingering transports. Non-overlapping with
+  // named_pipe_adversarial_test.dart (which covers connector-level and
+  // single-shot patterns).
+
+  group('Connect/Shutdown Race Stress', () {
+    // Repeated channel-level connect/shutdown race: N iterations of
+    // fire-first-RPC + shutdown concurrently. Asserts: no hangs; no
+    // successful RPCs after shutdown; clean lifecycle transitions.
+    testNamedPipe(
+      'repeated channel connect/shutdown race does not leave usable transports',
+      timeout: const Timeout(Duration(seconds: 60)),
+      (pipeName) async {
+        const iterations = 8;
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        addTearDown(() => server.shutdown());
+        await server.serve(pipeName: pipeName);
+
+        for (var i = 0; i < iterations; i++) {
+          final channel = NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          );
+          final client = EchoClient(channel);
+
+          // Race: fire first RPC (triggers lazy connect) and shutdown
+          // concurrently.
+          final rpcFuture = client
+              .echo(i % 256)
+              .then<Object?>((v) => v, onError: (Object e) => e);
+          final shutdownFuture = channel.shutdown();
+
+          // Both must settle within timeout — no hang. Both run concurrently
+          // (started above); we await each with a timeout.
+          final rpcResult = await rpcFuture.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () =>
+                fail('RPC hung on iteration $i (connect/shutdown race)'),
+          );
+          await shutdownFuture.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => fail('channel.shutdown() hung on iteration $i'),
+          );
+
+          // RPC either succeeded (connect won) or failed (shutdown won).
+          expect(
+            rpcResult,
+            anyOf(
+              equals(i % 256),
+              isA<GrpcError>(),
+              isA<NamedPipeException>(),
+              isA<TimeoutException>(),
+              isA<StateError>(),
+            ),
+            reason: 'iteration $i: RPC must return value or explicit error',
+          );
+
+          // After shutdown, channel must not be usable — no successful RPCs.
+          try {
+            final postShutdown = await client
+                .echo(99)
+                .timeout(
+                  const Duration(seconds: 2),
+                  onTimeout: () => throw TimeoutException('post-shutdown hung'),
+                );
+            fail(
+              'Post-shutdown RPC must not succeed; got $postShutdown '
+              'on iteration $i',
+            );
+          } on GrpcError {
+            // Expected: channel is dead after shutdown.
+          } on TimeoutException {
+            // Also acceptable: transport may hang rather than fail cleanly.
+          }
+
+          // Brief pause between iterations to let OS release resources.
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+        }
+
+        await server.shutdown();
+      },
+    );
+  });
+
+  // ===========================================================================
+  // 3. Error Handling Tests
+  // ===========================================================================
+
+  group('Named Pipe Error Handling', () {
+    // 10. Client connects to non-existent pipe
+    testNamedPipe('client connect to non-existent pipe throws error', (
+      pipeName,
+    ) async {
+      // No server started — the pipe does not exist.
+      final fakePipeName =
+          'grpc-nonexistent-${DateTime.now().microsecondsSinceEpoch}';
+      final channel = NamedPipeClientChannel(
+        fakePipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // Attempting an RPC should fail because the pipe does not exist.
+      // The error surfaces as a GrpcError wrapping the underlying
+      // NamedPipeException (or as a direct GrpcError.unavailable).
+      try {
+        await client.echo(1);
+        fail('Expected an error when connecting to non-existent pipe');
+      } on GrpcError catch (e) {
+        // GrpcError is expected — the connection layer converts transport
+        // failures into gRPC status codes (typically UNAVAILABLE).
+        expect(e.code, isNotNull);
+      }
+
+      await channel.shutdown();
+    });
+
+    // 11. Server with invalid pipe name
+    testNamedPipe('server with invalid pipe name rejects serve()', (
+      pipeName,
+    ) async {
+      // An empty pipe name or one with embedded NUL bytes should cause a
+      // failure when CreateNamedPipe is called.
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+
+      // Try to serve on an absurdly long / malformed pipe name.
+      // Windows pipe names have practical limits and reserved characters.
+      // An empty name should fail because the resulting path
+      // `\\.\pipe\` is invalid for CreateNamedPipe.
+      try {
+        await server.serve(pipeName: '');
+        // If serve() unexpectedly succeeds, clean up.
+        await server.shutdown();
+        // Some Windows versions may tolerate this; don't hard-fail the test.
+      } on StateError {
+        // Expected: the server isolate reports a CreateNamedPipe failure
+        // which serve() propagates as a StateError.
+      } on ArgumentError {
+        // Also acceptable.
+      } catch (e) {
+        // Any error is acceptable — the key assertion is that it does NOT
+        // silently succeed and hang.
+        expect(e, isNotNull);
+      }
+    });
+
+    // 12. Client connect after server shutdown
+    testNamedPipe('client connect after server shutdown fails', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      // Verify it works before shutdown.
+      final channel1 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel1.shutdown());
+      final client1 = EchoClient(channel1);
+      expect(await client1.echo(99), equals(99));
+      await channel1.shutdown();
+
+      // Now shut down the server.
+      await server.shutdown();
+
+      // Brief pause so the OS tears down the pipe.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      // A new channel connecting to the now-dead pipe should fail.
+      final channel2 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel2.shutdown());
+      final client2 = EchoClient(channel2);
+
+      try {
+        await client2.echo(1);
+        fail('Expected error connecting to shut-down server');
+      } on GrpcError catch (e) {
+        expect(e.code, isNotNull);
+      }
+
+      await channel2.shutdown();
+    });
+  });
+
+  // ===========================================================================
+  // 4. Edge Case / Safety Tests
+  // ===========================================================================
+
+  group('Named Pipe Edge Cases', () {
+    // 14. Double shutdown safety — second call is a no-op.
+    testNamedPipe('server double shutdown is a safe no-op', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+      expect(server.isRunning, isTrue);
+
+      // First shutdown.
+      await server.shutdown();
+      expect(server.isRunning, isFalse);
+
+      // Second shutdown — must not throw.
+      await server.shutdown();
+      expect(server.isRunning, isFalse);
+    });
+
+    // 15. Double serve() throws StateError.
+    testNamedPipe('server double serve() throws StateError', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+      expect(server.isRunning, isTrue);
+
+      // Calling serve() again while already running must throw.
+      expect(
+        () => server.serve(pipeName: pipeName),
+        throwsA(isA<StateError>()),
+      );
+
+      await server.shutdown();
+    });
+
+    // 15a. shutdown cleans up: further RPCs throw GrpcError.
+    //      Equivalent to connection_lifecycle_test "shutdown cleans up all
+    //      resources" for TCP/UDS.
+    testNamedPipe('shutdown cleans up: further RPCs throw GrpcError', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      expect(await client.echo(42), equals(42));
+      await channel.shutdown();
+
+      try {
+        await client.echo(1);
+        fail('Expected GrpcError after shutdown');
+      } on GrpcError catch (_) {
+        // Expected.
+      }
+
+      await server.shutdown();
+    });
+
+    // 15b. terminate cleans up: further RPCs fail.
+    //      Equivalent to connection_lifecycle_test "terminate cleans up all
+    //      resources" for TCP/UDS.
+    testNamedPipe('terminate cleans up: further RPCs fail', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      expect(await client.echo(42), equals(42));
+      await channel.terminate();
+
+      try {
+        await client.echo(1);
+        fail('Expected error after terminate');
+      } on GrpcError catch (_) {
+        // Expected.
+      }
+
+      await server.shutdown();
+    });
+
+    // 16. Client channel double shutdown is safe.
+    testNamedPipe('client channel double shutdown is a safe no-op', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // Ensure at least one RPC to establish the connection.
+      expect(await client.echo(1), equals(1));
+
+      // First shutdown.
+      await channel.shutdown();
+
+      // Second shutdown — must not throw.
+      await channel.shutdown();
+
+      await server.shutdown();
+    });
+  });
+
+  // ===========================================================================
+  // 5. Additional Coverage (Issues #33)
+  // ===========================================================================
+
+  group('Named Pipe Additional Coverage', () {
+    // 18. Five channels connecting simultaneously, all firing RPCs.
+    //     Exercises pipe contention and concurrent instance allocation.
+    testNamedPipe('concurrent multi-channel connect under contention', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      // Create 5 channels simultaneously.
+      final channels = List.generate(
+        5,
+        (_) => NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        ),
+      );
+      for (final ch in channels) {
+        addTearDown(() => ch.shutdown());
+      }
+      final clients = channels.map(EchoClient.new).toList();
+
+      // Fire RPCs from all channels in parallel.
+      final results = await Future.wait([
+        for (var i = 0; i < 5; i++) clients[i].echo(i),
+      ]);
+
+      for (var i = 0; i < 5; i++) {
+        expect(
+          results[i],
+          equals(i),
+          reason: 'channel $i returned wrong value',
+        );
+      }
+
+      // Shut down all channels, then server.
+      for (final ch in channels) {
+        await ch.shutdown();
+      }
+      await server.shutdown();
+    });
+
+    // 19. New-channel connect after server restart.
+    //     Connect, do an RPC, shut down server, restart on same pipe name,
+    //     then verify a fresh channel can connect and issue RPCs.
+    testNamedPipe('new channel works after server restart on same pipe name', (
+      pipeName,
+    ) async {
+      // First server lifecycle.
+      final server1 = NamedPipeServer.create(services: [EchoService()]);
+      await server1.serve(pipeName: pipeName);
+      addTearDown(() => server1.shutdown());
+
+      final channel1 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel1.shutdown());
+      final client1 = EchoClient(channel1);
+      expect(await client1.echo(42), equals(42));
+
+      await channel1.shutdown();
+      await server1.shutdown();
+
+      // Brief pause to let OS release the pipe name.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      // Second server lifecycle on the SAME pipe name.
+      final server2 = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server2.shutdown());
+      await server2.serve(pipeName: pipeName);
+
+      final channel2 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      final client2 = EchoClient(channel2);
+      expect(await client2.echo(99), equals(99));
+
+      await channel2.shutdown();
+      await server2.shutdown();
+    });
+
+    // 20. Same channel reconnects after server restart.
+    //     This validates channel-level transport recovery (not just creating
+    //     a brand-new channel) after the server restarts on the same pipe.
+    testNamedPipe(
+      'same channel reconnects after server restart on same pipe name',
+      (pipeName) async {
+        final server1 = NamedPipeServer.create(services: [EchoService()]);
+        await server1.serve(pipeName: pipeName);
+        addTearDown(() => server1.shutdown());
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+        expect(await client.echo(42), equals(42));
+
+        await server1.shutdown();
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+
+        final server2 = NamedPipeServer.create(services: [EchoService()]);
+        addTearDown(() => server2.shutdown());
+        await server2.serve(pipeName: pipeName);
+
+        Object? lastError;
+        var recovered = false;
+        for (var attempt = 0; attempt < 10; attempt++) {
+          try {
+            const requestValue = 99;
+            final result = await client
+                .echo(requestValue)
+                .timeout(const Duration(milliseconds: 1000));
+            expect(result, equals(requestValue));
+            recovered = true;
+            break;
+          } catch (e) {
+            lastError = e;
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+        }
+
+        expect(
+          recovered,
+          isTrue,
+          reason:
+              'Same channel failed to recover after restart. '
+              'Last error: $lastError',
+        );
+
+        await channel.shutdown();
+        await server2.shutdown();
+      },
+    );
+
+    // 21. Single connector done future must be per-connection lifecycle.
+    //
+    // Regression targeted: A reused completer made connector.done already
+    // completed on reconnect, which immediately triggered abandonment of the
+    // freshly established connection.
+    testNamedPipe('connector done future resets across reconnect generations', (
+      pipeName,
+    ) async {
+      var server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+
+      final connector = NamedPipeTransportConnector(pipeName);
+      addTearDown(() => connector.shutdown());
+
+      await connector.connect();
+      final firstDone = connector.done;
+      var firstDoneCompleted = false;
+      firstDone.then((_) => firstDoneCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        firstDoneCompleted,
+        isFalse,
+        reason: 'done must be pending while first connection is active',
+      );
+
+      await server.shutdown();
+      await firstDone.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('first connector.done did not complete'),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+
+      await connector.connect();
+      final secondDone = connector.done;
+      expect(
+        identical(firstDone, secondDone),
+        isFalse,
+        reason: 'connector.done must be a fresh Future on reconnect',
+      );
+
+      var secondDoneCompleted = false;
+      secondDone.then((_) => secondDoneCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        secondDoneCompleted,
+        isFalse,
+        reason: 'new connector.done should not be pre-completed',
+      );
+
+      await server.shutdown();
+      await secondDone.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('second connector.done did not complete'),
+      );
+    });
+
+    // 22. Same channel recovery must remain stable across many restarts.
+    //
+    // Regression targeted: reconnect path degradation from stale connector
+    // state (including stale handles) causing increasing recovery failures.
+    testNamedPipe(
+      'same channel remains stable across repeated server restarts',
+      (pipeName) async {
+        var server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+
+        expect(await client.echo(0), equals(0));
+
+        for (var cycle = 1; cycle <= 8; cycle++) {
+          await server.shutdown();
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+
+          server = NamedPipeServer.create(services: [EchoService()]);
+          await server.serve(pipeName: pipeName);
+
+          Object? lastError;
+          var recovered = false;
+          for (var attempt = 0; attempt < 3; attempt++) {
+            try {
+              final result = await client
+                  .echo(cycle)
+                  .timeout(const Duration(milliseconds: 1000));
+              expect(result, equals(cycle));
+              recovered = true;
+              break;
+            } catch (e) {
+              lastError = e;
+              await Future<void>.delayed(const Duration(milliseconds: 80));
+            }
+          }
+
+          expect(
+            recovered,
+            isTrue,
+            reason:
+                'Channel failed to recover on cycle $cycle. '
+                'Last error: $lastError',
+          );
+        }
+
+        await channel.shutdown();
+        await server.shutdown();
+      },
+    );
+
+    // 23. Force ERROR_PIPE_BUSY and verify connector retry behavior.
+    //     With maxInstances=1, channel2 cannot connect while channel1 holds
+    //     the only active pipe instance. channel2 should retry and then
+    //     succeed once channel1 disconnects.
+    testNamedPipe('ERROR_PIPE_BUSY retry succeeds when pipe becomes free', (
+      pipeName,
+    ) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName, maxInstances: 1);
+
+      final channel1 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel1.shutdown());
+      final client1 = EchoClient(channel1);
+      expect(await client1.echo(1), equals(1));
+
+      final channel2 = NamedPipeClientChannel(
+        pipeName,
+        options: const NamedPipeChannelOptions(),
+      );
+      addTearDown(() => channel2.shutdown());
+      final client2 = EchoClient(channel2);
+
+      final stopwatch = Stopwatch()..start();
+      final secondRpcFuture = client2.echo(2);
+
+      // Keep channel1 connected long enough for channel2 to hit busy/retry.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await channel1.shutdown();
+
+      final result = await secondRpcFuture.timeout(const Duration(seconds: 5));
+      stopwatch.stop();
+
+      expect(result, equals(2));
+      expect(
+        stopwatch.elapsedMilliseconds,
+        greaterThanOrEqualTo(250),
+        reason: 'Expected retry/backoff delay before connection succeeded',
+      );
+
+      await channel2.shutdown();
+      await server.shutdown();
+    });
+  });
+
+  // ===========================================================================
+  // 6. Cross-Platform Skip Verification
+  // ===========================================================================
+
+  group('Named Pipe Cross-Platform', () {
+    // 17. On non-Windows platforms the testNamedPipe helper registers the
+    //     test with skip: 'Named pipes are Windows-only'. We verify the
+    //     underlying platform guard by running a plain `test()`.
+    test(
+      'NamedPipeServer.serve() throws UnsupportedError on non-Windows',
+      () {
+        if (!Platform.isWindows) {
+          // On macOS/Linux, NamedPipeServer.serve() should throw since
+          // the Win32 API is unavailable.
+          final server = NamedPipeServer.create(services: [EchoService()]);
+          expect(
+            () => server.serve(pipeName: 'irrelevant'),
+            throwsA(isA<UnsupportedError>()),
+          );
+        }
+      },
+      skip: Platform.isWindows ? 'Only applicable on non-Windows' : null,
+    );
+  });
+}

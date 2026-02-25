@@ -29,10 +29,26 @@
       "open-runtime"
     ],
     "repos": [
-      {"owner": "open-runtime", "repo": "aot_monorepo", "relationship": "dependent"},
-      {"owner": "open-runtime", "repo": "runtime_isomorphic_ipc", "relationship": "dependent"},
-      {"owner": "open-runtime", "repo": "runtime_telemetric_library", "relationship": "dependent"},
-      {"owner": "open-runtime", "repo": "runtime_isomorphic_library", "relationship": "dependent"}
+      {
+        "owner": "open-runtime",
+        "repo": "aot_monorepo",
+        "relationship": "dependent"
+      },
+      {
+        "owner": "open-runtime",
+        "repo": "runtime_isomorphic_ipc",
+        "relationship": "dependent"
+      },
+      {
+        "owner": "open-runtime",
+        "repo": "runtime_telemetric_library",
+        "relationship": "dependent"
+      },
+      {
+        "owner": "open-runtime",
+        "repo": "runtime_isomorphic_library",
+        "relationship": "dependent"
+      }
     ],
     "discovery": {
       "enabled": true,
@@ -114,8 +130,23 @@
       "managed_analyze": true,
       "managed_test": true
     },
-    "platforms": ["ubuntu", "macos-arm64", "macos-x64", "windows"],
+    "platforms": [
+      "ubuntu",
+      "ubuntu-arm64",
+      "macos-arm64",
+      "macos-x64",
+      "windows",
+      "windows-arm64"
+    ],
     "secrets": {},
-    "sub_packages": []
+    "sub_packages": [],
+    "_comment_platforms": "Optional: CI platform matrix. When 2+ entries are provided, CI splits into analyze + matrix test jobs.",
+    "_comment_runner_overrides": "Optional: override platform IDs to custom runs-on labels (e.g. org-managed GitHub-hosted runners). Keys must match ci.platforms entries.",
+    "runner_overrides": {
+      "ubuntu": "runtime-ubuntu-24.04-x64-256gb-64core",
+      "ubuntu-arm64": "runtime-ubuntu-24.04-arm64-208gb-64core",
+      "windows": "runtime-windows-2025-x64-256gb-64core",
+      "windows-arm64": "runtime-windows-11-arm64-208gb-64core"
+    }
   }
 }

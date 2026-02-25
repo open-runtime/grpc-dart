@@ -42,6 +42,8 @@ export 'src/server/service.dart' show ServiceMethod, Service;
 export 'src/shared/api.dart';
 export 'src/shared/codec.dart' show Codec, IdentityCodec, GzipCodec;
 export 'src/shared/codec_registry.dart';
+export 'src/shared/logging/logging.dart'
+    show logGrpcError, grpcErrorLogger, GrpcErrorLogger, logGrpcEvent, grpcEventLogger, GrpcEventLogger, GrpcLogEvent;
 export 'src/shared/message.dart' show GrpcMessage, GrpcMetadata, GrpcData, grpcDecompressor;
 export 'src/shared/security.dart' show supportedAlpnProtocols, createSecurityContext;
 export 'src/shared/streams.dart' show GrpcHttpEncoder, GrpcHttpDecoder;

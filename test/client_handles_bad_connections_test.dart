@@ -64,7 +64,13 @@ class TestService extends grpc.Service {
 
   Stream<int> stream(grpc.ServiceCall call, Future request) async* {
     yield 1;
+    // Small delays keep the stream alive across event-loop yields in the
+    // client's pending-call dispatch loop. Without these, the stream
+    // completes during a single yield and never contributes to the
+    // concurrent stream count.
+    await Future.delayed(const Duration(milliseconds: 20));
     yield 2;
+    await Future.delayed(const Duration(milliseconds: 20));
     yield 3;
   }
 }
@@ -84,66 +90,84 @@ class FixedConnectionClientChannel extends ClientChannelBase {
 }
 
 Future<void> main() async {
-  testTcpAndUds('client reconnects after the connection gets old', (
-    address,
-  ) async {
-    // client reconnect after a short delay.
-    final server = grpc.Server.create(services: [TestService()]);
-    await server.serve(address: address, port: 0);
-
-    final channel = FixedConnectionClientChannel(
-      Http2ClientConnection(
+  group(
+    'Client handles bad connections',
+    timeout: const Timeout(Duration(seconds: 30)),
+    () {
+      testTcpAndUds('client reconnects after the connection gets old', (
         address,
-        server.port!,
-        grpc.ChannelOptions(
-          idleTimeout: Duration(minutes: 1),
-          // Short delay to test that it will time out.
-          connectionTimeout: Duration(milliseconds: 100),
-          credentials: grpc.ChannelCredentials.insecure(),
-        ),
-      ),
-    );
+      ) async {
+        const connectionTimeout = Duration(milliseconds: 100);
+        // client reconnect after a short delay.
+        final server = grpc.Server.create(services: [TestService()]);
+        await server.serve(address: address, port: 0);
+        addTearDown(() => server.shutdown());
 
-    final testClient = TestClient(channel);
-    expect(await testClient.stream(1).toList(), [1, 2, 3]);
-    await Future.delayed(Duration(milliseconds: 200));
-    expect(await testClient.stream(1).toList(), [1, 2, 3]);
-    expect(
-      channel.states.where((x) => x == grpc.ConnectionState.ready).length,
-      2,
-    );
-    server.shutdown();
-  });
+        final channel = FixedConnectionClientChannel(
+          Http2ClientConnection(
+            address,
+            server.port!,
+            grpc.ChannelOptions(
+              idleTimeout: Duration(minutes: 1),
+              // Short delay to test that it will time out.
+              connectionTimeout: connectionTimeout,
+              credentials: grpc.ChannelCredentials.insecure(),
+            ),
+          ),
+        );
+        addTearDown(() => channel.shutdown());
 
-  testTcpAndUds('client reconnects when stream limit is used', (address) async {
-    // client reconnect after setting stream limit.
-    final server = grpc.Server.create(services: [TestService()]);
-    await server.serve(
-      address: address,
-      port: 0,
-      http2ServerSettings: ServerSettings(concurrentStreamLimit: 2),
-    );
+        final testClient = TestClient(channel);
+        expect(await testClient.stream(1).toList(), [1, 2, 3]);
+        // Config-derived wait: ensure connection has aged out.
+        await Future.delayed(connectionTimeout * 2);
+        expect(await testClient.stream(1).toList(), [1, 2, 3]);
+        expect(
+          channel.states.where((x) => x == grpc.ConnectionState.ready).length,
+          2,
+        );
+        await channel.shutdown();
+        await server.shutdown();
+      });
 
-    final channel = FixedConnectionClientChannel(
-      Http2ClientConnection(
+      testTcpAndUds('client reconnects when stream limit is used', (
         address,
-        server.port!,
-        grpc.ChannelOptions(credentials: grpc.ChannelCredentials.insecure()),
-      ),
-    );
-    final states = <grpc.ConnectionState>[];
-    channel.onConnectionStateChanged.listen((state) {
-      states.add(state);
-    });
-    final testClient = TestClient(channel);
+      ) async {
+        // client reconnect after setting stream limit.
+        final server = grpc.Server.create(services: [TestService()]);
+        await server.serve(
+          address: address,
+          port: 0,
+          http2ServerSettings: ServerSettings(concurrentStreamLimit: 2),
+        );
+        addTearDown(() => server.shutdown());
 
-    await Future.wait(<Future>[
-      expectLater(testClient.stream(1).toList(), completion([1, 2, 3])),
-      expectLater(testClient.stream(1).toList(), completion([1, 2, 3])),
-      expectLater(testClient.stream(1).toList(), completion([1, 2, 3])),
-      expectLater(testClient.stream(1).toList(), completion([1, 2, 3])),
-    ]);
-    expect(states.where((x) => x == grpc.ConnectionState.ready).length, 2);
-    server.shutdown();
-  });
+        final channel = FixedConnectionClientChannel(
+          Http2ClientConnection(
+            address,
+            server.port!,
+            grpc.ChannelOptions(
+              credentials: grpc.ChannelCredentials.insecure(),
+            ),
+          ),
+        );
+        addTearDown(() => channel.shutdown());
+        final states = <grpc.ConnectionState>[];
+        channel.onConnectionStateChanged.listen((state) {
+          states.add(state);
+        });
+        final testClient = TestClient(channel);
+
+        await Future.wait(<Future>[
+          expectLater(testClient.stream(1).toList(), completion([1, 2, 3])),
+          expectLater(testClient.stream(1).toList(), completion([1, 2, 3])),
+          expectLater(testClient.stream(1).toList(), completion([1, 2, 3])),
+          expectLater(testClient.stream(1).toList(), completion([1, 2, 3])),
+        ]);
+        expect(states.where((x) => x == grpc.ConnectionState.ready).length, 2);
+        await channel.shutdown();
+        await server.shutdown();
+      });
+    },
+  );
 }

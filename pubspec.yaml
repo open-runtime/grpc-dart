@@ -30,19 +30,11 @@ dependencies:
   win32: ^5.10.0
 
 dev_dependencies:
-  # ==========================================================================
-  # GitHub releases versioned dependencies
-  # ==========================================================================
-  runtime_common_codestyle:
-    git:
-      url: git@github.com:open-runtime/runtime_common_codestyle.git
-      tag_pattern: v{{version}}
-    version: ^0.1.5
   runtime_ci_tooling:
     git:
       url: git@github.com:open-runtime/runtime_ci_tooling.git
-      tag_pattern: v{{version}}
-    version: ^0.12.0
+      tag_pattern: "v{{version}}"
+    version: ^0.13.0
 
   # ==========================================================================
   # Direct pub.dev dev dependencies
