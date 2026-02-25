@@ -644,8 +644,10 @@ void main() {
         anyOf(
           isA<List<int>>(),
           isA<GrpcError>(),
-          isA<Exception>(),
-          isA<Error>(),
+          isA<SocketException>(),
+          isA<NamedPipeException>(),
+          isA<TimeoutException>(),
+          isA<StateError>(),
         ),
         reason: 'bidi shutdown stream must settle to data or explicit error',
       );
@@ -728,8 +730,10 @@ void main() {
         anyOf(
           isA<List<int>>(),
           isA<GrpcError>(),
-          isA<Exception>(),
-          isA<Error>(),
+          isA<SocketException>(),
+          isA<NamedPipeException>(),
+          isA<TimeoutException>(),
+          isA<StateError>(),
         ),
         reason:
             'graceful shutdown stream must settle to data or explicit error',
@@ -783,8 +787,10 @@ void main() {
           anyOf(
             isA<List<int>>(),
             isA<GrpcError>(),
-            isA<Exception>(),
-            isA<Error>(),
+            isA<SocketException>(),
+            isA<NamedPipeException>(),
+            isA<TimeoutException>(),
+            isA<StateError>(),
           ),
           reason: 'multi-stream shutdown must settle to data or explicit error',
         );
@@ -827,8 +833,10 @@ void main() {
         anyOf(
           isA<List<int>>(),
           isA<GrpcError>(),
-          isA<Exception>(),
-          isA<Error>(),
+          isA<SocketException>(),
+          isA<NamedPipeException>(),
+          isA<TimeoutException>(),
+          isA<StateError>(),
         ),
         reason:
             'client shutdown stream must settle to data or explicit transport '

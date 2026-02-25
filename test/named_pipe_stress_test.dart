@@ -547,8 +547,9 @@ void main() {
             anyOf(
               equals(i % 256),
               isA<GrpcError>(),
-              isA<Exception>(),
-              isA<Error>(),
+              isA<NamedPipeException>(),
+              isA<TimeoutException>(),
+              isA<StateError>(),
             ),
             reason: 'iteration $i: RPC must return value or explicit error',
           );

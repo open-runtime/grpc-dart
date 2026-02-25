@@ -29,6 +29,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
@@ -97,7 +98,13 @@ void main() {
       for (final result in settled) {
         expect(
           result,
-          anyOf(isA<int>(), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+          anyOf(
+            isA<int>(),
+            isA<GrpcError>(),
+            isA<SocketException>(),
+            isA<TimeoutException>(),
+            isA<StateError>(),
+          ),
           reason: 'Unexpected shutdown-race RPC settlement: $result',
         );
       }
@@ -146,7 +153,13 @@ void main() {
       );
       expect(
         result,
-        anyOf(equals(42), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+        anyOf(
+          equals(42),
+          isA<GrpcError>(),
+          isA<SocketException>(),
+          isA<TimeoutException>(),
+          isA<StateError>(),
+        ),
       );
 
       await server.shutdown();
@@ -362,7 +375,13 @@ void main() {
       // before dying, sum of 1..10 = 55. Either is acceptable.
       expect(
         result,
-        anyOf(equals(55), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+        anyOf(
+          equals(55),
+          isA<GrpcError>(),
+          isA<SocketException>(),
+          isA<TimeoutException>(),
+          isA<StateError>(),
+        ),
       );
 
       await channel.shutdown();
@@ -436,7 +455,13 @@ void main() {
       for (final result in settled) {
         expect(
           result,
-          anyOf(isA<int>(), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+          anyOf(
+            isA<int>(),
+            isA<GrpcError>(),
+            isA<SocketException>(),
+            isA<TimeoutException>(),
+            isA<StateError>(),
+          ),
           reason: 'Unexpected concurrent-shutdown RPC settlement: $result',
         );
       }
@@ -886,8 +911,9 @@ void main() {
             isA<int>(),
             isA<List<int>>(),
             isA<GrpcError>(),
-            isA<Exception>(),
-            isA<Error>(),
+            isA<SocketException>(),
+            isA<TimeoutException>(),
+            isA<StateError>(),
           ),
           reason: 'Unexpected settled RPC result type: ${result.runtimeType}',
         );

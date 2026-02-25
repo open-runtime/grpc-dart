@@ -175,8 +175,9 @@ void main() {
             r,
             anyOf(
               isA<ClientTransportConnection>(),
-              isA<Exception>(),
-              isA<Error>(),
+              isA<NamedPipeException>(),
+              isA<TimeoutException>(),
+              isA<StateError>(),
             ),
             reason:
                 'each connect() must return ClientTransportConnection or '
@@ -425,7 +426,13 @@ void main() {
       final result = await rpcFuture;
       expect(
         result,
-        anyOf(equals(42), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+        anyOf(
+          equals(42),
+          isA<GrpcError>(),
+          isA<NamedPipeException>(),
+          isA<TimeoutException>(),
+          isA<StateError>(),
+        ),
       );
 
       await server.shutdown();
@@ -570,7 +577,13 @@ void main() {
         // of 1..5 = 15. Either is acceptable.
         expect(
           result,
-          anyOf(equals(15), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+          anyOf(
+            equals(15),
+            isA<GrpcError>(),
+            isA<NamedPipeException>(),
+            isA<TimeoutException>(),
+            isA<StateError>(),
+          ),
         );
 
         await channel.shutdown();
@@ -642,7 +655,13 @@ void main() {
       for (final result in settled) {
         expect(
           result,
-          anyOf(isA<int>(), isA<GrpcError>(), isA<Exception>(), isA<Error>()),
+          anyOf(
+            isA<int>(),
+            isA<GrpcError>(),
+            isA<NamedPipeException>(),
+            isA<TimeoutException>(),
+            isA<StateError>(),
+          ),
           reason:
               'Unexpected named-pipe concurrent-shutdown settlement: $result',
         );
@@ -701,8 +720,9 @@ void main() {
           anyOf(
             isA<List<int>>(),
             isA<GrpcError>(),
-            isA<Exception>(),
-            isA<Error>(),
+            isA<NamedPipeException>(),
+            isA<TimeoutException>(),
+            isA<StateError>(),
           ),
         );
 

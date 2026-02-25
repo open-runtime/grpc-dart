@@ -94,7 +94,14 @@ Future<Object?> settleRpc(Future<Object?> future) {
 }
 
 /// Asserts that an RPC result from [settleRpc] is one of the expected types.
-void expectExpectedRpcSettlement(Object? result, {required String reason}) {
+///
+/// Accepts valid payload types, gRPC errors, and known transport exceptions.
+/// Does NOT accept arbitrary Exception/Error — this catches programming bugs
+/// like TypeError, RangeError, and NoSuchMethodError.
+void expectExpectedRpcSettlement(
+  Object? result, {
+  required String reason,
+}) {
   expect(
     result,
     anyOf(
@@ -102,8 +109,9 @@ void expectExpectedRpcSettlement(Object? result, {required String reason}) {
       isA<List<int>>(),
       isA<List<List<int>>>(),
       isA<GrpcError>(),
-      isA<Exception>(),
-      isA<Error>(),
+      isA<SocketException>(),
+      isA<TimeoutException>(),
+      isA<StateError>(),
     ),
     reason: reason,
   );

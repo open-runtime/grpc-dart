@@ -27,6 +27,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:grpc/grpc.dart';
 import 'package:grpc/src/client/http2_connection.dart';
@@ -235,8 +236,9 @@ void main() {
           anyOf(
             isA<List<int>>(),
             isA<GrpcError>(),
-            isA<Exception>(),
-            isA<Error>(),
+            isA<SocketException>(),
+            isA<TimeoutException>(),
+            isA<StateError>(),
           ),
           reason:
               'Active stream must settle to data or explicit transport error',
