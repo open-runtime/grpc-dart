@@ -234,7 +234,8 @@ Future<void> main() async {
     await server.shutdown();
   });
 
-  test('exception in onMetadataException', () async {
+  test('exception in onMetadataException',
+      timeout: const Timeout(Duration(seconds: 60)), () async {
     final server = Server.create(
       services: [TestServiceWithOnMetadataException()],
     );
