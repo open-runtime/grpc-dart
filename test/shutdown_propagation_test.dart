@@ -46,14 +46,6 @@ void expectHandlersEmpty(ConnectionServer server, {String? reason}) {
   );
 }
 
-/// Encodes chunkCount and chunkSize as 8-byte big-endian.
-List<int> encodeStreamBytesRequest(int chunkCount, int chunkSize) {
-  final bd = ByteData(8);
-  bd.setUint32(0, chunkCount);
-  bd.setUint32(4, chunkSize);
-  return bd.buffer.asUint8List();
-}
-
 /// Waits until all handler lists are empty.
 Future<void> waitForNoHandlers(
   ConnectionServer server, {
@@ -105,14 +97,26 @@ void main() {
       addTearDown(() => channel.shutdown());
 
       final client = EchoClient(channel);
+      final controllers = <StreamController<int>>[];
+      addTearDown(() async {
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            await ctrl.close();
+          }
+        }
+      });
 
-      // Start 50 server-streaming RPCs.
-      // serverStream(255) yields 255 items with 1ms
-      // delays = ~255ms, plenty of time.
+      // Start 50 bidi streams and keep controllers open so handlers remain
+      // active until shutdown.
       final futures = <Future<Object?>>[];
       for (var i = 0; i < 50; i++) {
+        final ctrl = StreamController<int>();
+        controllers.add(ctrl);
+        ctrl.add(i % 128);
         futures.add(
-          settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)),
+          settleRpc(
+            client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
+          ),
         );
       }
 
@@ -125,11 +129,17 @@ void main() {
 
       expect(
         totalHandlerCount(server),
-        greaterThanOrEqualTo(50),
-        reason: 'Handler map must track >= 50 entries',
+        equals(50),
+        reason: 'Handler map must track exactly 50 active handlers',
       );
 
       await server.shutdown();
+
+      for (final ctrl in controllers) {
+        if (!ctrl.isClosed) {
+          await ctrl.close();
+        }
+      }
 
       expectHandlersEmpty(
         server,
@@ -173,16 +183,30 @@ void main() {
           await ch.shutdown();
         }
       });
+      final controllers = <StreamController<int>>[];
+      addTearDown(() async {
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            await ctrl.close();
+          }
+        }
+      });
 
       final futures = <Future<Object?>>[];
-      for (final client in clients) {
+      for (var clientIndex = 0; clientIndex < clients.length; clientIndex++) {
+        final client = clients[clientIndex];
         for (var i = 0; i < 20; i++) {
+          final ctrl = StreamController<int>();
+          controllers.add(ctrl);
+          ctrl.add((clientIndex * 20 + i) % 128);
           futures.add(
             settleRpc(
-              client.serverStream(255).toList().then<Object?>((v) => v),
+              client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
             ),
           );
         }
+        // Let the server process each batch before creating the next one.
+        await Future<void>.delayed(Duration.zero);
       }
 
       await waitForHandlers(
@@ -192,7 +216,19 @@ void main() {
         reason: '60 handlers must be registered',
       );
 
+      expect(
+        totalHandlerCount(server),
+        equals(60),
+        reason: 'Handler map must track exactly 60 active handlers',
+      );
+
       await server.shutdown();
+
+      for (final ctrl in controllers) {
+        if (!ctrl.isClosed) {
+          await ctrl.close();
+        }
+      }
 
       expectHandlersEmpty(
         server,
@@ -861,14 +897,29 @@ void main() {
           await ch.shutdown();
         }
       });
+      final controllers = <StreamController<int>>[];
+      addTearDown(() async {
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            await ctrl.close();
+          }
+        }
+      });
 
       final futures = <Future<Object?>>[];
-      for (final client in clients) {
+      for (var clientIndex = 0; clientIndex < clients.length; clientIndex++) {
+        final client = clients[clientIndex];
         for (var i = 0; i < 10; i++) {
+          final ctrl = StreamController<int>();
+          controllers.add(ctrl);
+          ctrl.add((clientIndex * 10 + i) % 128);
           futures.add(
-            settleRpc(client.serverStream(50).toList().then<Object?>((v) => v)),
+            settleRpc(
+              client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
+            ),
           );
         }
+        await Future<void>.delayed(Duration.zero);
       }
 
       // 5 clients x 10 streams = 50 total.
@@ -881,17 +932,26 @@ void main() {
             'must be registered',
       );
 
-      // Verify handler map has entries under
-      // multiple connection keys.
+      expect(
+        totalHandlerCount(server),
+        equals(50),
+        reason: 'Handler map must track exactly 50 active handlers',
+      );
+
+      // Verify handlers are spread across all 5 client connections.
       expect(
         server.handlers.keys.length,
-        greaterThan(0),
-        reason:
-            'Handler map must have connection '
-            'keys',
+        equals(5),
+        reason: 'Handler map must have exactly 5 connection keys',
       );
 
       await server.shutdown();
+
+      for (final ctrl in controllers) {
+        if (!ctrl.isClosed) {
+          await ctrl.close();
+        }
+      }
 
       // ALL entries under ALL connection keys empty.
       for (final entry in server.handlers.entries) {

@@ -391,6 +391,7 @@ class NamedPipeServer extends ConnectionServer {
 /// so polling, timeouts, and concurrent connections all work correctly.
 class _ServerPipeStream {
   static const Duration _deferredCloseTimeout = Duration(seconds: 5);
+  static const int _maxNoDataRetries = 500;
 
   final int _handle;
 
@@ -460,6 +461,7 @@ class _ServerPipeStream {
     final buffer = calloc<Uint8>(kNamedPipeBufferSize);
     final bytesRead = calloc<DWORD>();
     final peekAvail = calloc<DWORD>();
+    var noDataRetries = 0;
 
     try {
       while (!_isClosed) {
@@ -469,6 +471,20 @@ class _ServerPipeStream {
 
         if (peekResult == 0) {
           final error = GetLastError();
+          if (error == ERROR_NO_DATA) {
+            noDataRetries++;
+            if (noDataRetries <= _maxNoDataRetries) {
+              await Future<void>.delayed(const Duration(milliseconds: 1));
+              continue;
+            }
+            logGrpcEvent(
+              '[gRPC] Server pipe no-data retries exhausted during peek',
+              component: 'NamedPipeServer',
+              event: 'pipe_no_data_retries_exhausted',
+              context: '_readFromPipe',
+              error: error,
+            );
+          }
           if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
             logGrpcEvent(
               '[gRPC] Server pipe peek error: $error',
@@ -480,6 +496,7 @@ class _ServerPipeStream {
           }
           break;
         }
+        noDataRetries = 0;
 
         if (peekAvail.value == 0) {
           // No data yet — yield to event loop.
@@ -493,6 +510,20 @@ class _ServerPipeStream {
 
         if (success == 0) {
           final error = GetLastError();
+          if (error == ERROR_NO_DATA) {
+            noDataRetries++;
+            if (noDataRetries <= _maxNoDataRetries) {
+              await Future<void>.delayed(const Duration(milliseconds: 1));
+              continue;
+            }
+            logGrpcEvent(
+              '[gRPC] Server pipe no-data retries exhausted during read',
+              component: 'NamedPipeServer',
+              event: 'pipe_no_data_retries_exhausted',
+              context: '_readFromPipe',
+              error: error,
+            );
+          }
           if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA) {
             logGrpcEvent(
               '[gRPC] Server pipe read error: $error',
@@ -504,6 +535,7 @@ class _ServerPipeStream {
           }
           break;
         }
+        noDataRetries = 0;
 
         final count = bytesRead.value;
         if (count > 0) {

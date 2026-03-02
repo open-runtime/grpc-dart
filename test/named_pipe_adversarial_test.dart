@@ -838,17 +838,8 @@ void main() {
     // EXPECTED: Items arrive in correct order with correct values. No data
     // corruption. No deadlock.
     //
-    // In same-process testing, server and client share the Dart event loop.
-    // Synchronous WriteFile and PeekNamedPipe polling compete for the
-    // single thread, limiting throughput. On CI (especially Windows x64),
-    // only ~232 of 1000 items may arrive before HTTP/2 flow control
-    // stalls. This is a test configuration limitation, NOT a production
-    // bug — production uses separate isolates/processes.
-    //
-    // The test verifies:
-    // 1. Substantial items arrive (≥100 proves throughput, no deadlock)
-    // 2. All received items have correct values in correct order (integrity)
-    // 3. The stream terminates cleanly without deadlocking (no timeout)
+    // Use serverStreamBytes request encoding (8-byte count+size) so the
+    // request count is not truncated to a single byte.
     testNamedPipe('high-throughput server stream saturating pipe buffer', (
       pipeName,
     ) async {
@@ -860,35 +851,32 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      // Request 1000 items. Each item is a small gRPC frame, but 1000
-      // of them back-to-back will fill and overflow the 65536-byte pipe
-      // buffer multiple times, exercising partial reads.
-      //
-      // The echo service serializes int as a single byte ([value]), so
-      // server-stream values >255 wrap around (value & 0xFF). This is
-      // expected — the test validates frame ordering and data integrity,
-      // not the encoding range.
-      final results = await client.serverStream(1000).toList();
+      // Request 1000 chunks of 64 bytes (64KB total): enough to saturate the
+      // named-pipe buffer boundary while preserving deterministic integrity
+      // checks on every chunk.
+      final request = encodeStreamBytesRequest(1000, 64);
+      final chunks = await client.serverStreamBytes(request).toList();
 
-      // All 1000 items must arrive. The deferred _incomingController.close()
-      // fix in _ServerPipeStream.close() ensures the HTTP/2 transport keeps
-      // the outgoing stream open until all response frames are written.
-      // Any shortfall indicates a regression in the deferred close path.
       expect(
-        results.length,
+        chunks.length,
         equals(1000),
         reason:
-            'Expected all 1000 items but got ${results.length}. '
-            'No shutdown racing this stream — full delivery required.',
+            'Expected all 1000 chunks but got ${chunks.length}. '
+            'No shutdown races this stream; full delivery is required.',
       );
 
-      // Verify every received item is correct and in order — the critical
-      // data integrity check. Under pipe buffer pressure, no frames should
-      // be corrupted, reordered, or duplicated.
-      for (var i = 0; i < results.length; i++) {
-        expect(results[i], equals((i + 1) & 0xFF), reason: 'item $i');
+      for (var i = 0; i < chunks.length; i++) {
+        expect(chunks[i].length, equals(64), reason: 'chunk $i size');
+        for (var j = 0; j < 64; j++) {
+          expect(
+            chunks[i][j],
+            equals((i + j) & 0xFF),
+            reason: 'chunk $i byte $j',
+          );
+        }
       }
 
       await channel.shutdown();

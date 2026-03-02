@@ -30,15 +30,6 @@ import 'src/echo_service.dart';
 // Helpers
 // ================================================================
 
-/// Encodes chunkCount and chunkSize as 8-byte big-endian
-/// for the serverStreamBytes service method.
-List<int> _encodeStreamBytesRequest(int chunkCount, int chunkSize) {
-  final bd = ByteData(8);
-  bd.setUint32(0, chunkCount);
-  bd.setUint32(4, chunkSize);
-  return bd.buffer.asUint8List();
-}
-
 // ================================================================
 // Tests
 // ================================================================
@@ -399,7 +390,7 @@ void main() {
 
       // Each serverStreamBytes yields 50 chunks of 8 KB.
       // Request: 8-byte big-endian [chunkCount, chunkSize].
-      final request = _encodeStreamBytesRequest(50, 8192);
+      final request = encodeStreamBytesRequest(50, 8192);
       final futures = <Future<Object?>>[];
       for (var i = 0; i < 10; i++) {
         futures.add(

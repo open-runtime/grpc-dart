@@ -434,9 +434,29 @@ void main() {
         'on server.shutdown()', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        try {
+          await server.shutdown();
+        } catch (_) {}
+      });
 
       final channel = createTestChannel(address, server.port!);
+      addTearDown(() async {
+        try {
+          await channel.shutdown();
+        } catch (_) {}
+      });
       final client = EchoClient(channel);
+      final controllers = <StreamController<int>>[];
+      addTearDown(() async {
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            try {
+              await ctrl.close();
+            } catch (_) {}
+          }
+        }
+      });
 
       final doneCompleters = List.generate(100, (_) => Completer<void>());
       final itemCounts = List.filled(100, 0);
@@ -445,7 +465,9 @@ void main() {
 
       for (var i = 0; i < 100; i++) {
         final idx = i;
-        final stream = client.serverStream(255);
+        final ctrl = StreamController<int>();
+        controllers.add(ctrl);
+        final stream = client.bidiStream(ctrl.stream);
         stream.listen(
           (item) {
             itemCounts[idx]++;
@@ -470,25 +492,28 @@ void main() {
             }
           },
         );
+        // Keep stream open after first item so shutdown is the terminating event.
+        ctrl.add(idx % 128);
       }
 
-      // Wait for first item on all 100 streams.
-      // This may take longer than 50 due to volume.
+      // Wait for first response on all 100 streams.
       await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
         const Duration(seconds: 15),
-        onTimeout: () => fail(
-          'Timed out waiting for first items on '
-          'all 100 streams',
-        ),
+        onTimeout: () =>
+            fail('Timed out waiting for first responses on all 100 streams'),
       );
 
       // server.shutdown() — NO channel.shutdown().
       await server.shutdown();
 
+      // Close request-side controllers after shutdown has been initiated.
+      for (final ctrl in controllers) {
+        if (!ctrl.isClosed) {
+          await ctrl.close();
+        }
+      }
+
       // All 100 done completers must fire within 15s.
-      // Some RST_STREAM frames may rely on the
-      // socket-close fallback rather than explicit
-      // per-stream flush.
       await Future.wait(doneCompleters.map((c) => c.future)).timeout(
         const Duration(seconds: 15),
         onTimeout: () => fail(
@@ -503,17 +528,15 @@ void main() {
         reason: 'No unexpected non-GrpcError errors expected',
       );
 
-      // At least half the streams must be truncated by shutdown.
-      // On slower CI (especially Windows), some streams may
-      // complete naturally before shutdown propagates.
-      final truncatedCount = itemCounts.where((count) => count < 255).length;
-      expect(
-        truncatedCount,
-        greaterThanOrEqualTo(50),
-        reason:
-            'At least 50 of 100 streams should be truncated by '
-            'shutdown (got $truncatedCount truncated)',
-      );
+      for (var i = 0; i < itemCounts.length; i++) {
+        expect(
+          itemCounts[i],
+          equals(1),
+          reason:
+              'Stream $i should emit exactly one response before '
+              'shutdown termination.',
+        );
+      }
 
       // Cleanup AFTER all assertions.
       await channel.shutdown();

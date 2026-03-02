@@ -251,7 +251,7 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   /// Safe to call repeatedly — both stream close and handle close paths
   /// are idempotent in this connector.
   void _disposeCurrentPipeResources() {
-    _pipeStream?.close();
+    _pipeStream?.close(force: true);
     _pipeStream = null;
 
     final handle = _pipeHandle;
@@ -274,6 +274,9 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 ///
 /// Provides [Stream] and [StreamSink] interfaces for HTTP/2 framing.
 class _NamedPipeStream {
+  static const Duration _deferredCloseTimeout = Duration(seconds: 5);
+  static const int _maxNoDataRetries = 500;
+
   final int _handle;
   final Completer<void> _doneCompleter;
 
@@ -286,7 +289,9 @@ class _NamedPipeStream {
   /// throws due to an active `addStream()` from the HTTP/2 transport.
   StreamSubscription<List<int>>? _outgoingSubscription;
 
+  Timer? _deferredCloseTimer;
   bool _isClosed = false;
+  bool _writesClosed = false;
 
   _NamedPipeStream(this._handle, this._doneCompleter) {
     // Start reading in a microtask to avoid blocking the constructor
@@ -295,12 +300,12 @@ class _NamedPipeStream {
     // Forward outgoing data to the pipe
     _outgoingSubscription = _outgoingController.stream.listen(
       _writeData,
-      onDone: close,
+      onDone: _onOutgoingDone,
       onError: (error) {
         if (!_isClosed && !_incomingController.isClosed) {
           _incomingController.addError(error);
         }
-        close();
+        close(force: true);
       },
     );
   }
@@ -339,6 +344,7 @@ class _NamedPipeStream {
     final buffer = calloc<Uint8>(kNamedPipeBufferSize);
     final bytesRead = calloc<DWORD>();
     final peekAvail = calloc<DWORD>();
+    var noDataRetries = 0;
 
     try {
       while (!_isClosed && !_incomingController.isClosed) {
@@ -368,11 +374,24 @@ class _NamedPipeStream {
         if (peekResult == 0) {
           // PeekNamedPipe failed — pipe is closed or broken.
           final error = GetLastError();
+          if (error == ERROR_NO_DATA) {
+            noDataRetries++;
+            if (noDataRetries <= _maxNoDataRetries) {
+              await Future<void>.delayed(const Duration(milliseconds: 1));
+              continue;
+            }
+            if (!_incomingController.isClosed) {
+              _incomingController.addError(
+                NamedPipeException('Peek no-data retries exhausted: Win32 error $error', error),
+              );
+            }
+          }
           if (error != ERROR_BROKEN_PIPE && error != ERROR_NO_DATA && !_incomingController.isClosed) {
             _incomingController.addError(NamedPipeException('Peek failed: Win32 error $error', error));
           }
           break;
         }
+        noDataRetries = 0;
 
         if (peekAvail.value == 0) {
           // No data available yet. Yield to the event loop so HTTP/2
@@ -389,7 +408,13 @@ class _NamedPipeStream {
 
         if (success == 0) {
           final error = GetLastError();
-          if (error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA) {
+          if (error == ERROR_NO_DATA) {
+            noDataRetries++;
+            if (noDataRetries <= _maxNoDataRetries) {
+              await Future<void>.delayed(const Duration(milliseconds: 1));
+              continue;
+            }
+          } else if (error == ERROR_BROKEN_PIPE) {
             break;
           }
           if (!_incomingController.isClosed) {
@@ -397,6 +422,7 @@ class _NamedPipeStream {
           }
           break;
         }
+        noDataRetries = 0;
 
         final count = bytesRead.value;
         if (count > 0) {
@@ -419,7 +445,7 @@ class _NamedPipeStream {
   /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
   /// until all bytes are written or an error occurs.
   void _writeData(List<int> data) {
-    if (_isClosed) return;
+    if (_writesClosed) return;
 
     // Guard against zero-length writes: calloc<Uint8>(0) is undefined
     // behavior (may return nullptr on some platforms).
@@ -443,7 +469,7 @@ class _NamedPipeStream {
           if (!_incomingController.isClosed) {
             _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
           }
-          close();
+          close(force: true);
           return;
         }
 
@@ -451,7 +477,7 @@ class _NamedPipeStream {
           if (!_incomingController.isClosed) {
             _incomingController.addError(NamedPipeException('Write stalled: 0 bytes written', 0));
           }
-          close();
+          close(force: true);
           return;
         }
 
@@ -463,47 +489,81 @@ class _NamedPipeStream {
     }
   }
 
-  /// Closes the pipe streams.
-  ///
-  /// This method is safe to call from any context — including during active
-  /// HTTP/2 `addStream()` operations. The HTTP/2 transport pipes frames into
-  /// [outgoingSink] via `addStream()`, which locks the [StreamController].
-  ///
-  /// By cancelling [_outgoingSubscription] first, we trigger the cascade:
-  ///  1. The single-subscription controller detects no listeners
-  ///  2. The active `addStream()` cancels its source subscription
-  ///  3. The `addStream()` Future completes, unlocking the controller
-  ///  4. `_outgoingController.close()` succeeds normally
-  ///
-  /// Without this explicit cancellation, the subscription keeps the event
-  /// loop alive indefinitely — causing the test process to hang for 20+
-  /// minutes until the CI timeout kills it.
-  ///
-  /// Note: This does NOT close the underlying Win32 handle. The handle is
-  /// owned by [NamedPipeTransportConnector] and closed by connector-level
-  /// teardown (shutdown and reconnect cleanup).
-  void close() {
-    if (_isClosed) return;
-    _isClosed = true;
-
-    _incomingController.close();
-
-    // Cancel the outgoing subscription BEFORE closing the controller.
-    // This unlocks the controller if addStream() is active (see doc above).
-    _outgoingSubscription?.cancel();
+  /// Called when outgoing stream finishes naturally.
+  void _onOutgoingDone() {
+    _cancelDeferredCloseTimer();
     _outgoingSubscription = null;
+    _finalizeClose();
+  }
 
-    // With the subscription cancelled, close() should succeed. Keep the
-    // try-catch as defense-in-depth in case of unexpected edge cases.
+  void _cancelDeferredCloseTimer() {
+    _deferredCloseTimer?.cancel();
+    _deferredCloseTimer = null;
+  }
+
+  void _armDeferredCloseTimer() {
+    _cancelDeferredCloseTimer();
+    _deferredCloseTimer = Timer(_deferredCloseTimeout, () {
+      if (_outgoingSubscription == null) {
+        return;
+      }
+      _outgoingSubscription?.cancel();
+      _outgoingSubscription = null;
+      _finalizeClose();
+    });
+  }
+
+  void _finalizeClose() {
+    _writesClosed = true;
+    if (!_incomingController.isClosed) {
+      _incomingController.close();
+    }
+
     try {
       _outgoingController.close();
     } catch (_) {
-      // Defensive: should not happen after subscription cancellation,
-      // but must not fail during shutdown.
+      // Defensive: addStream() may still be unwinding.
     }
 
     if (!_doneCompleter.isCompleted) {
       _doneCompleter.complete();
+    }
+  }
+
+  /// Closes the pipe streams.
+  ///
+  /// Normal close keeps the outgoing subscription alive so HTTP/2 can finish
+  /// writing any queued frames. Forced close tears down immediately.
+  ///
+  /// Note: This does NOT close the underlying Win32 handle. The handle is
+  /// owned by [NamedPipeTransportConnector] and closed by connector-level
+  /// teardown (shutdown and reconnect cleanup).
+  void close({bool force = false}) {
+    if (_isClosed) {
+      if (force) {
+        _cancelDeferredCloseTimer();
+        _writesClosed = true;
+        _outgoingSubscription?.cancel();
+        _outgoingSubscription = null;
+        _finalizeClose();
+      }
+      return;
+    }
+
+    _isClosed = true;
+    if (force) {
+      _cancelDeferredCloseTimer();
+      _writesClosed = true;
+      _outgoingSubscription?.cancel();
+      _outgoingSubscription = null;
+      _finalizeClose();
+      return;
+    }
+
+    if (_outgoingSubscription == null) {
+      _finalizeClose();
+    } else {
+      _armDeferredCloseTimer();
     }
   }
 }

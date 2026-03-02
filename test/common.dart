@@ -14,6 +14,7 @@
 // limitations under the License.
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
 import 'package:grpc/src/client/channel.dart' hide ClientChannel;
@@ -73,15 +74,29 @@ Future<void> waitForHandlers(
   String reason = 'Handlers must be registered',
 }) async {
   final deadline = DateTime.now().add(timeout);
+  var lastHandlerCount = 0;
   while (DateTime.now().isBefore(deadline)) {
     final handlerCount = server.handlers.values.fold<int>(
       0,
       (sum, list) => sum + list.length,
     );
+    lastHandlerCount = handlerCount;
     if (handlerCount >= minCount) return;
     await Future<void>.delayed(const Duration(milliseconds: 1));
   }
-  fail(reason);
+  fail(
+    '$reason - only $lastHandlerCount of $minCount handlers registered '
+    'within ${timeout.inSeconds}s',
+  );
+}
+
+/// Encodes [chunkCount] and [chunkSize] as 8-byte big-endian values for
+/// [EchoService.serverStreamBytes] tests.
+List<int> encodeStreamBytesRequest(int chunkCount, int chunkSize) {
+  final bd = ByteData(8);
+  bd.setUint32(0, chunkCount);
+  bd.setUint32(4, chunkSize);
+  return bd.buffer.asUint8List();
 }
 
 /// Wraps an RPC future so errors become return values instead of throwing.
@@ -98,10 +113,7 @@ Future<Object?> settleRpc(Future<Object?> future) {
 /// Accepts valid payload types, gRPC errors, and known transport exceptions.
 /// Does NOT accept arbitrary Exception/Error — this catches programming bugs
 /// like TypeError, RangeError, and NoSuchMethodError.
-void expectExpectedRpcSettlement(
-  Object? result, {
-  required String reason,
-}) {
+void expectExpectedRpcSettlement(Object? result, {required String reason}) {
   expect(
     result,
     anyOf(
