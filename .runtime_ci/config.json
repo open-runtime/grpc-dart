@@ -143,9 +143,9 @@
     "_comment_platforms": "Optional: CI platform matrix. When 2+ entries are provided, CI splits into analyze + matrix test jobs.",
     "_comment_runner_overrides": "Optional: override platform IDs to custom runs-on labels (e.g. org-managed GitHub-hosted runners). Keys must match ci.platforms entries.",
     "runner_overrides": {
-      "ubuntu": "runtime-ubuntu-24.04-x64-256gb-64core",
+      "ubuntu": "ubuntu-latest",
       "ubuntu-arm64": "runtime-ubuntu-24.04-arm64-208gb-64core",
-      "windows": "runtime-windows-2025-x64-256gb-64core",
+      "windows": "windows-latest",
       "windows-arm64": "runtime-windows-11-arm64-208gb-64core"
     }
   }

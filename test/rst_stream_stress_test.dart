@@ -136,9 +136,6 @@ void main() {
             'shutdown (got $truncatedCount truncated). '
             'Item counts: $itemCounts',
       );
-
-      // Cleanup AFTER all assertions.
-      await channel.shutdown();
     });
 
     testTcpAndUds('20 concurrent bidi streams terminate '
@@ -628,9 +625,6 @@ void main() {
               'shutdown termination.',
         );
       }
-
-      // Cleanup AFTER all assertions.
-      await channel.shutdown();
     });
 
     testTcpAndUds('server.shutdown() during initial handshake '
@@ -764,12 +758,45 @@ void main() {
                 'non-GrpcError errors expected',
           );
         } finally {
-          // Ensure cleanup even on assertion failure.
-          await channel.shutdown();
+          // Attempt BOTH shutdowns regardless of either failure.
+          Object? channelError;
+          Object? serverError;
+          StackTrace? channelSt;
+          StackTrace? serverSt;
+
+          try {
+            await channel.shutdown();
+          } on StateError {
+            // Already shut down — expected.
+          } on GrpcError {
+            // Already shut down or unavailable — expected.
+          } catch (e, st) {
+            channelError = e;
+            channelSt = st;
+          }
+
           try {
             await server.shutdown();
-          } catch (_) {
-            // May already be shut down from test body.
+          } on StateError {
+            // Already shut down from test body — expected.
+          } on GrpcError {
+            // Already shut down or unavailable — expected.
+          } catch (e, st) {
+            serverError = e;
+            serverSt = st;
+          }
+
+          if (channelError != null) {
+            fail(
+              'Cycle $cycle: channel.shutdown failed: '
+              '$channelError\n$channelSt',
+            );
+          }
+          if (serverError != null) {
+            fail(
+              'Cycle $cycle: server.shutdown failed: '
+              '$serverError\n$serverSt',
+            );
           }
         }
       }
@@ -906,9 +933,6 @@ void main() {
                 'one response before shutdown termination.',
           );
         }
-
-        // Cleanup AFTER all assertions.
-        await channel.shutdown();
       },
     );
   });

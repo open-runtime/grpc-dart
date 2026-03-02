@@ -802,8 +802,12 @@ void main() {
       );
 
       expect(settled.length, equals(callCount));
-      for (final result in settled) {
+      for (var i = 0; i < settled.length; i++) {
+        final result = settled[i];
         expect(result, anyOf(isA<int>(), isA<GrpcError>()));
+        if (result is int) {
+          expect(result, equals((i * 17) % 256), reason: 'RPC $i value');
+        }
       }
 
       // Server should remain healthy after high-pressure shutdown race.
@@ -1040,6 +1044,9 @@ void main() {
               'RPC $i must settle to int or GrpcError, '
               'not hang or throw arbitrary error',
         );
+        if (settled[i] is int) {
+          expect(settled[i], equals(i % 256), reason: 'RPC $i value');
+        }
       }
     });
   });

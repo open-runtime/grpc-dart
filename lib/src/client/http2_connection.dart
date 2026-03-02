@@ -281,15 +281,19 @@ class Http2ClientConnection implements connection.ClientConnection {
   @override
   void dispatchCall(ClientCall call) {
     if (_transportConnection != null) {
-      // For individual calls (outside batch dispatch), reset the
-      // connection life timer so a stale elapsed time from a prior
-      // batch doesn't falsely trigger a refresh.
+      // Run refresh check BEFORE timer reset. If we reset first, we mask
+      // age-based refresh (connectionTimeout); _refreshConnectionIfUnhealthy
+      // would never see elapsed > connectionTimeout, causing readyCount
+      // failures and stale connections.
+      _refreshConnectionIfUnhealthy();
+      // Only reset when connection remains ready and call proceeds on same
+      // connection. If refresh abandoned the connection, state changed and
+      // we must not reset (and the call will be re-queued or failed).
       if (_state == ConnectionState.ready) {
         _connectionLifeTimer
           ..reset()
           ..start();
       }
-      _refreshConnectionIfUnhealthy();
     }
     switch (_state) {
       case ConnectionState.ready:

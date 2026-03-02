@@ -1103,7 +1103,6 @@ void main() {
             result.code == StatusCode.deadlineExceeded;
       }
       if (result is SocketException ||
-          result is TimeoutException ||
           result is StateError ||
           result is NamedPipeException) {
         return true;
@@ -1687,9 +1686,9 @@ void main() {
                       settleRpc(routed)
                           .timeout(
                             perRpcTimeout,
-                            onTimeout: () => TimeoutException(
-                              'RPC hung under keepalive flood',
-                            ),
+                            onTimeout: () {
+                              fail('RPC hung under keepalive flood');
+                            },
                           )
                           .then((result) {
                             if (result is int && !firstSuccess.isCompleted) {
@@ -1910,9 +1909,9 @@ void main() {
                       rpcFutures.add(
                         settleRpc(routed).timeout(
                           perRpcTimeout,
-                          onTimeout: () => TimeoutException(
-                            'RPC hung under keepalive restart',
-                          ),
+                          onTimeout: () {
+                            fail('RPC hung under keepalive restart');
+                          },
                         ),
                       );
                     }
