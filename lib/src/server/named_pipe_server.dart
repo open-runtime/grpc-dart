@@ -309,46 +309,53 @@ class NamedPipeServer extends ConnectionServer {
     }
     _activeStreams.clear();
 
-    // Step 3: Queue kill BEFORE the dummy client connection.
+    // Step 3: Register an exit listener BEFORE killing the isolate.
     //
-    // Use Isolate.immediate so the kill takes effect at the next VM
-    // safepoint, even mid-event. This is critical because the accept
-    // loop's timer callback (after the yield) runs CreateNamedPipe →
-    // ConnectNamedPipe with no Dart-level yield in between. With
-    // beforeNextEvent, if the timer callback has already started, the
-    // kill waits until the NEXT yield — but ConnectNamedPipe blocks
-    // the thread indefinitely (it's a synchronous FFI call), so the
-    // yield is never reached, causing a 30+ minute hang.
-    //
-    // With Isolate.immediate, the VM checks the interrupt flag at
-    // safepoints (function call boundaries, allocation sites, FFI
-    // entry points). If the isolate is between CreateNamedPipe and
-    // ConnectNamedPipe, the kill fires at the safepoint before the
-    // FFI call. If already blocked in ConnectNamedPipe, the dummy
-    // client in step 4 unblocks it, and the kill fires at the next
-    // safepoint after ConnectNamedPipe returns.
-    _serverIsolate?.kill(priority: Isolate.immediate);
+    // Isolate.addOnExitListener sends a message when the isolate
+    // actually terminates. This gives us definitive confirmation that
+    // the isolate is dead, rather than hoping the dummy client was
+    // enough. If the isolate was killed at a VM safepoint (no pipe
+    // instance exists, dummy client gets FILE_NOT_FOUND), the exit
+    // listener fires immediately and the dummy client loop exits early.
+    final serverIsolate = _serverIsolate;
+    ReceivePort? exitPort;
+    Completer<void>? exitCompleter;
+    if (serverIsolate != null) {
+      exitPort = ReceivePort();
+      exitCompleter = Completer<void>();
+      exitPort.listen((_) {
+        if (!exitCompleter!.isCompleted) exitCompleter.complete();
+      });
+      serverIsolate.addOnExitListener(exitPort.sendPort);
 
-    // Step 4: Unblock the server isolate's blocking ConnectNamedPipe call.
-    // ConnectNamedPipe is a synchronous Win32 call that blocks the isolate's
-    // thread — Isolate.kill() cannot interrupt it. Opening a dummy client
-    // connection satisfies ConnectNamedPipe, allowing the isolate to reach
-    // the next VM safepoint where the Isolate.immediate kill takes effect.
+      // Step 3b: Queue the kill with Isolate.immediate.
+      //
+      // Isolate.immediate fires at the next VM safepoint (function
+      // call boundaries, allocation sites, FFI entry points). If the
+      // isolate is between CreateNamedPipe and ConnectNamedPipe, the
+      // kill fires before the FFI call. If already blocked inside
+      // ConnectNamedPipe, the dummy client in step 4 unblocks it.
+      serverIsolate.kill(priority: Isolate.immediate);
+    }
+
+    // Step 4: Unblock ConnectNamedPipe and confirm isolate death.
     //
-    // The dummy client retries because the accept loop may be between
-    // iterations (no pipe instance exists yet). On retry, the isolate has
-    // either been killed at a safepoint (retries harmlessly fail) or has
-    // re-entered ConnectNamedPipe (retry succeeds and unblocks it).
+    // ConnectNamedPipe is a synchronous Win32 call that blocks the
+    // isolate's thread — Isolate.kill() cannot interrupt it mid-call.
+    // Opening a dummy client connection satisfies ConnectNamedPipe,
+    // allowing the isolate to reach a VM safepoint where the kill
+    // takes effect.
     //
     // IMPORTANT: Do this BEFORE closing the receive port. The dummy
     // connection unblocks the isolate which may try to send a
-    // _PipeHandle message — the port must still be open for that send
-    // (it will be a no-op because _isRunning is false).
-    if (pipeName != null) {
-      await _connectDummyClient(pipeName);
+    // _PipeHandle message — the port must still be open for that
+    // send (it will be a no-op because _isRunning is false).
+    if (pipeName != null && exitCompleter != null) {
+      await _unblockAndConfirmDeath(pipeName, exitCompleter);
     }
 
     _serverIsolate = null;
+    exitPort?.close();
 
     // Step 5: Clean up the receive port AFTER killing the isolate.
     await _receivePortSubscription?.cancel();
@@ -360,45 +367,73 @@ class NamedPipeServer extends ConnectionServer {
     _readyCompleter = null;
   }
 
-  /// Opens and immediately closes a dummy client connection to unblock
-  /// a blocking ConnectNamedPipe call in the server isolate.
+  /// Unblocks the server isolate's [ConnectNamedPipe] and waits for
+  /// confirmed termination via [Isolate.addOnExitListener].
   ///
-  /// Retries up to 3 times because the accept loop may be between
-  /// iterations when no pipe instance exists in the namespace. Each
-  /// retry yields to the event loop (1ms delay, quantized to ~15.6ms
-  /// on Windows), giving the isolate time to call CreateNamedPipe and
-  /// enter ConnectNamedPipe — or be killed at a VM safepoint by
-  /// [Isolate.immediate].
-  static Future<void> _connectDummyClient(String pipeName) async {
+  /// [ConnectNamedPipe] is a synchronous Win32 call that blocks the
+  /// isolate's thread — neither [Isolate.immediate] nor
+  /// [Isolate.beforeNextEvent] can interrupt it mid-call. The only way
+  /// to unblock is to connect a dummy client, causing ConnectNamedPipe
+  /// to return. The isolate then hits a VM safepoint where the queued
+  /// kill takes effect.
+  ///
+  /// The retry loop handles timing: the isolate may be between loop
+  /// iterations (no pipe instance exists) when the first attempts run.
+  /// Each retry yields ~15.6ms (Windows timer resolution), giving the
+  /// isolate time to call [CreateNamedPipe] and enter [ConnectNamedPipe].
+  ///
+  /// After a successful dummy client connection, the method waits for
+  /// the [exitCompleter] to confirm death. If the isolate re-entered
+  /// [ConnectNamedPipe] before the kill fired, the loop continues with
+  /// another dummy client attempt.
+  ///
+  /// If all attempts fail with `ERROR_FILE_NOT_FOUND`, the isolate was
+  /// likely killed at a VM safepoint (no pipe instance exists because
+  /// the isolate is dead). A final wait confirms this.
+  static Future<void> _unblockAndConfirmDeath(String pipeName, Completer<void> exitCompleter) async {
+    // Fast path: isolate already dead (killed at a VM safepoint
+    // before reaching ConnectNamedPipe).
+    if (exitCompleter.isCompleted) return;
+
     final path = namedPipePath(pipeName);
-    // Allocate with calloc so the matching calloc.free() is correct.
-    // toNativeUtf16() defaults to malloc — passing calloc explicitly
-    // avoids an allocator mismatch.
     final pipePathPtr = path.toNativeUtf16(allocator: calloc);
     try {
-      for (var attempt = 0; attempt < 3; attempt++) {
+      for (var attempt = 0; attempt < 10; attempt++) {
+        if (exitCompleter.isCompleted) return;
+
         final hPipe = CreateFile(pipePathPtr, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, NULL);
         if (hPipe != INVALID_HANDLE_VALUE) {
           CloseHandle(hPipe);
-          return;
+          // Dummy client connected — isolate's ConnectNamedPipe
+          // returned. Wait for kill to fire at the next safepoint.
+          try {
+            await exitCompleter.future.timeout(const Duration(milliseconds: 200));
+          } on TimeoutException {
+            // Isolate may have re-entered ConnectNamedPipe for a
+            // new iteration before the kill fired. Keep retrying.
+          }
+          if (exitCompleter.isCompleted) return;
         }
-        // Pipe instance may not exist yet if the accept loop is between
-        // iterations (after yield, before CreateNamedPipe). Retry after
-        // a brief delay to give the isolate time to create the next
-        // pipe instance and enter ConnectNamedPipe.
-        if (attempt < 2) {
-          await Future<void>.delayed(const Duration(milliseconds: 1));
+
+        if (attempt < 9) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
         }
       }
-      final error = GetLastError();
-      logGrpcEvent(
-        '[gRPC] Dummy pipe connect failed during shutdown '
-        'after 3 attempts: Win32 error $error',
-        component: 'NamedPipeServer',
-        event: 'dummy_connect_failed',
-        context: '_connectDummyClient',
-        error: error,
-      );
+
+      // All dummy client attempts exhausted. The isolate was likely
+      // killed at a VM safepoint (FILE_NOT_FOUND = no pipe instance
+      // because isolate is dead). Final wait for confirmation.
+      try {
+        await exitCompleter.future.timeout(const Duration(milliseconds: 500));
+      } on TimeoutException {
+        logGrpcEvent(
+          '[gRPC] Server isolate did not confirm exit within '
+          'timeout. Process may not exit cleanly.',
+          component: 'NamedPipeServer',
+          event: 'isolate_exit_timeout',
+          context: 'shutdown',
+        );
+      }
     } finally {
       calloc.free(pipePathPtr);
     }
@@ -946,6 +981,10 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
       final connected = ConnectNamedPipe(hPipe, nullptr);
       if (connected == 0 && GetLastError() != ERROR_PIPE_CONNECTED) {
         CloseHandle(hPipe);
+        // Yield to provide a shutdown checkpoint. Without this, the
+        // loop immediately re-enters CreateNamedPipe → ConnectNamedPipe
+        // with no event-loop pause for kill messages to be processed.
+        await Future<void>.delayed(Duration.zero);
         continue;
       }
 
