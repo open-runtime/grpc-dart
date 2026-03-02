@@ -59,29 +59,27 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      // Start 25 concurrent server-streaming RPCs. Each streams 255
-      // items at 1ms/item = ~0.255 seconds. We manually collect items
-      // per-stream so we can use a concrete "all items arrived"
-      // signal instead of a flaky time-based delay.
+      // Start 25 concurrent server-streaming RPCs with a large item count so
+      // streams remain active when shutdown fires.
       const streamCount = 25;
-      final collectors = <List<int>>[];
+      const streamItems = 20000;
+      final itemCounts = List<int>.filled(streamCount, 0);
       final doneCompleters = <Completer<void>>[];
       final perStreamFirstItem = <Completer<void>>[];
       final unexpectedErrors = <Object>[];
 
       for (var i = 0; i < streamCount; i++) {
-        final items = <int>[];
-        collectors.add(items);
+        final streamIndex = i;
         final done = Completer<void>();
         doneCompleters.add(done);
         final firstItem = Completer<void>();
         perStreamFirstItem.add(firstItem);
 
         client
-            .serverStream(255)
+            .serverStream(streamItems)
             .listen(
               (value) {
-                items.add(value);
+                itemCounts[streamIndex]++;
                 if (!firstItem.isCompleted) firstItem.complete();
               },
               onError: (e) {
@@ -134,11 +132,11 @@ void main() {
         reason: 'Expected stream termination errors to be GrpcError only',
       );
 
-      // Verify truncation: each stream must have fewer than 255 items.
-      for (var i = 0; i < collectors.length; i++) {
+      // Verify truncation: each stream must have fewer than streamItems.
+      for (var i = 0; i < itemCounts.length; i++) {
         expect(
-          collectors[i].length,
-          lessThan(255),
+          itemCounts[i],
+          lessThan(streamItems),
           reason:
               'stream $i should have been truncated by shutdown '
               '(0 items is valid if shutdown won the race)',
@@ -147,10 +145,7 @@ void main() {
 
       // Guard against vacuous truth: all per-stream completers
       // proved all items arrived. Verify it's reflected.
-      final totalItems = collectors.fold<int>(
-        0,
-        (sum, items) => sum + items.length,
-      );
+      final totalItems = itemCounts.fold<int>(0, (sum, count) => sum + count);
       expect(
         totalItems,
         greaterThanOrEqualTo(streamCount),
@@ -404,27 +399,30 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      // Use manual collectors with a concrete signal instead of
-      // time-based delay. This prevents the vacuous-truth scenario
-      // where shutdown wins the race and all streams get 0 items.
-      final collectors = <List<int>>[];
+      // Use per-stream first-item gates plus a large stream length so all
+      // handlers are active before shutdown and streams are still in flight.
+      const streamCount = 25;
+      const streamItems = 20000;
+      final itemCounts = List<int>.filled(streamCount, 0);
       final doneCompleters = <Completer<void>>[];
-      final firstItemSeen = Completer<void>();
+      final firstItemCompleters = List.generate(
+        streamCount,
+        (_) => Completer<void>(),
+      );
       final unexpectedErrors = <Object>[];
 
-      for (var i = 0; i < 25; i++) {
-        final items = <int>[];
-        collectors.add(items);
+      for (var i = 0; i < streamCount; i++) {
+        final streamIndex = i;
         final done = Completer<void>();
         doneCompleters.add(done);
 
         client
-            .serverStream(255)
+            .serverStream(streamItems)
             .listen(
               (value) {
-                items.add(value);
-                if (!firstItemSeen.isCompleted) {
-                  firstItemSeen.complete();
+                itemCounts[streamIndex]++;
+                if (!firstItemCompleters[streamIndex].isCompleted) {
+                  firstItemCompleters[streamIndex].complete();
                 }
               },
               onError: (e) {
@@ -439,14 +437,13 @@ void main() {
             );
       }
 
-      // Concrete signal: wait until at least one stream has received
-      // its first item. This proves handlers are active and data is
-      // flowing — no time-based guessing.
-      await firstItemSeen.future.timeout(
-        const Duration(seconds: 5),
+      // Concrete signal: all streams receive first item before shutdown.
+      await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
+        const Duration(seconds: 10),
         onTimeout: () => fail(
-          'No named-pipe stream received any data — '
-          'handlers may not have started',
+          'Not all named-pipe streams received first item — '
+          '${firstItemCompleters.where((c) => c.isCompleted).length}/'
+          '$streamCount started',
         ),
       );
 
@@ -470,27 +467,24 @@ void main() {
         reason: 'Expected stream termination errors to be GrpcError only',
       );
 
-      // Verify truncation: each stream must have fewer than 255 items.
-      for (var i = 0; i < collectors.length; i++) {
+      // Verify truncation: each stream must have fewer than streamItems.
+      for (var i = 0; i < itemCounts.length; i++) {
         expect(
-          collectors[i].length,
-          lessThan(255),
+          itemCounts[i],
+          lessThan(streamItems),
           reason:
               'stream $i should have been truncated by shutdown '
               '(0 items is valid if shutdown won the race)',
         );
       }
 
-      // Guard against vacuous truth: the firstItemSeen completer
-      // already proved at least 1 item arrived. Verify it's reflected.
-      final totalItems = collectors.fold<int>(
-        0,
-        (sum, items) => sum + items.length,
-      );
+      // Guard against vacuous truth: first-item gates proved every stream
+      // started. Verify total reflects that.
+      final totalItems = itemCounts.fold<int>(0, (sum, count) => sum + count);
       expect(
         totalItems,
-        greaterThan(0),
-        reason: 'firstItemSeen completed, so at least 1 item must exist',
+        greaterThanOrEqualTo(streamCount),
+        reason: 'all streams started, so each must have at least 1 item',
       );
 
       await channel.shutdown();
