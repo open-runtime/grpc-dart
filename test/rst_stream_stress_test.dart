@@ -112,11 +112,7 @@ void main() {
         ),
       );
 
-      expect(
-        errors,
-        isEmpty,
-        reason: 'No unexpected non-GrpcError errors expected',
-      );
+      expect(errors, isEmpty, reason: 'No unexpected non-GrpcError errors expected');
 
       // At least half the streams must be truncated by shutdown.
       // On fast machines, all 50 are truncated. On slower CI
@@ -147,10 +143,7 @@ void main() {
 
       final controllers = List.generate(20, (_) => StreamController<int>());
       final doneCompleters = List.generate(20, (_) => Completer<void>());
-      final firstResponseCompleters = List.generate(
-        20,
-        (_) => Completer<void>(),
-      );
+      final firstResponseCompleters = List.generate(20, (_) => Completer<void>());
       final errors = <Object>[];
 
       for (var i = 0; i < 20; i++) {
@@ -185,10 +178,9 @@ void main() {
       }
 
       // Wait for first response on all 20 streams.
-      await Future.wait(firstResponseCompleters.map((c) => c.future)).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => fail('Timed out waiting for first bidi responses'),
-      );
+      await Future.wait(
+        firstResponseCompleters.map((c) => c.future),
+      ).timeout(const Duration(seconds: 10), onTimeout: () => fail('Timed out waiting for first bidi responses'));
 
       // server.shutdown() — NO channel.shutdown().
       await server.shutdown();
@@ -202,11 +194,7 @@ void main() {
         ),
       );
 
-      expect(
-        errors,
-        isEmpty,
-        reason: 'No unexpected non-GrpcError errors expected',
-      );
+      expect(errors, isEmpty, reason: 'No unexpected non-GrpcError errors expected');
 
       // Close all controllers, then cleanup.
       for (final c in controllers) {
@@ -233,9 +221,7 @@ void main() {
 
       // 10 server-streaming RPCs.
       for (var i = 0; i < 10; i++) {
-        settled.add(
-          settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)),
-        );
+        settled.add(settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)));
       }
 
       // 10 bidi RPCs.
@@ -243,11 +229,7 @@ void main() {
         final ctrl = StreamController<int>();
         bidiControllers.add(ctrl);
         ctrl.add(i + 1);
-        settled.add(
-          settleRpc(
-            client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
-          ),
-        );
+        settled.add(settleRpc(client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v)));
       }
 
       // Wait for at least 20 handlers (streaming RPCs)
@@ -274,10 +256,7 @@ void main() {
       );
 
       for (var i = 0; i < results.length; i++) {
-        expectHardcoreRpcSettlement(
-          results[i],
-          reason: 'Mixed RPC $i settled with unexpected type',
-        );
+        expectHardcoreRpcSettlement(results[i], reason: 'Mixed RPC $i settled with unexpected type');
       }
 
       // Close bidi controllers, then cleanup.
@@ -385,11 +364,7 @@ void main() {
         controllers[i].add(3);
         // Do NOT close the controllers yet.
 
-        settled.add(
-          settleRpc(
-            client.clientStream(controllers[i].stream).then<Object?>((v) => v),
-          ),
-        );
+        settled.add(settleRpc(client.clientStream(controllers[i].stream).then<Object?>((v) => v)));
       }
 
       // Wait for handlers to be registered.
@@ -499,8 +474,7 @@ void main() {
       // Wait for first response on all 100 streams.
       await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
         const Duration(seconds: 15),
-        onTimeout: () =>
-            fail('Timed out waiting for first responses on all 100 streams'),
+        onTimeout: () => fail('Timed out waiting for first responses on all 100 streams'),
       );
 
       // server.shutdown() — NO channel.shutdown().
@@ -522,11 +496,7 @@ void main() {
         ),
       );
 
-      expect(
-        errors,
-        isEmpty,
-        reason: 'No unexpected non-GrpcError errors expected',
-      );
+      expect(errors, isEmpty, reason: 'No unexpected non-GrpcError errors expected');
 
       for (var i = 0; i < itemCounts.length; i++) {
         expect(
@@ -554,9 +524,7 @@ void main() {
 
       // Start 20 server-streaming RPCs.
       for (var i = 0; i < 20; i++) {
-        settled.add(
-          settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)),
-        );
+        settled.add(settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)));
       }
 
       // Immediately shut down — do NOT wait for first
@@ -666,91 +634,115 @@ void main() {
   });
 
   group('Named pipe RST_STREAM propagation', () {
-    testNamedPipe(
-      '20 active server streams terminate on server.shutdown() alone',
-      (pipeName) async {
-        const streamCount = 20;
+    testNamedPipe('20 active bidi streams terminate on server.shutdown() alone', (pipeName) async {
+      const streamCount = 20;
 
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        await server.serve(pipeName: pipeName);
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() async {
+        try {
+          await server.shutdown();
+        } catch (_) {}
+      });
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        final client = EchoClient(channel);
-
-        final doneCompleters = List.generate(
-          streamCount,
-          (_) => Completer<void>(),
-        );
-        final firstItemCompleters = List.generate(
-          streamCount,
-          (_) => Completer<void>(),
-        );
-        final itemCounts = List.filled(streamCount, 0);
-        final unexpectedErrors = <Object>[];
-
-        for (var i = 0; i < streamCount; i++) {
-          final idx = i;
-          client
-              .serverStream(255)
-              .listen(
-                (_) {
-                  itemCounts[idx]++;
-                  if (!firstItemCompleters[idx].isCompleted) {
-                    firstItemCompleters[idx].complete();
-                  }
-                },
-                onError: (Object e) {
-                  if (e is! GrpcError) {
-                    unexpectedErrors.add(e);
-                  }
-                  if (!firstItemCompleters[idx].isCompleted) {
-                    firstItemCompleters[idx].complete();
-                  }
-                  if (!doneCompleters[idx].isCompleted) {
-                    doneCompleters[idx].complete();
-                  }
-                },
-                onDone: () {
-                  if (!doneCompleters[idx].isCompleted) {
-                    doneCompleters[idx].complete();
-                  }
-                },
-              );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() async {
+        try {
+          await channel.shutdown();
+        } catch (_) {}
+      });
+      final client = EchoClient(channel);
+      final controllers = <StreamController<int>>[];
+      addTearDown(() async {
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            try {
+              await ctrl.close();
+            } catch (_) {}
+          }
         }
+      });
 
-        await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
-          const Duration(seconds: 20),
-          onTimeout: () =>
-              fail('Named-pipe streams did not all start before shutdown'),
+      final doneCompleters = List.generate(streamCount, (_) => Completer<void>());
+      final firstItemCompleters = List.generate(streamCount, (_) => Completer<void>());
+      final itemCounts = List.filled(streamCount, 0);
+      final unexpectedErrors = <Object>[];
+
+      for (var i = 0; i < streamCount; i++) {
+        final idx = i;
+        final ctrl = StreamController<int>();
+        controllers.add(ctrl);
+        final stream = client.bidiStream(ctrl.stream);
+        stream.listen(
+          (item) {
+            itemCounts[idx]++;
+            if (!firstItemCompleters[idx].isCompleted) {
+              firstItemCompleters[idx].complete();
+            }
+          },
+          onError: (Object e) {
+            if (e is! GrpcError) {
+              unexpectedErrors.add(e);
+            }
+            if (!firstItemCompleters[idx].isCompleted) {
+              firstItemCompleters[idx].complete();
+            }
+            if (!doneCompleters[idx].isCompleted) {
+              doneCompleters[idx].complete();
+            }
+          },
+          onDone: () {
+            if (!doneCompleters[idx].isCompleted) {
+              doneCompleters[idx].complete();
+            }
+          },
         );
+        // Send one item to trigger echo — handler blocks on await for.
+        ctrl.add(idx % 128);
+      }
 
-        await server.shutdown();
+      // Wait for first response on all 20 streams.
+      await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => fail(
+          'Named-pipe bidi streams did not all '
+          'start before shutdown',
+        ),
+      );
 
-        await Future.wait(doneCompleters.map((c) => c.future)).timeout(
-          const Duration(seconds: 20),
-          onTimeout: () => fail(
-            'Named-pipe streams did not terminate after server shutdown',
-          ),
-        );
+      // server.shutdown() — NO channel.shutdown().
+      await server.shutdown();
 
+      // Close request-side controllers after shutdown.
+      for (final ctrl in controllers) {
+        if (!ctrl.isClosed) {
+          await ctrl.close();
+        }
+      }
+
+      // All 20 done completers must fire.
+      await Future.wait(doneCompleters.map((c) => c.future)).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => fail(
+          'Named-pipe bidi streams did not '
+          'terminate after server shutdown',
+        ),
+      );
+
+      expect(unexpectedErrors, isEmpty, reason: 'No non-GrpcError failures expected in named-pipe shutdown');
+
+      for (var i = 0; i < itemCounts.length; i++) {
         expect(
-          unexpectedErrors,
-          isEmpty,
-          reason: 'No non-GrpcError failures expected in named-pipe shutdown',
+          itemCounts[i],
+          equals(1),
+          reason:
+              'Named-pipe stream $i should emit exactly '
+              'one response before shutdown termination.',
         );
-        for (var i = 0; i < itemCounts.length; i++) {
-          expect(
-            itemCounts[i],
-            lessThan(255),
-            reason: 'Named-pipe stream $i should be truncated by shutdown',
-          );
-        }
+      }
 
-        await channel.shutdown();
-      },
-    );
+      // Cleanup AFTER all assertions.
+      await channel.shutdown();
+    });
   });
 }
