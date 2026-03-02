@@ -283,9 +283,12 @@ void main() {
         }
       }
 
+      // Soft: shutdown races 100 concurrent streams; the split
+      // between success and GrpcError is nondeterministic, but
+      // at least 1 must succeed to prove the server was live.
       expect(
         successCount,
-        greaterThan(0),
+        greaterThanOrEqualTo(1),
         reason:
             'At least some server-streaming '
             'RPCs must succeed',
@@ -712,6 +715,10 @@ void main() {
       // The 5 deadline-injected ones may fail, and
       // a few neighbors may also fail from transient
       // connection disruption.
+      // Soft: 5 deadline-injected RPCs may fail, plus a few
+      // neighbors disrupted by transient connection teardown.
+      // 30/50 is the structural floor — tighter than this would
+      // flake when deadline failures cascade to adjacent RPCs.
       expect(
         successCount,
         greaterThanOrEqualTo(30),
@@ -775,11 +782,12 @@ void main() {
             // errors. Only verify value correctness for successful RPCs.
             if (settled[i] == expected) successCount++;
           }
-          // At least some RPCs must succeed on each cycle to prove
-          // reconnection and re-dispatch work.
+          // Soft: during server restart, some RPCs may fail with
+          // transport errors. At least 1 must succeed per cycle
+          // to prove reconnection and re-dispatch work.
           expect(
             successCount,
-            greaterThan(0),
+            greaterThanOrEqualTo(1),
             reason:
                 'Cycle $cycle: at least 1 of $rpcsPerCycle RPCs '
                 'must succeed after reconnect '

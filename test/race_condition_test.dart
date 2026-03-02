@@ -181,8 +181,8 @@ void main() {
                 fail('Response stream did not settle after client close'),
           );
 
-          // At least the initial headers should have been sent
-          expect(responseCount, greaterThan(0));
+          // At least the initial headers should have been sent.
+          expect(responseCount, greaterThanOrEqualTo(1));
 
           // The important thing is that the server didn't crash with
           // "Cannot add event after closing"

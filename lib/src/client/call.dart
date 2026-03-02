@@ -17,6 +17,7 @@ import 'dart:async';
 import 'dart:developer';
 
 import '../shared/codec.dart';
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/message.dart';
 import '../shared/profiler.dart';
 import '../shared/status.dart';
@@ -265,17 +266,44 @@ class ClientCall<Q, R> implements Response {
           (data) {
             try {
               outSink.add(data);
-            } catch (_) {}
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Outgoing request data dropped'
+                ' (transport sink closed): $e',
+                component: 'ClientCall',
+                event: 'outgoing_data_dropped',
+                context: '_sendRequest.onData',
+                error: e,
+              );
+            }
           },
           onError: (Object error, StackTrace stackTrace) {
             try {
               outSink.addError(error, stackTrace);
-            } catch (_) {}
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Failed to forward error to'
+                ' transport sink: $e',
+                component: 'ClientCall',
+                event: 'outgoing_error_dropped',
+                context: '_sendRequest.onError',
+                error: e,
+              );
+            }
           },
           onDone: () {
             try {
               outSink.close();
-            } catch (_) {}
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Failed to close outgoing'
+                ' transport sink: $e',
+                component: 'ClientCall',
+                event: 'outgoing_close_failed',
+                context: '_sendRequest.onDone',
+                error: e,
+              );
+            }
           },
           cancelOnError: true,
         );
@@ -483,7 +511,14 @@ class ClientCall<Q, R> implements Response {
     try {
       await _terminate();
     } catch (error, stackTrace) {
-      log('ClientCall termination threw unexpectedly', name: 'grpc.client.call', error: error, stackTrace: stackTrace);
+      logGrpcEvent(
+        '[gRPC] ClientCall termination threw unexpectedly:'
+        ' $error\n$stackTrace',
+        component: 'ClientCall',
+        event: 'terminate_error',
+        context: '_safeTerminate',
+        error: error,
+      );
     }
   }
 }

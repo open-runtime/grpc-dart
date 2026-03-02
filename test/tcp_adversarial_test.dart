@@ -33,6 +33,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
+import 'package:grpc/src/client/channel.dart' show ClientChannelBase;
+import 'package:http2/transport.dart'
+    show ErrorCode, TransportConnectionException;
 import 'package:test/test.dart';
 
 import 'common.dart';
@@ -832,10 +835,6 @@ void main() {
   // ===========================================================================
 
   group('Mixed RPC Shutdown + Channel Reuse', () {
-    Future<Object?> settleRpc(Future<Object?> future) {
-      return future.then<Object?>((value) => value, onError: (Object e) => e);
-    }
-
     // -------------------------------------------------------------------------
     // Test 12: Mixed RPC types all active during server shutdown
     // -------------------------------------------------------------------------
@@ -881,19 +880,19 @@ void main() {
       final settled = await Future.wait([
         unaryFuture.timeout(
           const Duration(seconds: 10),
-          onTimeout: () => TimeoutException('unary did not settle'),
+          onTimeout: () => fail('unary did not settle'),
         ),
         serverStreamFuture.timeout(
           const Duration(seconds: 10),
-          onTimeout: () => TimeoutException('server stream did not settle'),
+          onTimeout: () => fail('server stream did not settle'),
         ),
         clientStreamFuture.timeout(
           const Duration(seconds: 10),
-          onTimeout: () => TimeoutException('client stream did not settle'),
+          onTimeout: () => fail('client stream did not settle'),
         ),
         bidiCollector.timeout(
           const Duration(seconds: 10),
-          onTimeout: () => TimeoutException('bidi stream did not settle'),
+          onTimeout: () => fail('bidi stream did not settle'),
         ),
       ]);
 
@@ -912,7 +911,6 @@ void main() {
             isA<List<int>>(),
             isA<GrpcError>(),
             isA<SocketException>(),
-            isA<TimeoutException>(),
             isA<StateError>(),
           ),
           reason: 'Unexpected settled RPC result type: ${result.runtimeType}',
@@ -1017,10 +1015,11 @@ void main() {
           reason: 'Expected only GrpcError termination errors',
         );
 
-        // Verify data integrity of received items.
+        // Soft: shutdown races the bidi stream; at least 1 item
+        // must arrive to prove the stream was established.
         expect(
           received.length,
-          greaterThan(0),
+          greaterThanOrEqualTo(1),
           reason: 'Should have received at least 1 echoed item',
         );
         expect(
@@ -1046,21 +1045,64 @@ void main() {
   // ===========================================================================
 
   group('Hardcore Stress + Compression', () {
-    Future<Object?> settleRpc(Future<Object?> future) {
-      return future.then<Object?>((value) => value, onError: (Object e) => e);
-    }
-
     bool isExpectedKeepaliveTransportError(Object? error) {
       if (error == null) return false;
+      // Prefer type-based check: TransportConnectionException with keepalive-related codes
+      if (error is TransportConnectionException) {
+        return error.errorCode == ErrorCode.ENHANCE_YOUR_CALM ||
+            error.errorCode == ErrorCode.CONNECT_ERROR;
+      }
+      // Fallback for wrapped/zoned errors: only match known keepalive indicators
       final message = error.toString();
       return message.contains('ENHANCE_YOUR_CALM') ||
-          message.contains('errorCode: 10') ||
+          message.contains('errorCode: ${ErrorCode.ENHANCE_YOUR_CALM}') ||
+          message.contains('errorCode: ${ErrorCode.CONNECT_ERROR}') ||
           message.contains('forcefully terminated');
     }
 
+    /// Swallows only expected cleanup errors; rethrows unexpected ones.
+    Future<void> safeShutdownChannel(ClientChannelBase channel) async {
+      try {
+        await channel.shutdown();
+      } catch (e) {
+        if (e is StateError ||
+            e is GrpcError ||
+            e is SocketException ||
+            e is TimeoutException ||
+            e is TransportConnectionException) {
+          return; // Expected during adversarial cleanup
+        }
+        rethrow;
+      }
+    }
+
+    /// Swallows only expected server shutdown errors; rethrows unexpected ones.
+    Future<void> safeShutdownServer(Server server) async {
+      try {
+        await server.shutdown();
+      } catch (e) {
+        if (e is StateError ||
+            e is GrpcError ||
+            e is SocketException ||
+            e is TimeoutException ||
+            e is TransportConnectionException) {
+          return; // Expected during adversarial cleanup
+        }
+        rethrow;
+      }
+    }
+
     bool isExpectedKeepaliveRaceRpcError(Object? result) {
-      if (result is GrpcError ||
-          result is SocketException ||
+      if (result is GrpcError) {
+        // Only accept transport-level errors that legitimately occur
+        // during keepalive races — not server bugs like INTERNAL or
+        // DATA_LOSS.
+        return result.code == StatusCode.unavailable ||
+            result.code == StatusCode.cancelled ||
+            result.code == StatusCode.unknown ||
+            result.code == StatusCode.deadlineExceeded;
+      }
+      if (result is SocketException ||
           result is TimeoutException ||
           result is StateError ||
           result is NamedPipeException) {
@@ -1584,10 +1626,16 @@ void main() {
               for (final client in clients) {
                 try {
                   await client.echo(0);
-                } catch (_) {
-                  // Pre-warm failure is non-fatal — channel is still
-                  // usable, just not guaranteed to have an established
-                  // HTTP/2 connection.
+                } catch (e) {
+                  if (e is GrpcError ||
+                      e is SocketException ||
+                      e is TimeoutException ||
+                      e is StateError ||
+                      e is TransportConnectionException) {
+                    // Pre-warm failure non-fatal — channel still usable.
+                    continue;
+                  }
+                  rethrow;
                 }
               }
 
@@ -1663,8 +1711,14 @@ void main() {
 
                 try {
                   await server.shutdown();
-                } catch (_) {
-                  // Duplicate/overlapping shutdown must not fail.
+                } catch (e) {
+                  if (e is StateError ||
+                      e is GrpcError ||
+                      e is SocketException ||
+                      e is TimeoutException) {
+                    return; // Duplicate/overlapping shutdown expected
+                  }
+                  rethrow;
                 }
 
                 final settled = await Future.wait(rpcFutures).timeout(
@@ -1694,28 +1748,28 @@ void main() {
                   );
                 }
 
+                // Soft: the keepalive flood + shutdown race produces
+                // a nondeterministic split between successes and
+                // errors. Both must be non-zero to prove the race
+                // actually occurred.
                 expect(
                   successCount,
-                  greaterThan(0),
+                  greaterThanOrEqualTo(1),
                   reason:
                       'expected at least one successful RPC before shutdown',
                 );
                 expect(
                   errorCount,
-                  greaterThan(0),
+                  greaterThanOrEqualTo(1),
                   reason:
                       'expected at least one RPC to fail during shutdown '
                       'race',
                 );
               } finally {
                 for (final channel in channels) {
-                  try {
-                    await channel.shutdown();
-                  } catch (_) {}
+                  await safeShutdownChannel(channel);
                 }
-                try {
-                  await server.shutdown();
-                } catch (_) {}
+                await safeShutdownServer(server);
               }
 
               if (!testDone.isCompleted) testDone.complete();
@@ -1889,21 +1943,20 @@ void main() {
                     );
                   }
 
+                  // Soft: per-cycle minimum during restart stress;
+                  // transport errors from the previous cycle may
+                  // overlap, but at least 1 RPC must succeed.
                   expect(
                     successCount,
-                    greaterThan(0),
+                    greaterThanOrEqualTo(1),
                     reason:
                         'cycle $cycle should have at least one successful RPC',
                   );
                 } finally {
                   for (final channel in channels) {
-                    try {
-                      await channel.shutdown();
-                    } catch (_) {}
+                    await safeShutdownChannel(channel);
                   }
-                  try {
-                    await server.shutdown();
-                  } catch (_) {}
+                  await safeShutdownServer(server);
                 }
               }
 
@@ -2029,9 +2082,11 @@ void main() {
         isEmpty,
         reason: 'only GrpcError expected on shutdown',
       );
+      // Soft: shutdown races the compressed server stream; at
+      // least 1 item must arrive to prove the stream started.
       expect(
         received.length,
-        greaterThan(0),
+        greaterThanOrEqualTo(1),
         reason: 'must receive at least 1 item',
       );
       expect(

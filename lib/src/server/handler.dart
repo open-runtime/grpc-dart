@@ -152,7 +152,16 @@ class ServerHandler extends ServiceCall {
   /// We need the catchError() handler here, since otherwise the error would
   /// be an unhandled exception.
   void _cancelResponseSubscription() {
-    _responseCancelFuture = _responseSubscription?.cancel().catchError((_) {});
+    _responseCancelFuture = _responseSubscription?.cancel().catchError((e) {
+      logGrpcEvent(
+        '[gRPC] Response subscription cancel failed'
+        ' in _cancelResponseSubscription: $e',
+        component: 'ServerHandler',
+        event: 'response_cancel_failed',
+        context: '_cancelResponseSubscription',
+        error: e,
+      );
+    });
   }
 
   /// Attempts to add [error] to [requests] and then close it. Each operation
@@ -588,7 +597,16 @@ class ServerHandler extends ServiceCall {
     // Store the cancel future so shutdownActiveConnections() can await
     // it — async* generators need event loop turns to process the cancel
     // signal and stop yielding values.
-    _responseCancelFuture = _responseSubscription?.cancel().catchError((_) {});
+    _responseCancelFuture = _responseSubscription?.cancel().catchError((e) {
+      logGrpcEvent(
+        '[gRPC] Response subscription cancel failed'
+        ' in cancel: $e',
+        component: 'ServerHandler',
+        event: 'response_cancel_failed',
+        context: 'cancel',
+        error: e,
+      );
+    });
     _incomingSubscription?.cancel();
     // If trailers already started the graceful end-of-stream path, avoid
     // racing that close with an immediate RST_STREAM from cancel().

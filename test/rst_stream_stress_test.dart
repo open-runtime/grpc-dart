@@ -46,14 +46,18 @@ void main() {
       addTearDown(() async {
         try {
           await server.shutdown();
-        } catch (_) {}
+        } catch (e, st) {
+          fail('TearDown: server.shutdown failed: $e\n$st');
+        }
       });
 
       final channel = createTestChannel(address, server.port!);
       addTearDown(() async {
         try {
           await channel.shutdown();
-        } catch (_) {}
+        } catch (e, st) {
+          fail('TearDown: channel.shutdown failed: $e\n$st');
+        }
       });
       final client = EchoClient(channel);
 
@@ -112,19 +116,23 @@ void main() {
         ),
       );
 
-      expect(errors, isEmpty, reason: 'No unexpected non-GrpcError errors expected');
+      expect(
+        errors,
+        isEmpty,
+        reason: 'No unexpected non-GrpcError errors expected',
+      );
 
-      // At least half the streams must be truncated by shutdown.
-      // On fast machines, all 50 are truncated. On slower CI
-      // (especially Windows), some streams may naturally complete
-      // before the shutdown signal propagates — that's valid
-      // behavior, not a bug.
+      // Most streams must be truncated by shutdown. With the
+      // RST_STREAM flush yield fix, shutdown propagation is
+      // reliable. 40/50 is a safe floor — on fast machines all
+      // 50 are truncated; on slower CI a few may complete
+      // before the signal propagates.
       final truncatedCount = itemCounts.where((count) => count < 255).length;
       expect(
         truncatedCount,
-        greaterThanOrEqualTo(25),
+        greaterThanOrEqualTo(40),
         reason:
-            'At least 25 of 50 streams should be truncated by '
+            'At least 40 of 50 streams should be truncated by '
             'shutdown (got $truncatedCount truncated). '
             'Item counts: $itemCounts',
       );
@@ -137,13 +145,41 @@ void main() {
         'on server.shutdown() alone', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        try {
+          await server.shutdown();
+        } catch (e, st) {
+          fail('TearDown: server.shutdown failed: $e\n$st');
+        }
+      });
 
       final channel = createTestChannel(address, server.port!);
+      addTearDown(() async {
+        try {
+          await channel.shutdown();
+        } catch (e, st) {
+          fail('TearDown: channel.shutdown failed: $e\n$st');
+        }
+      });
       final client = EchoClient(channel);
 
       final controllers = List.generate(20, (_) => StreamController<int>());
+      addTearDown(() async {
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            try {
+              await ctrl.close();
+            } catch (e, st) {
+              fail('TearDown: StreamController.close failed: $e\n$st');
+            }
+          }
+        }
+      });
       final doneCompleters = List.generate(20, (_) => Completer<void>());
-      final firstResponseCompleters = List.generate(20, (_) => Completer<void>());
+      final firstResponseCompleters = List.generate(
+        20,
+        (_) => Completer<void>(),
+      );
       final errors = <Object>[];
 
       for (var i = 0; i < 20; i++) {
@@ -178,9 +214,10 @@ void main() {
       }
 
       // Wait for first response on all 20 streams.
-      await Future.wait(
-        firstResponseCompleters.map((c) => c.future),
-      ).timeout(const Duration(seconds: 10), onTimeout: () => fail('Timed out waiting for first bidi responses'));
+      await Future.wait(firstResponseCompleters.map((c) => c.future)).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail('Timed out waiting for first bidi responses'),
+      );
 
       // server.shutdown() — NO channel.shutdown().
       await server.shutdown();
@@ -194,25 +231,48 @@ void main() {
         ),
       );
 
-      expect(errors, isEmpty, reason: 'No unexpected non-GrpcError errors expected');
-
-      // Close all controllers, then cleanup.
-      for (final c in controllers) {
-        await c.close();
-      }
-      await channel.shutdown();
+      expect(
+        errors,
+        isEmpty,
+        reason: 'No unexpected non-GrpcError errors expected',
+      );
     });
 
     testTcpAndUds('mixed 30 RPCs (10 unary + 10 server-stream + '
         '10 bidi) all settle on server.shutdown()', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        try {
+          await server.shutdown();
+        } catch (e, st) {
+          fail('TearDown: server.shutdown failed: $e\n$st');
+        }
+      });
 
       final channel = createTestChannel(address, server.port!);
+      addTearDown(() async {
+        try {
+          await channel.shutdown();
+        } catch (e, st) {
+          fail('TearDown: channel.shutdown failed: $e\n$st');
+        }
+      });
       final client = EchoClient(channel);
 
       final settled = <Future<Object?>>[];
       final bidiControllers = <StreamController<int>>[];
+      addTearDown(() async {
+        for (final ctrl in bidiControllers) {
+          if (!ctrl.isClosed) {
+            try {
+              await ctrl.close();
+            } catch (e, st) {
+              fail('TearDown: StreamController.close failed: $e\n$st');
+            }
+          }
+        }
+      });
 
       // 10 unary RPCs.
       for (var i = 0; i < 10; i++) {
@@ -221,7 +281,9 @@ void main() {
 
       // 10 server-streaming RPCs.
       for (var i = 0; i < 10; i++) {
-        settled.add(settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)));
+        settled.add(
+          settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)),
+        );
       }
 
       // 10 bidi RPCs.
@@ -229,7 +291,11 @@ void main() {
         final ctrl = StreamController<int>();
         bidiControllers.add(ctrl);
         ctrl.add(i + 1);
-        settled.add(settleRpc(client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v)));
+        settled.add(
+          settleRpc(
+            client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
+          ),
+        );
       }
 
       // Wait for at least 20 handlers (streaming RPCs)
@@ -256,28 +322,55 @@ void main() {
       );
 
       for (var i = 0; i < results.length; i++) {
-        expectHardcoreRpcSettlement(results[i], reason: 'Mixed RPC $i settled with unexpected type');
+        expectHardcoreRpcSettlement(
+          results[i],
+          reason: 'Mixed RPC $i settled with unexpected type',
+        );
       }
-
-      // Close bidi controllers, then cleanup.
-      for (final c in bidiControllers) {
-        await c.close();
-      }
-      await channel.shutdown();
     });
 
     testTcpAndUds('server.shutdown() terminates streams even with '
         'sustained client data flow', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        try {
+          await server.shutdown();
+        } catch (e, st) {
+          fail('TearDown: server.shutdown failed: $e\n$st');
+        }
+      });
 
       final channel = createTestChannel(address, server.port!);
+      addTearDown(() async {
+        try {
+          await channel.shutdown();
+        } catch (e, st) {
+          fail('TearDown: channel.shutdown failed: $e\n$st');
+        }
+      });
       final client = EchoClient(channel);
 
       final controllers = List.generate(10, (_) => StreamController<int>());
+      addTearDown(() async {
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            try {
+              await ctrl.close();
+            } catch (e, st) {
+              fail('TearDown: StreamController.close failed: $e\n$st');
+            }
+          }
+        }
+      });
       final doneCompleters = List.generate(10, (_) => Completer<void>());
       final errors = <Object>[];
       final timers = <Timer>[];
+      addTearDown(() {
+        for (final t in timers) {
+          t.cancel();
+        }
+      });
 
       for (var i = 0; i < 10; i++) {
         final idx = i;
@@ -338,23 +431,42 @@ void main() {
             'No "Cannot add event after closing" '
             'or other unexpected errors expected',
       );
-
-      // Close controllers, then cleanup.
-      for (final c in controllers) {
-        await c.close();
-      }
-      await channel.shutdown();
     });
 
     testTcpAndUds('client-streaming RPCs settle on '
         'server.shutdown() without channel crutch', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        try {
+          await server.shutdown();
+        } catch (e, st) {
+          fail('TearDown: server.shutdown failed: $e\n$st');
+        }
+      });
 
       final channel = createTestChannel(address, server.port!);
+      addTearDown(() async {
+        try {
+          await channel.shutdown();
+        } catch (e, st) {
+          fail('TearDown: channel.shutdown failed: $e\n$st');
+        }
+      });
       final client = EchoClient(channel);
 
       final controllers = List.generate(20, (_) => StreamController<int>());
+      addTearDown(() async {
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            try {
+              await ctrl.close();
+            } catch (e, st) {
+              fail('TearDown: StreamController.close failed: $e\n$st');
+            }
+          }
+        }
+      });
       final settled = <Future<Object?>>[];
 
       for (var i = 0; i < 20; i++) {
@@ -364,7 +476,11 @@ void main() {
         controllers[i].add(3);
         // Do NOT close the controllers yet.
 
-        settled.add(settleRpc(client.clientStream(controllers[i].stream).then<Object?>((v) => v)));
+        settled.add(
+          settleRpc(
+            client.clientStream(controllers[i].stream).then<Object?>((v) => v),
+          ),
+        );
       }
 
       // Wait for handlers to be registered.
@@ -395,12 +511,6 @@ void main() {
               'unexpected type: ${results[i].runtimeType}',
         );
       }
-
-      // Close all controllers, then cleanup.
-      for (final c in controllers) {
-        await c.close();
-      }
-      await channel.shutdown();
     });
   });
 
@@ -412,14 +522,18 @@ void main() {
       addTearDown(() async {
         try {
           await server.shutdown();
-        } catch (_) {}
+        } catch (e, st) {
+          fail('TearDown: server.shutdown failed: $e\n$st');
+        }
       });
 
       final channel = createTestChannel(address, server.port!);
       addTearDown(() async {
         try {
           await channel.shutdown();
-        } catch (_) {}
+        } catch (e, st) {
+          fail('TearDown: channel.shutdown failed: $e\n$st');
+        }
       });
       final client = EchoClient(channel);
       final controllers = <StreamController<int>>[];
@@ -428,7 +542,9 @@ void main() {
           if (!ctrl.isClosed) {
             try {
               await ctrl.close();
-            } catch (_) {}
+            } catch (e, st) {
+              fail('TearDown: StreamController.close failed: $e\n$st');
+            }
           }
         }
       });
@@ -474,7 +590,8 @@ void main() {
       // Wait for first response on all 100 streams.
       await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
         const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out waiting for first responses on all 100 streams'),
+        onTimeout: () =>
+            fail('Timed out waiting for first responses on all 100 streams'),
       );
 
       // server.shutdown() — NO channel.shutdown().
@@ -496,7 +613,11 @@ void main() {
         ),
       );
 
-      expect(errors, isEmpty, reason: 'No unexpected non-GrpcError errors expected');
+      expect(
+        errors,
+        isEmpty,
+        reason: 'No unexpected non-GrpcError errors expected',
+      );
 
       for (var i = 0; i < itemCounts.length; i++) {
         expect(
@@ -516,15 +637,31 @@ void main() {
         '(streams not yet flowing)', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        try {
+          await server.shutdown();
+        } catch (e, st) {
+          fail('TearDown: server.shutdown failed: $e\n$st');
+        }
+      });
 
       final channel = createTestChannel(address, server.port!);
+      addTearDown(() async {
+        try {
+          await channel.shutdown();
+        } catch (e, st) {
+          fail('TearDown: channel.shutdown failed: $e\n$st');
+        }
+      });
       final client = EchoClient(channel);
 
       final settled = <Future<Object?>>[];
 
       // Start 20 server-streaming RPCs.
       for (var i = 0; i < 20; i++) {
-        settled.add(settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)));
+        settled.add(
+          settleRpc(client.serverStream(255).toList().then<Object?>((v) => v)),
+        );
       }
 
       // Immediately shut down — do NOT wait for first
@@ -552,9 +689,6 @@ void main() {
               '${r.runtimeType}',
         );
       }
-
-      // Cleanup AFTER all assertions.
-      await channel.shutdown();
     });
 
     testTcpAndUds('repeated shutdown stress: 8 cycles of '
@@ -565,23 +699,152 @@ void main() {
 
         final channel = createTestChannel(address, server.port!);
         final client = EchoClient(channel);
+        try {
+          final doneCompleters = List.generate(25, (_) => Completer<void>());
+          final firstItemCompleters = List.generate(
+            25,
+            (_) => Completer<void>(),
+          );
+          final errors = <Object>[];
 
-        final doneCompleters = List.generate(25, (_) => Completer<void>());
-        final firstItemCompleters = List.generate(25, (_) => Completer<void>());
-        final errors = <Object>[];
+          for (var i = 0; i < 25; i++) {
+            final idx = i;
+            final stream = client.serverStream(255);
+            stream.listen(
+              (item) {
+                if (!firstItemCompleters[idx].isCompleted) {
+                  firstItemCompleters[idx].complete();
+                }
+              },
+              onError: (Object e) {
+                if (e is! GrpcError) {
+                  errors.add(e);
+                }
+                if (!firstItemCompleters[idx].isCompleted) {
+                  firstItemCompleters[idx].complete();
+                }
+                if (!doneCompleters[idx].isCompleted) {
+                  doneCompleters[idx].complete();
+                }
+              },
+              onDone: () {
+                if (!doneCompleters[idx].isCompleted) {
+                  doneCompleters[idx].complete();
+                }
+              },
+            );
+          }
 
-        for (var i = 0; i < 25; i++) {
+          // Wait for first item on all 25 streams.
+          await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => fail(
+              'Cycle $cycle: timed out waiting for first '
+              'items on all 25 streams',
+            ),
+          );
+
+          // server.shutdown() ONLY — no channel crutch.
+          await server.shutdown();
+
+          // All 25 must settle within 10s.
+          await Future.wait(doneCompleters.map((c) => c.future)).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => fail(
+              'Cycle $cycle: not all 25 streams '
+              'terminated after server.shutdown()',
+            ),
+          );
+
+          expect(
+            errors,
+            isEmpty,
+            reason:
+                'Cycle $cycle: no unexpected '
+                'non-GrpcError errors expected',
+          );
+        } finally {
+          // Ensure cleanup even on assertion failure.
+          await channel.shutdown();
+          try {
+            await server.shutdown();
+          } catch (_) {
+            // May already be shut down from test body.
+          }
+        }
+      }
+    });
+  });
+
+  group('Named pipe RST_STREAM propagation', () {
+    testNamedPipe(
+      '20 active bidi streams terminate on server.shutdown() alone',
+      (pipeName) async {
+        const streamCount = 20;
+
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() async {
+          try {
+            await server.shutdown();
+          } catch (e, st) {
+            fail('TearDown: named-pipe server.shutdown failed: $e\n$st');
+          }
+        });
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() async {
+          try {
+            await channel.shutdown();
+          } catch (e, st) {
+            fail('TearDown: named-pipe channel.shutdown failed: $e\n$st');
+          }
+        });
+        final client = EchoClient(channel);
+        final controllers = <StreamController<int>>[];
+        addTearDown(() async {
+          for (final ctrl in controllers) {
+            if (!ctrl.isClosed) {
+              try {
+                await ctrl.close();
+              } catch (e, st) {
+                fail(
+                  'TearDown: named-pipe StreamController.close failed: $e\n$st',
+                );
+              }
+            }
+          }
+        });
+
+        final doneCompleters = List.generate(
+          streamCount,
+          (_) => Completer<void>(),
+        );
+        final firstItemCompleters = List.generate(
+          streamCount,
+          (_) => Completer<void>(),
+        );
+        final itemCounts = List.filled(streamCount, 0);
+        final unexpectedErrors = <Object>[];
+
+        for (var i = 0; i < streamCount; i++) {
           final idx = i;
-          final stream = client.serverStream(255);
+          final ctrl = StreamController<int>();
+          controllers.add(ctrl);
+          final stream = client.bidiStream(ctrl.stream);
           stream.listen(
             (item) {
+              itemCounts[idx]++;
               if (!firstItemCompleters[idx].isCompleted) {
                 firstItemCompleters[idx].complete();
               }
             },
             onError: (Object e) {
               if (e is! GrpcError) {
-                errors.add(e);
+                unexpectedErrors.add(e);
               }
               if (!firstItemCompleters[idx].isCompleted) {
                 firstItemCompleters[idx].complete();
@@ -596,153 +859,57 @@ void main() {
               }
             },
           );
+          // Send one item to trigger echo — handler blocks on await for.
+          ctrl.add(idx % 128);
         }
 
-        // Wait for first item on all 25 streams.
+        // Wait for first response on all 20 streams.
         await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
-          const Duration(seconds: 10),
+          const Duration(seconds: 20),
           onTimeout: () => fail(
-            'Cycle $cycle: timed out waiting for first '
-            'items on all 25 streams',
+            'Named-pipe bidi streams did not all '
+            'start before shutdown',
           ),
         );
 
-        // server.shutdown() ONLY — no channel crutch.
+        // server.shutdown() — NO channel.shutdown().
         await server.shutdown();
 
-        // All 25 must settle within 10s.
+        // Close request-side controllers after shutdown.
+        for (final ctrl in controllers) {
+          if (!ctrl.isClosed) {
+            await ctrl.close();
+          }
+        }
+
+        // All 20 done completers must fire.
         await Future.wait(doneCompleters.map((c) => c.future)).timeout(
-          const Duration(seconds: 10),
+          const Duration(seconds: 20),
           onTimeout: () => fail(
-            'Cycle $cycle: not all 25 streams '
-            'terminated after server.shutdown()',
+            'Named-pipe bidi streams did not '
+            'terminate after server shutdown',
           ),
         );
 
         expect(
-          errors,
+          unexpectedErrors,
           isEmpty,
-          reason:
-              'Cycle $cycle: no unexpected '
-              'non-GrpcError errors expected',
+          reason: 'No non-GrpcError failures expected in named-pipe shutdown',
         );
 
-        // THEN channel.shutdown() for cleanup.
+        for (var i = 0; i < itemCounts.length; i++) {
+          expect(
+            itemCounts[i],
+            equals(1),
+            reason:
+                'Named-pipe stream $i should emit exactly '
+                'one response before shutdown termination.',
+          );
+        }
+
+        // Cleanup AFTER all assertions.
         await channel.shutdown();
-      }
-    });
-  });
-
-  group('Named pipe RST_STREAM propagation', () {
-    testNamedPipe('20 active bidi streams terminate on server.shutdown() alone', (pipeName) async {
-      const streamCount = 20;
-
-      final server = NamedPipeServer.create(services: [EchoService()]);
-      await server.serve(pipeName: pipeName);
-      addTearDown(() async {
-        try {
-          await server.shutdown();
-        } catch (_) {}
-      });
-
-      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
-      addTearDown(() async {
-        try {
-          await channel.shutdown();
-        } catch (_) {}
-      });
-      final client = EchoClient(channel);
-      final controllers = <StreamController<int>>[];
-      addTearDown(() async {
-        for (final ctrl in controllers) {
-          if (!ctrl.isClosed) {
-            try {
-              await ctrl.close();
-            } catch (_) {}
-          }
-        }
-      });
-
-      final doneCompleters = List.generate(streamCount, (_) => Completer<void>());
-      final firstItemCompleters = List.generate(streamCount, (_) => Completer<void>());
-      final itemCounts = List.filled(streamCount, 0);
-      final unexpectedErrors = <Object>[];
-
-      for (var i = 0; i < streamCount; i++) {
-        final idx = i;
-        final ctrl = StreamController<int>();
-        controllers.add(ctrl);
-        final stream = client.bidiStream(ctrl.stream);
-        stream.listen(
-          (item) {
-            itemCounts[idx]++;
-            if (!firstItemCompleters[idx].isCompleted) {
-              firstItemCompleters[idx].complete();
-            }
-          },
-          onError: (Object e) {
-            if (e is! GrpcError) {
-              unexpectedErrors.add(e);
-            }
-            if (!firstItemCompleters[idx].isCompleted) {
-              firstItemCompleters[idx].complete();
-            }
-            if (!doneCompleters[idx].isCompleted) {
-              doneCompleters[idx].complete();
-            }
-          },
-          onDone: () {
-            if (!doneCompleters[idx].isCompleted) {
-              doneCompleters[idx].complete();
-            }
-          },
-        );
-        // Send one item to trigger echo — handler blocks on await for.
-        ctrl.add(idx % 128);
-      }
-
-      // Wait for first response on all 20 streams.
-      await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => fail(
-          'Named-pipe bidi streams did not all '
-          'start before shutdown',
-        ),
-      );
-
-      // server.shutdown() — NO channel.shutdown().
-      await server.shutdown();
-
-      // Close request-side controllers after shutdown.
-      for (final ctrl in controllers) {
-        if (!ctrl.isClosed) {
-          await ctrl.close();
-        }
-      }
-
-      // All 20 done completers must fire.
-      await Future.wait(doneCompleters.map((c) => c.future)).timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => fail(
-          'Named-pipe bidi streams did not '
-          'terminate after server shutdown',
-        ),
-      );
-
-      expect(unexpectedErrors, isEmpty, reason: 'No non-GrpcError failures expected in named-pipe shutdown');
-
-      for (var i = 0; i < itemCounts.length; i++) {
-        expect(
-          itemCounts[i],
-          equals(1),
-          reason:
-              'Named-pipe stream $i should emit exactly '
-              'one response before shutdown termination.',
-        );
-      }
-
-      // Cleanup AFTER all assertions.
-      await channel.shutdown();
-    });
+      },
+    );
   });
 }

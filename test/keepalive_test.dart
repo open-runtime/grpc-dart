@@ -102,7 +102,10 @@ void main() {
         await Future.delayed(const Duration(milliseconds: 500));
         await fakeClient.echo(EchoRequest());
       }
-      // Server closed connection 1 via GOAWAY, forcing a reconnect.
+      // Soft: server closed connection 1 via GOAWAY, forcing a
+      // reconnect. 2 is the structural minimum (original +
+      // reconnect); GOAWAY propagation timing may cause an
+      // extra reconnect on slow CI.
       expect(fakeChannel.newConnectionCounter, greaterThanOrEqualTo(2));
     },
   );

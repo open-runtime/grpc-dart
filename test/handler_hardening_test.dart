@@ -526,6 +526,10 @@ void main() {
               'got $trailerCount (totalMessages=$totalMessageCount). '
               'The _trailersSent guard should prevent duplicate trailers.',
         );
+        // Soft: the triple-race between timeout, cancel, and
+        // normal completion makes the exact wire message count
+        // nondeterministic — at least 1 (initial headers) is the
+        // structural minimum.
         expect(totalMessageCount, greaterThanOrEqualTo(1));
       },
     );
@@ -699,13 +703,15 @@ void main() {
         // 2. sendTrailers writes to the already-closed fromServer sink,
         //    which is caught and logged as [gRPC] Failed to send trailers.
         // 3. The server does NOT crash.
+        // Exactly 1 error: the handler throws one GrpcError.internal,
+        // which _sendError forwards to _errorHandler exactly once.
         expect(
           errorHarness.capturedErrors,
-          isNotEmpty,
+          hasLength(1),
           reason:
-              'errorHandler should receive the GrpcError.internal from the '
-              'handler throw — _sendError calls _errorHandler before '
-              'sendTrailers (handler.dart:626)',
+              'errorHandler should receive exactly 1 GrpcError.internal '
+              'from the handler throw — _sendError calls _errorHandler '
+              'before sendTrailers (handler.dart:626)',
         );
         expect(errorHarness.capturedErrors.first.code, StatusCode.internal);
       },
@@ -1905,9 +1911,10 @@ void main() {
 
       // Assert: handler terminated and wire settled.
       expect(handler.isCanceled, isTrue);
-      // The handler sent at least initial headers + 1 data frame
-      // (the echoed value). After the triple-race, it may or may not
-      // have sent trailers depending on which termination path won.
+      // Soft: the handler sent at least initial headers + 1 data
+      // frame (the echoed value). After the triple-race, it may
+      // or may not have sent trailers depending on which
+      // termination path won — the exact count is nondeterministic.
       expect(
         wireMessageCount,
         greaterThanOrEqualTo(1),

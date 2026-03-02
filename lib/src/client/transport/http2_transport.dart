@@ -19,6 +19,7 @@ import 'package:http2/transport.dart';
 
 import '../../shared/codec.dart';
 import '../../shared/codec_registry.dart';
+import '../../shared/logging/logging.dart' show logGrpcEvent;
 import '../../shared/message.dart';
 import '../../shared/streams.dart';
 import 'transport.dart';
@@ -52,17 +53,44 @@ class Http2TransportStream extends GrpcTransportStream {
           (message) {
             try {
               outSink.add(message);
-            } catch (_) {}
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] HTTP/2 outgoing frame dropped'
+                ' (transport sink closed): $e',
+                component: 'Http2TransportStream',
+                event: 'outgoing_frame_dropped',
+                context: 'listen.onData',
+                error: e,
+              );
+            }
           },
           onError: (Object error, StackTrace stackTrace) {
             try {
               outSink.addError(error, stackTrace);
-            } catch (_) {}
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Failed to forward error to'
+                ' HTTP/2 transport sink: $e',
+                component: 'Http2TransportStream',
+                event: 'outgoing_error_dropped',
+                context: 'listen.onError',
+                error: e,
+              );
+            }
           },
           onDone: () {
             try {
               outSink.close();
-            } catch (_) {}
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Failed to close HTTP/2'
+                ' outgoing transport sink: $e',
+                component: 'Http2TransportStream',
+                event: 'outgoing_close_failed',
+                context: 'listen.onDone',
+                error: e,
+              );
+            }
           },
           cancelOnError: true,
         );

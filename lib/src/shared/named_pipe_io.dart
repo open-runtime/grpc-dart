@@ -29,6 +29,59 @@ String namedPipePath(String pipeName) => r'\\.\pipe\' + pipeName;
 /// memory allocation reasonable for concurrent connections.
 const int kNamedPipeBufferSize = 65536;
 
+/// Default maximum retries for transient ERROR_NO_DATA from PeekNamedPipe
+/// or ReadFile.
+///
+/// ERROR_NO_DATA can occur transiently when the pipe is in a transitional
+/// state (e.g., peer closing). Bounded retries with 1ms delay between
+/// attempts allow the connection to recover. Exhaustion is logged and
+/// treated as a fatal error.
+const int kNamedPipeNoDataMaxRetries = 500;
+
+/// Result of evaluating ERROR_NO_DATA retry.
+enum NoDataRetryResult {
+  /// Retry: sleep 1ms and loop again.
+  retry,
+
+  /// Exhausted: bail out and log/error.
+  exhausted,
+}
+
+/// Shared state for ERROR_NO_DATA retry logic in named pipe read loops.
+///
+/// ERROR_NO_DATA can occur transiently when the pipe is in a transitional
+/// state (e.g., peer closing). Retrying with a bounded count and 1ms delay
+/// between attempts allows the connection to recover.
+///
+/// **Usage**:
+/// - Call [recordNoData] when PeekNamedPipe or ReadFile fails with
+///   ERROR_NO_DATA.
+/// - If [recordNoData] returns [NoDataRetryResult.retry], await a 1ms delay
+///   and continue the loop.
+/// - If [recordNoData] returns [NoDataRetryResult.exhausted], log and exit.
+/// - Call [reset] on any successful read/peek.
+class NoDataRetryState {
+  final int maxRetries;
+  int _count = 0;
+
+  NoDataRetryState({int? maxRetries}) : maxRetries = maxRetries ?? kNamedPipeNoDataMaxRetries;
+
+  /// Records an ERROR_NO_DATA occurrence. Returns [NoDataRetryResult.retry]
+  /// if retries remain, [NoDataRetryResult.exhausted] otherwise.
+  NoDataRetryResult recordNoData() {
+    _count++;
+    if (_count <= maxRetries) {
+      return NoDataRetryResult.retry;
+    }
+    return NoDataRetryResult.exhausted;
+  }
+
+  /// Resets the retry count. Call after any successful read or peek.
+  void reset() {
+    _count = 0;
+  }
+}
+
 /// Copies [count] bytes from a native [buffer] into a new [Uint8List].
 ///
 /// Uses `asTypedList` + `sublist` for efficient copying via the underlying

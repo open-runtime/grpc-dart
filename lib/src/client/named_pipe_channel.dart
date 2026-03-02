@@ -82,7 +82,7 @@ class NamedPipeClientChannel extends ClientChannelBase {
 
   @override
   ClientConnection createConnection() {
-    final connector = NamedPipeTransportConnector(pipeName);
+    final connector = NamedPipeTransportConnector(pipeName, connectTimeout: options.connectTimeout);
     return Http2ClientConnection.fromClientTransportConnector(connector, options);
   }
 }

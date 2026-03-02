@@ -234,29 +234,32 @@ Future<void> main() async {
     await server.shutdown();
   });
 
-  test('exception in onMetadataException',
-      timeout: const Timeout(Duration(seconds: 60)), () async {
-    final server = Server.create(
-      services: [TestServiceWithOnMetadataException()],
-    );
-    await server.serve(address: 'localhost', port: 0);
-    addTearDown(() => server.shutdown());
+  test(
+    'exception in onMetadataException',
+    timeout: const Timeout(Duration(seconds: 60)),
+    () async {
+      final server = Server.create(
+        services: [TestServiceWithOnMetadataException()],
+      );
+      await server.serve(address: 'localhost', port: 0);
+      addTearDown(() => server.shutdown());
 
-    final channel = FixedConnectionClientChannel(
-      Http2ClientConnection(
-        'localhost',
-        server.port!,
-        ChannelOptions(credentials: ChannelCredentials.insecure()),
-      ),
-    );
-    addTearDown(() => channel.shutdown());
-    final testClient = TestClient(channel);
-    await expectLater(
-      testClient.stream(TestService.requestFiniteStream).toList(),
-      throwsA(isA<GrpcError>()),
-    );
-    await server.shutdown();
-  });
+      final channel = FixedConnectionClientChannel(
+        Http2ClientConnection(
+          'localhost',
+          server.port!,
+          ChannelOptions(credentials: ChannelCredentials.insecure()),
+        ),
+      );
+      addTearDown(() => channel.shutdown());
+      final testClient = TestClient(channel);
+      await expectLater(
+        testClient.stream(TestService.requestFiniteStream).toList(),
+        throwsA(isA<GrpcError>()),
+      );
+      await server.shutdown();
+    },
+  );
 
   test('cancellation of streaming subscription propagates properly', () async {
     final server = Server.create(services: [TestService()]);

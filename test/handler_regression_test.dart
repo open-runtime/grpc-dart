@@ -249,12 +249,13 @@ void main() {
         reason: 'Server must reply DEADLINE_EXCEEDED on timeout',
       );
 
+      // The _trailersSent guard ensures trailers are sent exactly once.
       expect(
         harness.stream.sentTrailers,
-        isNotEmpty,
+        hasLength(1),
         reason:
-            '_onTimedOut must send trailers with endStream to '
-            'close the outgoing stream and prevent leaks',
+            '_onTimedOut must send exactly 1 set of trailers with '
+            'endStream to close the outgoing stream and prevent leaks',
       );
     });
 
@@ -322,12 +323,13 @@ void main() {
         reason: 'Unexpected close must produce UNAVAILABLE status',
       );
 
+      // The _trailersSent guard ensures trailers are sent exactly once.
       expect(
         harness.stream.sentTrailers,
-        isNotEmpty,
+        hasLength(1),
         reason:
-            '_onDoneError must send trailers with endStream '
-            'to close the outgoing stream',
+            '_onDoneError must send exactly 1 set of trailers with '
+            'endStream to close the outgoing stream',
       );
     });
 
@@ -340,10 +342,11 @@ void main() {
       harness.toServer.close();
       await Future.delayed(const Duration(milliseconds: 100));
 
+      // The _trailersSent guard ensures trailers are sent exactly once.
       expect(
         harness.stream.sentTrailers,
-        isNotEmpty,
-        reason: 'Error followed by close must still send trailers',
+        hasLength(1),
+        reason: 'Error followed by close must send exactly 1 set of trailers',
       );
 
       final status = harness.firstTrailerStatus();
@@ -470,44 +473,46 @@ void main() {
       harness.tearDown();
     });
 
-    test('cancel after normal completion calls terminate at most once',
-        () async {
-      const expectedRequest = 5;
-      const expectedResponse = 7;
+    test(
+      'cancel after normal completion calls terminate at most once',
+      () async {
+        const expectedRequest = 5;
+        const expectedResponse = 7;
 
-      harness.service.unaryHandler = (call, request) async {
-        return expectedResponse;
-      };
+        harness.service.unaryHandler = (call, request) async {
+          return expectedResponse;
+        };
 
-      final done = Completer<void>();
-      harness.fromServer.stream.listen(
-        (_) {},
-        onError: (_) {},
-        onDone: () {
-          if (!done.isCompleted) done.complete();
-        },
-      );
+        final done = Completer<void>();
+        harness.fromServer.stream.listen(
+          (_) {},
+          onError: (_) {},
+          onDone: () {
+            if (!done.isCompleted) done.complete();
+          },
+        );
 
-      harness.sendRequestHeader('/Test/Unary');
-      harness.sendData(expectedRequest);
-      harness.toServer.close();
+        harness.sendRequestHeader('/Test/Unary');
+        harness.sendData(expectedRequest);
+        harness.toServer.close();
 
-      await done.future.timeout(const Duration(seconds: 2));
-      await Future.delayed(const Duration(milliseconds: 50));
+        await done.future.timeout(const Duration(seconds: 2));
+        await Future.delayed(const Duration(milliseconds: 50));
 
-      // After endStream: true, a single terminate() is acceptable —
-      // the http2 package triggers cancel() via outgoingMessages.done
-      // which calls _terminateStream(). The _streamTerminated guard
-      // prevents double-terminate. This matches upstream behavior.
-      expect(
-        harness.stream.terminateCount,
-        lessThanOrEqualTo(1),
-        reason:
-            'After a normal response with endStream: true, '
-            'terminate() may be called at most once via '
-            'outgoingMessages.done → cancel(). The '
-            '_streamTerminated guard prevents double-terminate.',
-      );
-    });
+        // After endStream: true, a single terminate() is acceptable —
+        // the http2 package triggers cancel() via outgoingMessages.done
+        // which calls _terminateStream(). The _streamTerminated guard
+        // prevents double-terminate. This matches upstream behavior.
+        expect(
+          harness.stream.terminateCount,
+          lessThanOrEqualTo(1),
+          reason:
+              'After a normal response with endStream: true, '
+              'terminate() may be called at most once via '
+              'outgoingMessages.done → cancel(). The '
+              '_streamTerminated guard prevents double-terminate.',
+        );
+      },
+    );
   });
 }

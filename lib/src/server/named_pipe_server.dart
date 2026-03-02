@@ -20,6 +20,7 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:http2/transport.dart';
+import 'package:meta/meta.dart';
 import 'package:win32/win32.dart';
 
 import '../shared/codec_registry.dart';
@@ -136,6 +137,7 @@ class NamedPipeServer extends ConnectionServer {
   /// Number of active named-pipe stream wrappers currently tracked.
   ///
   /// Exposed for transport lifecycle tests that verify stream cleanup.
+  @visibleForTesting
   int get activePipeStreamCount => _activeStreams.length;
 
   /// Starts the named pipe server.
@@ -263,6 +265,14 @@ class NamedPipeServer extends ConnectionServer {
       serveConnection(connection: transportConnection);
     } catch (e) {
       // HTTP/2 initialization failure — clean up the pipe handle.
+      logGrpcEvent(
+        '[gRPC] HTTP/2 initialization failed on'
+        ' pipe connection: $e',
+        component: 'NamedPipeServer',
+        event: 'http2_init_failed',
+        context: '_handleNewConnection',
+        error: e,
+      );
       stream.close(force: true);
     }
   }
@@ -457,7 +467,6 @@ class NamedPipeServer extends ConnectionServer {
 /// so polling, timeouts, and concurrent connections all work correctly.
 class _ServerPipeStream {
   static const Duration _deferredCloseTimeout = Duration(seconds: 5);
-  static const int _maxNoDataRetries = 500;
 
   final int _handle;
 
@@ -527,7 +536,7 @@ class _ServerPipeStream {
     final buffer = calloc<Uint8>(kNamedPipeBufferSize);
     final bytesRead = calloc<DWORD>();
     final peekAvail = calloc<DWORD>();
-    var noDataRetries = 0;
+    final noDataRetry = NoDataRetryState();
 
     try {
       while (!_isClosed) {
@@ -538,8 +547,7 @@ class _ServerPipeStream {
         if (peekResult == 0) {
           final error = GetLastError();
           if (error == ERROR_NO_DATA) {
-            noDataRetries++;
-            if (noDataRetries <= _maxNoDataRetries) {
+            if (noDataRetry.recordNoData() == NoDataRetryResult.retry) {
               await Future<void>.delayed(const Duration(milliseconds: 1));
               continue;
             }
@@ -562,7 +570,7 @@ class _ServerPipeStream {
           }
           break;
         }
-        noDataRetries = 0;
+        noDataRetry.reset();
 
         if (peekAvail.value == 0) {
           // No data yet — yield to event loop.
@@ -577,8 +585,7 @@ class _ServerPipeStream {
         if (success == 0) {
           final error = GetLastError();
           if (error == ERROR_NO_DATA) {
-            noDataRetries++;
-            if (noDataRetries <= _maxNoDataRetries) {
+            if (noDataRetry.recordNoData() == NoDataRetryResult.retry) {
               await Future<void>.delayed(const Duration(milliseconds: 1));
               continue;
             }
@@ -601,7 +608,7 @@ class _ServerPipeStream {
           }
           break;
         }
-        noDataRetries = 0;
+        noDataRetry.reset();
 
         final count = bytesRead.value;
         if (count > 0) {
@@ -733,7 +740,15 @@ class _ServerPipeStream {
       _outgoingSubscription = null;
       try {
         _outgoingController.close();
-      } catch (_) {}
+      } catch (e) {
+        logGrpcEvent(
+          '[gRPC] named pipe close error: $e',
+          component: 'NamedPipeServer',
+          event: 'close_error',
+          context: 'deferred_close_timer_callback',
+          error: e,
+        );
+      }
       if (!_incomingController.isClosed) {
         _incomingController.close();
       }
@@ -798,7 +813,15 @@ class _ServerPipeStream {
         _outgoingSubscription = null;
         try {
           _outgoingController.close();
-        } catch (_) {}
+        } catch (e) {
+          logGrpcEvent(
+            '[gRPC] named pipe close error: $e',
+            component: 'NamedPipeServer',
+            event: 'close_error',
+            context: 'close_force_upgrade',
+            error: e,
+          );
+        }
         // Close incoming if deferred from normal close (see below).
         if (!_incomingController.isClosed) {
           _incomingController.close();
@@ -821,9 +844,14 @@ class _ServerPipeStream {
 
       try {
         _outgoingController.close();
-      } catch (_) {
-        // Defensive: should not happen after subscription cancellation,
-        // but must not fail during shutdown.
+      } catch (e) {
+        logGrpcEvent(
+          '[gRPC] named pipe close error: $e',
+          component: 'NamedPipeServer',
+          event: 'close_error',
+          context: 'close_force_initial',
+          error: e,
+        );
       }
 
       _closeHandle(disconnect: true);

@@ -78,6 +78,9 @@ void main() {
         final readyCount = channel.states
             .where((s) => s == ConnectionState.ready)
             .length;
+        // Soft: connection aging is timer-driven; under CI load the
+        // timer may fire slightly early or late, but we always need
+        // at least the original connect + one reconnect = 2.
         expect(
           readyCount,
           greaterThanOrEqualTo(2),
@@ -119,10 +122,15 @@ void main() {
       final readyCount = channel.states
           .where((s) => s == ConnectionState.ready)
           .length;
+      // 5 rounds of connect + age-out should produce at least 5 ready
+      // transitions. Use floor assertion — timer jitter on CI may
+      // coalesce cycles but we need at least 5 reconnections.
       expect(
         readyCount,
-        greaterThanOrEqualTo(4),
-        reason: 'Should have reconnected multiple times',
+        greaterThanOrEqualTo(5),
+        reason:
+            'Should have reconnected at least 5 times (once per round), '
+            'got $readyCount',
       );
 
       addTearDown(() => channel.shutdown());
@@ -237,7 +245,6 @@ void main() {
             isA<List<int>>(),
             isA<GrpcError>(),
             isA<SocketException>(),
-            isA<TimeoutException>(),
             isA<StateError>(),
           ),
           reason:
@@ -321,11 +328,9 @@ void main() {
 
       final client = EchoClient(channel);
 
-      // Start a long server stream
-      final streamFuture = client
-          .serverStream(100)
-          .toList()
-          .then((results) => results, onError: (e) => <int>[]);
+      // Start a long server stream — use settleRpc so errors surface
+      // instead of being masked by onError: (_) => <int>[].
+      final streamFuture = settleRpc(client.serverStream(100).toList());
 
       // Wait for handler registration (deterministic signal).
       await waitForHandlers(
@@ -336,23 +341,33 @@ void main() {
       // Shutdown server while stream is active
       await server.shutdown();
 
-      // Stream should either complete partially or error gracefully.
-      final results = await streamFuture;
+      // Stream must settle to data or explicit error (no masking).
+      final result = await streamFuture;
       expect(
-        results.length,
-        lessThan(100),
-        reason:
-            'Stream should have been truncated by shutdown '
-            '(received ${results.length}/100 items)',
+        result,
+        anyOf(
+          isA<List<int>>(),
+          isA<GrpcError>(),
+          isA<SocketException>(),
+          isA<StateError>(),
+        ),
+        reason: 'Stream must settle to data or explicit transport error',
       );
-
-      // Verify data integrity of whatever DID arrive.
-      for (var i = 0; i < results.length; i++) {
+      if (result is List<int>) {
         expect(
-          results[i],
-          equals(i + 1),
-          reason: 'item $i should equal ${i + 1}',
+          result.length,
+          lessThan(100),
+          reason:
+              'Stream should have been truncated by shutdown '
+              '(received ${result.length}/100 items)',
         );
+        for (var i = 0; i < result.length; i++) {
+          expect(
+            result[i],
+            equals(i + 1),
+            reason: 'item $i should equal ${i + 1}',
+          );
+        }
       }
 
       addTearDown(() => channel.shutdown());
@@ -375,11 +390,9 @@ void main() {
 
       final client = EchoClient(channel);
 
-      // Start a long server stream
-      final streamFuture = client
-          .serverStream(100)
-          .toList()
-          .then((results) => results, onError: (e) => <int>[]);
+      // Start a long server stream — use settleRpc so errors surface
+      // instead of being masked by onError: (_) => <int>[].
+      final streamFuture = settleRpc(client.serverStream(100).toList());
 
       // Wait for handler registration (deterministic signal).
       await waitForHandlers(
@@ -393,22 +406,32 @@ void main() {
       // and terminated, the second call must be a no-op.
       await server.shutdown();
 
-      final results = await streamFuture;
+      final result = await streamFuture;
       expect(
-        results.length,
-        lessThan(100),
-        reason:
-            'Stream should have been truncated by shutdown '
-            '(received ${results.length}/100 items)',
+        result,
+        anyOf(
+          isA<List<int>>(),
+          isA<GrpcError>(),
+          isA<SocketException>(),
+          isA<StateError>(),
+        ),
+        reason: 'Stream must settle to data or explicit transport error',
       );
-
-      // Verify data integrity of whatever DID arrive.
-      for (var i = 0; i < results.length; i++) {
+      if (result is List<int>) {
         expect(
-          results[i],
-          equals(i + 1),
-          reason: 'item $i should equal ${i + 1}',
+          result.length,
+          lessThan(100),
+          reason:
+              'Stream should have been truncated by shutdown '
+              '(received ${result.length}/100 items)',
         );
+        for (var i = 0; i < result.length; i++) {
+          expect(
+            result[i],
+            equals(i + 1),
+            reason: 'item $i should equal ${i + 1}',
+          );
+        }
       }
 
       addTearDown(() => channel.shutdown());
@@ -512,11 +535,14 @@ void main() {
       final readyCount = channel.states
           .where((s) => s == ConnectionState.ready)
           .length;
+      // 30 cycles with connection aging should yield close to 30
+      // ready transitions. 25 is a safe floor — occasional timer
+      // jitter on CI may coalesce 1-2 cycles but not more.
       expect(
         readyCount,
-        greaterThanOrEqualTo(22),
+        greaterThanOrEqualTo(25),
         reason:
-            'Should have reconnected at least 22 times '
+            'Should have reconnected at least 25 times '
             'across 30 cycles (got $readyCount)',
       );
 
@@ -702,15 +728,30 @@ void main() {
         await channel.shutdown();
         await serverShutdownFuture;
 
-        // Await all RPCs so they settle (succeed or error). Without this,
-        // the test would leak uncompleted futures and the analyzer flags
-        // rpcFutures as unused.
-        await Future.wait(rpcFutures).timeout(
+        // Await all RPCs and assert settlement types explicitly.
+        final settled = await Future.wait(rpcFutures).timeout(
           const Duration(seconds: 5),
           onTimeout: () => fail(
             'M4: RPCs did not settle after server kill + channel shutdown',
           ),
         );
+
+        for (var i = 0; i < settled.length; i++) {
+          expect(
+            settled[i],
+            anyOf(isA<int>(), isA<GrpcError>()),
+            reason:
+                'M4 RPC $i must settle to int or GrpcError '
+                '(got ${settled[i].runtimeType})',
+          );
+          if (settled[i] is int) {
+            expect(
+              settled[i],
+              equals((i * 17) % 256),
+              reason: 'M4 RPC $i value',
+            );
+          }
+        }
       },
     );
 
@@ -912,6 +953,10 @@ void main() {
       final readyCount = channel.states
           .where((s) => s == ConnectionState.ready)
           .length;
+      // Soft: after server kill + reconnect, exactly 2 ready
+      // transitions is the structural minimum (original + one
+      // reconnect). Nondeterministic server-side teardown timing
+      // may cause extra reconnects.
       expect(
         readyCount,
         greaterThanOrEqualTo(2),

@@ -21,8 +21,26 @@ import 'package:ffi/ffi.dart';
 import 'package:http2/transport.dart';
 import 'package:win32/win32.dart';
 
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/named_pipe_io.dart';
 import 'client_transport_connector.dart';
+
+// WaitNamedPipeW is not exported by the win32 package (v5.15),
+// so we bind it directly from kernel32.dll.
+typedef _WaitNamedPipeWNative = Int32 Function(Pointer<Utf16> lpNamedPipeName, Uint32 nTimeOut);
+typedef _WaitNamedPipeWDart = int Function(Pointer<Utf16> lpNamedPipeName, int nTimeOut);
+
+/// Calls the Win32 `WaitNamedPipeW` function.
+///
+/// Returns non-zero if an instance of the pipe is available before the
+/// timeout elapses, or zero on failure (check `GetLastError()`).
+_WaitNamedPipeWDart? _waitNamedPipeFn;
+int _waitNamedPipe(Pointer<Utf16> pipeName, int timeoutMs) {
+  final waitFn = _waitNamedPipeFn ??= DynamicLibrary.open(
+    'kernel32.dll',
+  ).lookupFunction<_WaitNamedPipeWNative, _WaitNamedPipeWDart>('WaitNamedPipeW');
+  return waitFn(pipeName, timeoutMs);
+}
 
 /// Maximum number of retry attempts when the pipe is busy.
 ///
@@ -62,6 +80,12 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   /// The name of the pipe (without the `\\.\pipe\` prefix).
   final String pipeName;
 
+  /// Maximum time to wait for pipe connection establishment.
+  ///
+  /// Mirrors [ChannelOptions.connectTimeout] semantics used by socket
+  /// connectors. `null` means no additional connector-level timeout.
+  final Duration? connectTimeout;
+
   /// Completer that signals when the active connection is closed.
   ///
   /// This is reset at the start of every [connect] call so each logical
@@ -78,7 +102,7 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   ///
   /// [pipeName] is the name of the pipe to connect to.
   /// The full path will be `\\.\pipe\{pipeName}`.
-  NamedPipeTransportConnector(this.pipeName);
+  NamedPipeTransportConnector(this.pipeName, {this.connectTimeout});
 
   /// The full Windows path for the named pipe.
   String get pipePath => namedPipePath(pipeName);
@@ -196,7 +220,43 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   ///
   /// All other errors (including ERROR_FILE_NOT_FOUND) fail immediately.
   Future<int> _openPipeWithRetry(Pointer<Utf16> pipePathPtr) async {
+    final startedAt = DateTime.now();
+
+    bool timedOut() {
+      final timeout = connectTimeout;
+      if (timeout == null) return false;
+      return DateTime.now().difference(startedAt) >= timeout;
+    }
+
+    Duration? remainingTimeout() {
+      final timeout = connectTimeout;
+      if (timeout == null) return null;
+      return timeout - DateTime.now().difference(startedAt);
+    }
+
+    NamedPipeException timeoutException() => NamedPipeException(
+      'Failed to connect to named pipe "$pipePath": '
+      'timed out after ${connectTimeout!.inMilliseconds}ms',
+      1460, // ERROR_TIMEOUT
+    );
+
     for (var attempt = 0; attempt <= _kMaxPipeBusyRetries; attempt++) {
+      if (timedOut()) {
+        throw timeoutException();
+      }
+
+      final remaining = remainingTimeout();
+      if (remaining != null) {
+        if (remaining <= Duration.zero) {
+          throw timeoutException();
+        }
+        final waitMs = remaining.inMilliseconds.clamp(1, 0x7fffffff).toInt();
+        final waitResult = _waitNamedPipe(pipePathPtr, waitMs);
+        if (waitResult == 0 && GetLastError() == ERROR_SEM_TIMEOUT) {
+          throw timeoutException();
+        }
+      }
+
       final hPipe = CreateFile(
         pipePathPtr,
         GENERIC_READ | GENERIC_WRITE,
@@ -216,7 +276,16 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
       // Only retry on ERROR_PIPE_BUSY — all pipe instances are temporarily
       // in use. This is a normal transient condition under load.
       if (error == ERROR_PIPE_BUSY && attempt < _kMaxPipeBusyRetries) {
-        await Future<void>.delayed(_pipeBusyRetryDelay(attempt));
+        final retryDelay = _pipeBusyRetryDelay(attempt);
+        final remaining = remainingTimeout();
+        if (remaining == null) {
+          await Future<void>.delayed(retryDelay);
+        } else {
+          if (remaining <= Duration.zero) {
+            throw timeoutException();
+          }
+          await Future<void>.delayed(remaining < retryDelay ? remaining : retryDelay);
+        }
         continue;
       }
 
@@ -275,7 +344,6 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 /// Provides [Stream] and [StreamSink] interfaces for HTTP/2 framing.
 class _NamedPipeStream {
   static const Duration _deferredCloseTimeout = Duration(seconds: 5);
-  static const int _maxNoDataRetries = 500;
 
   final int _handle;
   final Completer<void> _doneCompleter;
@@ -344,7 +412,7 @@ class _NamedPipeStream {
     final buffer = calloc<Uint8>(kNamedPipeBufferSize);
     final bytesRead = calloc<DWORD>();
     final peekAvail = calloc<DWORD>();
-    var noDataRetries = 0;
+    final noDataRetry = NoDataRetryState();
 
     try {
       while (!_isClosed && !_incomingController.isClosed) {
@@ -375,8 +443,7 @@ class _NamedPipeStream {
           // PeekNamedPipe failed — pipe is closed or broken.
           final error = GetLastError();
           if (error == ERROR_NO_DATA) {
-            noDataRetries++;
-            if (noDataRetries <= _maxNoDataRetries) {
+            if (noDataRetry.recordNoData() == NoDataRetryResult.retry) {
               await Future<void>.delayed(const Duration(milliseconds: 1));
               continue;
             }
@@ -391,7 +458,7 @@ class _NamedPipeStream {
           }
           break;
         }
-        noDataRetries = 0;
+        noDataRetry.reset();
 
         if (peekAvail.value == 0) {
           // No data available yet. Yield to the event loop so HTTP/2
@@ -409,8 +476,7 @@ class _NamedPipeStream {
         if (success == 0) {
           final error = GetLastError();
           if (error == ERROR_NO_DATA) {
-            noDataRetries++;
-            if (noDataRetries <= _maxNoDataRetries) {
+            if (noDataRetry.recordNoData() == NoDataRetryResult.retry) {
               await Future<void>.delayed(const Duration(milliseconds: 1));
               continue;
             }
@@ -422,7 +488,7 @@ class _NamedPipeStream {
           }
           break;
         }
-        noDataRetries = 0;
+        noDataRetry.reset();
 
         final count = bytesRead.value;
         if (count > 0) {
@@ -521,8 +587,14 @@ class _NamedPipeStream {
 
     try {
       _outgoingController.close();
-    } catch (_) {
-      // Defensive: addStream() may still be unwinding.
+    } catch (e) {
+      logGrpcEvent(
+        '[gRPC] named pipe close error: $e',
+        component: 'NamedPipeTransport',
+        event: 'close_error',
+        context: '_finalizeClose',
+        error: e,
+      );
     }
 
     if (!_doneCompleter.isCompleted) {

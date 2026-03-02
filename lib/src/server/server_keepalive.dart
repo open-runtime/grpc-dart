@@ -15,6 +15,8 @@
 
 import 'package:clock/clock.dart';
 
+import '../shared/logging/logging.dart' show logGrpcEvent;
+
 /// Options to configure a gRPC server for receiving keepalive signals.
 class ServerKeepAliveOptions {
   /// The maximum number of bad pings that the server will tolerate before
@@ -66,7 +68,15 @@ class ServerKeepAlive {
     // events.
     if (_enforcesMaxBadPings) {
       pingNotifier.listen((_) {
-        _onPingReceived().catchError((_) {});
+        _onPingReceived().catchError((e) {
+          logGrpcEvent(
+            '[gRPC] Ping processing error: $e',
+            component: 'ServerKeepAlive',
+            event: 'ping_processing_error',
+            context: 'handle',
+            error: e,
+          );
+        });
       });
       dataNotifier.listen((_) => _onDataReceived());
     }

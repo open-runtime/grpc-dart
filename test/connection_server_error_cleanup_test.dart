@@ -210,13 +210,13 @@ void main() {
       // Allow any remaining microtasks to flush.
       await Future.delayed(Duration.zero);
 
-      // The Error should have been forwarded to the zone.
+      // Exactly 1 StateError emitted -> exactly 1 error forwarded to zone.
       expect(
         errorsCaught,
-        isNotEmpty,
+        hasLength(1),
         reason:
-            'Errors should be forwarded to '
-            'Zone.handleUncaughtError',
+            'The single StateError must be forwarded to '
+            'Zone.handleUncaughtError exactly once',
       );
 
       // H4 expectation: cleanup still happens.

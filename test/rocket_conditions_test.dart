@@ -491,11 +491,12 @@ void main() {
             ),
           );
 
-      // Verify at least some first items arrived.
+      // Soft: 30 streams race shutdown; at least 1 must have
+      // received its first item to prove the server was live.
       final successfulFirst = firstItems.whereType<int>().length;
       expect(
         successfulFirst,
-        greaterThan(0),
+        greaterThanOrEqualTo(1),
         reason:
             'At least one stream should have '
             'received its first item before '

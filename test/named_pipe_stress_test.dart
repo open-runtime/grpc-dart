@@ -27,6 +27,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
+import 'package:grpc/src/shared/named_pipe_io.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
@@ -173,10 +174,11 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      // Request a long server stream (1000 items, ~1ms each = ~1 second).
-      // Using 1000 instead of 100 makes it impossible for the stream to
-      // complete before the server is shut down, eliminating flakiness on
-      // fast machines.
+      // Request a server stream of 255 items (~1ms each = ~255ms).
+      // 255 is the maximum valid single-byte value — the EchoClient
+      // serializer puts the int into a single-element byte list
+      // `[value]`, so values >255 are silently truncated via
+      // `value & 0xFF` (e.g., 1000 & 0xFF = 232).
       //
       // We use a Completer to synchronize: wait until at least one item
       // has been received (proving the stream is active) before shutting
@@ -187,7 +189,7 @@ void main() {
       final unexpectedErrors = <Object>[];
 
       final subscription = client
-          .serverStream(1000)
+          .serverStream(255)
           .listen(
             (value) {
               results.add(value);
@@ -213,25 +215,25 @@ void main() {
       // Cancel the client subscription to prevent dangling listeners.
       await subscription.cancel();
 
-      // The stream should have been cut short — 1000 items at 1ms each
-      // would take about 1 second, but we shut down almost immediately after
+      // The stream should have been cut short — 255 items at 1ms each
+      // would take about 255ms, but we shut down almost immediately after
       // the first item. Verify we got at least 1 (confirmed by
-      // receivedFirst) and fewer than 1000 (confirmed by early shutdown).
+      // receivedFirst) and fewer than 255 (confirmed by early shutdown).
       expect(
         unexpectedErrors,
         isEmpty,
         reason: 'Only GrpcError is expected during forced mid-stream shutdown',
       );
+      // Soft: receivedFirst.future guarantees >= 1, but the exact
+      // count depends on shutdown-vs-stream-item race timing.
       expect(
         results.length,
-        greaterThan(0),
-        reason:
-            'Should have received at least 1 item before '
-            'shutdown',
+        greaterThanOrEqualTo(1),
+        reason: 'Should have received at least 1 item before shutdown',
       );
       expect(
         results.length,
-        lessThan(1000),
+        lessThan(255),
         reason: 'Stream should be truncated by server shutdown',
       );
 
@@ -1106,6 +1108,9 @@ void main() {
       stopwatch.stop();
 
       expect(result, equals(2));
+      // Soft: the 250ms floor matches the explicit delay holding
+      // channel1 open. Real elapsed time is always >= the delay
+      // but may overshoot on slow CI due to timer resolution.
       expect(
         stopwatch.elapsedMilliseconds,
         greaterThanOrEqualTo(250),
@@ -1118,7 +1123,52 @@ void main() {
   });
 
   // ===========================================================================
-  // 6. Cross-Platform Skip Verification
+  // 6. NoData Retry Logic (runs on all platforms — pure logic, no Win32)
+  // ===========================================================================
+
+  group('NoData Retry State', () {
+    test('recordNoData returns retry for first maxRetries calls', () {
+      final state = NoDataRetryState(maxRetries: 3);
+      for (var i = 0; i < 3; i++) {
+        expect(state.recordNoData(), equals(NoDataRetryResult.retry));
+      }
+    });
+
+    test('recordNoData returns exhausted after maxRetries', () {
+      final state = NoDataRetryState(maxRetries: 3);
+      for (var i = 0; i < 3; i++) {
+        state.recordNoData();
+      }
+      expect(state.recordNoData(), equals(NoDataRetryResult.exhausted));
+    });
+
+    test('reset clears count — next recordNoData starts from 0', () {
+      final state = NoDataRetryState(maxRetries: 2);
+      expect(state.recordNoData(), equals(NoDataRetryResult.retry));
+      expect(state.recordNoData(), equals(NoDataRetryResult.retry));
+      expect(state.recordNoData(), equals(NoDataRetryResult.exhausted));
+      state.reset();
+      expect(state.recordNoData(), equals(NoDataRetryResult.retry));
+      expect(state.recordNoData(), equals(NoDataRetryResult.retry));
+      expect(state.recordNoData(), equals(NoDataRetryResult.exhausted));
+    });
+
+    test('default maxRetries is kNamedPipeNoDataMaxRetries', () {
+      final state = NoDataRetryState();
+      for (var i = 0; i < kNamedPipeNoDataMaxRetries; i++) {
+        expect(state.recordNoData(), equals(NoDataRetryResult.retry));
+      }
+      expect(state.recordNoData(), equals(NoDataRetryResult.exhausted));
+    });
+
+    test('maxRetries of 0 exhausts immediately', () {
+      final state = NoDataRetryState(maxRetries: 0);
+      expect(state.recordNoData(), equals(NoDataRetryResult.exhausted));
+    });
+  });
+
+  // ===========================================================================
+  // 7. Cross-Platform Skip Verification
   // ===========================================================================
 
   group('Named Pipe Cross-Platform', () {

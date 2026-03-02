@@ -731,8 +731,10 @@ void main() {
         );
         final client1 = EchoClient(channel1);
 
-        // Request 500 items (~5 seconds of streaming).
-        final streamFuture = settleRpc(client1.serverStream(500).toList());
+        // Request 255 items (~255ms of streaming). 255 is the maximum
+        // valid single-byte value — the EchoClient serializer encodes
+        // int as `[value]`, so values >255 are truncated via & 0xFF.
+        final streamFuture = settleRpc(client1.serverStream(255).toList());
 
         // Let some items flow.
         await Future.delayed(const Duration(milliseconds: 50));
@@ -1328,6 +1330,611 @@ void main() {
         // Clean up — use addTearDown above instead of explicit shutdown
         // to avoid double-shutdown issues.
         log('Test complete. Total time: ${sw.elapsedMilliseconds}ms');
+      },
+    );
+  });
+
+  // ===========================================================================
+  // 8. ERROR_NO_DATA (Win32 232) Retry Coverage
+  // ===========================================================================
+  //
+  // Win32 ERROR_NO_DATA (code 232) occurs when PeekNamedPipe or ReadFile
+  // is called on a pipe whose peer is in a transitional closing state —
+  // the handle is still valid, but no data is available because the peer
+  // has initiated disconnect without completing it. This is distinct from
+  // ERROR_BROKEN_PIPE (109), which indicates the peer has fully closed.
+  //
+  // In production, ERROR_NO_DATA manifests during:
+  //   (a) Server shutdown while client read loops are polling PeekNamedPipe
+  //   (b) Client disconnect while server read loops are polling PeekNamedPipe
+  //   (c) Rapid connect/disconnect cycling that maximizes time in the
+  //       transitional state
+  //
+  // The retry logic (NoDataRetryState, 500 retries * 1ms = 500ms window)
+  // exists in both:
+  //   - _ServerPipeStream._readLoop (server-side)
+  //   - _NamedPipeStream._readLoop  (client-side)
+  //
+  // These tests exercise the production paths where ERROR_NO_DATA is most
+  // likely. They cannot directly inject the error (Win32 FFI cannot be
+  // mocked), but they create the exact conditions that produce it: rapid
+  // shutdown/disconnect during active data transfer.
+  //
+  // Unit tests for the NoDataRetryState state machine itself are in
+  // named_pipe_stress_test.dart (group 'NoData Retry State').
+
+  group('ERROR_NO_DATA Retry Coverage', () {
+    // -----------------------------------------------------------------------
+    // Test 15: Server shutdown during sustained client read —
+    //          ERROR_NO_DATA on client-side PeekNamedPipe
+    // -----------------------------------------------------------------------
+    // PRODUCTION SCENARIO: The server is streaming a large response. The
+    // server shuts down (DisconnectNamedPipe + CloseHandle) while the
+    // client's _readLoop is between PeekNamedPipe polls. The client sees
+    // ERROR_NO_DATA on the next PeekNamedPipe call because the pipe is
+    // in the transitional "disconnecting but not yet broken" state. The
+    // retry loop must either recover (if data becomes available) or
+    // cleanly terminate (when the pipe transitions to BROKEN_PIPE).
+    //
+    // VERIFICATION: The client-side stream terminates without hanging,
+    // data received before shutdown is intact (no corruption), and the
+    // client channel shuts down cleanly.
+    testNamedPipe(
+      'server shutdown during sustained read triggers clean '
+      'client-side read loop termination',
+      timeout: const Timeout(Duration(seconds: 60)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+
+        // Request a server stream of 255 items (~255ms at 1ms each).
+        // 255 is the maximum valid single-byte value — the EchoClient
+        // serializer encodes int as `[value]`, so values >255 are
+        // truncated via & 0xFF. We shut down the server before the
+        // stream completes, forcing the client read loop through the
+        // ERROR_NO_DATA -> ERROR_BROKEN_PIPE transition.
+        final received = <int>[];
+        final streamDone = Completer<void>();
+        final unexpectedErrors = <Object>[];
+
+        final subscription = client
+            .serverStream(255)
+            .listen(
+              (value) {
+                received.add(value);
+              },
+              onError: (Object e) {
+                // GrpcError is expected when server shuts down mid-stream.
+                if (e is! GrpcError) {
+                  unexpectedErrors.add(e);
+                }
+                if (!streamDone.isCompleted) streamDone.complete();
+              },
+              onDone: () {
+                if (!streamDone.isCompleted) streamDone.complete();
+              },
+            );
+
+        // Wait until we have received some items, proving the stream
+        // is active and the pipe is in steady-state data transfer.
+        final receiveDeadline = DateTime.now().add(const Duration(seconds: 5));
+        while (DateTime.now().isBefore(receiveDeadline)) {
+          if (received.length >= 10) break;
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        if (received.length < 10) {
+          fail(
+            'Stream did not receive 10 items within 5s '
+            '(got ${received.length}) — stream may not be active',
+          );
+        }
+
+        // Now shut down the server. This calls DisconnectNamedPipe on
+        // all active streams, which is the primary trigger for
+        // ERROR_NO_DATA on the client side.
+        await server.shutdown();
+
+        // The client stream must terminate (not hang). The read
+        // loop's ERROR_NO_DATA retry logic should eventually see the
+        // pipe transition to BROKEN_PIPE and exit cleanly.
+        await streamDone.future.timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            fail(
+              'Client stream did not terminate after server '
+              'shutdown (received ${received.length} items). '
+              'The client-side read loop may be stuck in the '
+              'ERROR_NO_DATA retry path.',
+            );
+          },
+        );
+
+        await subscription.cancel();
+
+        // Data integrity: items received before shutdown must be
+        // correct. Server-stream values are 0, 1, 2, ... sequential.
+        for (var i = 0; i < received.length; i++) {
+          expect(
+            received[i],
+            equals(i),
+            reason:
+                'Data corruption at index $i: ERROR_NO_DATA retry '
+                'may have caused partial read reassembly error',
+          );
+        }
+
+        // Soft: exact count depends on shutdown vs. delivery race;
+        // at least 1 must arrive to prove the stream was active.
+        expect(
+          received.length,
+          greaterThanOrEqualTo(1),
+          reason: 'Should have received items before shutdown',
+        );
+        expect(
+          received.length,
+          lessThan(255),
+          reason: 'Stream should be truncated by server shutdown',
+        );
+
+        // No unexpected (non-gRPC) errors from the transport layer.
+        expect(
+          unexpectedErrors,
+          isEmpty,
+          reason:
+              'ERROR_NO_DATA must be handled by retry logic, not '
+              'propagated as raw transport errors',
+        );
+
+        await channel.shutdown();
+      },
+    );
+
+    // -----------------------------------------------------------------------
+    // Test 16: Client abrupt disconnect during server read —
+    //          ERROR_NO_DATA on server-side PeekNamedPipe
+    // -----------------------------------------------------------------------
+    // PRODUCTION SCENARIO: A client is sending a bidi stream. The client
+    // abruptly terminates (channel.terminate) while the server's
+    // _ServerPipeStream._readLoop is polling PeekNamedPipe. The server
+    // sees ERROR_NO_DATA because the client's handle closure puts the
+    // pipe in the transitional state. The server's retry loop must
+    // handle this and eventually exit cleanly.
+    //
+    // VERIFICATION: The server remains healthy after the abrupt client
+    // disconnect (can serve new clients). activePipeStreamCount returns
+    // to 0 (no leaked streams). No unhandled async exceptions.
+    testNamedPipe(
+      'client abrupt disconnect during bidi stream triggers clean '
+      'server-side read loop termination',
+      timeout: const Timeout(Duration(seconds: 60)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        final client = EchoClient(channel);
+
+        // Open a bidi stream and send data to establish active I/O.
+        final inputController = StreamController<int>();
+        final responseStream = client.bidiStream(inputController.stream);
+
+        // Collect responses to keep the stream alive.
+        final received = <int>[];
+        final streamDone = Completer<void>();
+        final unexpectedErrors = <Object>[];
+        responseStream.listen(
+          received.add,
+          onError: (Object e) {
+            if (e is GrpcError) {
+              // Expected when client terminates mid-stream.
+            } else {
+              unexpectedErrors.add(e);
+            }
+            if (!streamDone.isCompleted) streamDone.complete();
+          },
+          onDone: () {
+            if (!streamDone.isCompleted) streamDone.complete();
+          },
+          cancelOnError: false,
+        );
+
+        // Send enough data to establish a steady-state bidi exchange.
+        // Values ≤127 so doubled results fit in single byte.
+        for (var i = 0; i < 50; i++) {
+          inputController.add(i % 128);
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+
+        // Soft: at least some responses must arrive to prove the
+        // bidi stream was active before the disconnect test.
+        expect(
+          received.length,
+          greaterThanOrEqualTo(1),
+          reason: 'Bidi stream must be active before disconnect test',
+        );
+
+        // Abruptly terminate the client channel. This closes the pipe
+        // handle without graceful shutdown, maximizing the chance of
+        // the server hitting ERROR_NO_DATA.
+        await channel.terminate();
+
+        // Wait for the server's pipe stream to clean up. The server-
+        // side read loop should handle ERROR_NO_DATA retries and
+        // eventually see ERROR_BROKEN_PIPE, then close the stream.
+        final deadline = DateTime.now().add(const Duration(seconds: 10));
+        while (DateTime.now().isBefore(deadline)) {
+          if (server.activePipeStreamCount == 0) break;
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        expect(
+          server.activePipeStreamCount,
+          equals(0),
+          reason:
+              'Server pipe stream was not cleaned up after client '
+              'disconnect. The server-side ERROR_NO_DATA retry loop '
+              'may be stuck or leaked the stream.',
+        );
+
+        expect(
+          unexpectedErrors,
+          isEmpty,
+          reason:
+              'Bidi stream onError must only receive GrpcError when '
+              'client terminates; unexpectedErrors must be empty; '
+              'got $unexpectedErrors',
+        );
+
+        // Verify server is still healthy — can serve a new client.
+        final channel2 = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => channel2.shutdown());
+        final client2 = EchoClient(channel2);
+        final result = await client2.echo(42);
+        expect(result, equals(42));
+
+        await channel2.shutdown();
+        await inputController.close();
+        await server.shutdown();
+      },
+    );
+
+    // -----------------------------------------------------------------------
+    // Test 17: Rapid connect/disconnect cycling — maximizes ERROR_NO_DATA
+    //          window on both server and client sides
+    // -----------------------------------------------------------------------
+    // PRODUCTION SCENARIO: Under load, clients rapidly connect, send a
+    // few RPCs, and disconnect. Each disconnect creates a brief
+    // ERROR_NO_DATA window on the server side. Rapid reconnection means
+    // the server is simultaneously handling ERROR_NO_DATA retries on old
+    // connections and accepting new connections on fresh pipe instances.
+    //
+    // This is the highest-frequency ERROR_NO_DATA production scenario:
+    // short-lived connections with rapid turnover.
+    //
+    // VERIFICATION: All RPCs succeed or fail with expected errors.
+    // Server remains healthy throughout. No resource leaks
+    // (activePipeStreamCount returns to 0 after all cycles). No hangs.
+    testNamedPipe(
+      'rapid connect/disconnect cycling exercises ERROR_NO_DATA '
+      'retry on both sides',
+      timeout: const Timeout(Duration(seconds: 60)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        // 12 rapid cycles. Each cycle: connect, fire RPC, terminate
+        // (not graceful shutdown — terminate is harsher, more likely
+        // to produce ERROR_NO_DATA on server side).
+        for (var cycle = 0; cycle < 12; cycle++) {
+          final channel = NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          );
+          final client = EchoClient(channel);
+
+          // Fire RPC and settle (allow error).
+          final result = await settleRpc(client.echo(cycle % 256)).timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => fail(
+              'RPC hung on rapid cycle $cycle — possible '
+              'ERROR_NO_DATA retry deadlock',
+            ),
+          );
+
+          // RPC either succeeded or failed with expected error.
+          // StateError not included: rapid cycling uses terminate();
+          // failures are GrpcError, NamedPipeException, or TimeoutException.
+          expect(
+            result,
+            anyOf(
+              equals(cycle % 256),
+              isA<GrpcError>(),
+              isA<NamedPipeException>(),
+              isA<TimeoutException>(),
+            ),
+            reason:
+                'Unexpected error type on rapid cycle '
+                '$cycle: $result',
+          );
+
+          // Abrupt terminate (not graceful shutdown) to maximize
+          // ERROR_NO_DATA probability on the server side.
+          await channel.terminate();
+
+          // Minimal delay — just enough to avoid overwhelming the
+          // accept loop, but short enough to keep the ERROR_NO_DATA
+          // window open.
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+
+        // After all cycles, wait for server to clean up all streams.
+        // This verifies the server's ERROR_NO_DATA retry logic didn't
+        // leak any pipe streams.
+        final deadline = DateTime.now().add(const Duration(seconds: 10));
+        while (DateTime.now().isBefore(deadline)) {
+          if (server.activePipeStreamCount == 0) break;
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        expect(
+          server.activePipeStreamCount,
+          equals(0),
+          reason:
+              'Server leaked pipe streams after rapid connect/'
+              'disconnect cycling. ERROR_NO_DATA retry logic may '
+              'not be cleaning up properly.',
+        );
+
+        // Final health check: server can still serve new clients.
+        final verifyChannel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => verifyChannel.shutdown());
+        final verifyClient = EchoClient(verifyChannel);
+        expect(await verifyClient.echo(99), equals(99));
+
+        await verifyChannel.shutdown();
+        await server.shutdown();
+      },
+    );
+
+    // -----------------------------------------------------------------------
+    // Test 18: Overlapping client disconnects — concurrent ERROR_NO_DATA
+    //          on multiple server-side read loops
+    // -----------------------------------------------------------------------
+    // PRODUCTION SCENARIO: Multiple clients are connected simultaneously.
+    // All clients disconnect at nearly the same time (e.g., load balancer
+    // drains connections). Each client disconnect triggers ERROR_NO_DATA
+    // on the server's read loop for that connection. All retry loops run
+    // concurrently on the server's main isolate event loop, competing
+    // for event loop time.
+    //
+    // This tests that concurrent ERROR_NO_DATA retry loops don't starve
+    // each other or the event loop, causing timeouts or resource leaks.
+    //
+    // VERIFICATION: All server pipe streams clean up. Server remains
+    // healthy for new clients.
+    testNamedPipe(
+      'concurrent client disconnects trigger parallel '
+      'ERROR_NO_DATA retry on server',
+      timeout: const Timeout(Duration(seconds: 60)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        // Connect 5 clients and verify they all work.
+        final channels = <NamedPipeClientChannel>[];
+        for (var i = 0; i < 5; i++) {
+          final channel = NamedPipeClientChannel(
+            pipeName,
+            options: const NamedPipeChannelOptions(),
+          );
+          channels.add(channel);
+          final client = EchoClient(channel);
+          expect(
+            await client.echo(i),
+            equals(i),
+            reason: 'Channel $i warmup failed',
+          );
+        }
+
+        // Verify server has 5 active pipe streams.
+        expect(
+          server.activePipeStreamCount,
+          equals(5),
+          reason: 'Expected 5 active streams after warmup',
+        );
+
+        // Terminate all 5 clients nearly simultaneously. Each
+        // terminate() triggers abrupt handle closure, creating
+        // concurrent ERROR_NO_DATA conditions on the server.
+        await Future.wait([for (final ch in channels) ch.terminate()]);
+
+        // Wait for all server pipe streams to clean up.
+        final deadline = DateTime.now().add(const Duration(seconds: 15));
+        while (DateTime.now().isBefore(deadline)) {
+          if (server.activePipeStreamCount == 0) break;
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        expect(
+          server.activePipeStreamCount,
+          equals(0),
+          reason:
+              'Server leaked pipe streams after concurrent '
+              'client disconnects. Concurrent ERROR_NO_DATA retry '
+              'loops may be starving each other.',
+        );
+
+        // Server health check: can still accept and serve new
+        // clients.
+        final verifyChannel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => verifyChannel.shutdown());
+        final verifyClient = EchoClient(verifyChannel);
+        expect(await verifyClient.echo(77), equals(77));
+
+        await verifyChannel.shutdown();
+        await server.shutdown();
+      },
+    );
+
+    // -----------------------------------------------------------------------
+    // Test 19: Server shutdown during high-throughput stream — exercises
+    //          ERROR_NO_DATA at maximum pipe buffer pressure
+    // -----------------------------------------------------------------------
+    // PRODUCTION SCENARIO: A server is streaming large payloads that
+    // saturate the 64KB pipe buffer. Server shutdown during this state
+    // means DisconnectNamedPipe is called while the pipe buffer still
+    // contains unread data. The client's read loop encounters
+    // ERROR_NO_DATA because the pipe transitions through: data available
+    // -> disconnecting (NO_DATA) -> broken (BROKEN_PIPE).
+    //
+    // This is the highest-risk ERROR_NO_DATA scenario because the retry
+    // loop must handle the transition correctly despite the pipe buffer
+    // being full of data that will never be fully delivered.
+    //
+    // VERIFICATION: Client stream terminates cleanly (no hang). Data
+    // received before shutdown is intact. Channel shuts down without
+    // resource leaks.
+    testNamedPipe(
+      'server shutdown during buffer-saturating stream exercises '
+      'ERROR_NO_DATA at pipe buffer boundary',
+      timeout: const Timeout(Duration(seconds: 60)),
+      (pipeName) async {
+        final server = NamedPipeServer.create(services: [EchoService()]);
+        await server.serve(pipeName: pipeName);
+        addTearDown(() => server.shutdown());
+
+        final channel = NamedPipeClientChannel(
+          pipeName,
+          options: const NamedPipeChannelOptions(),
+        );
+        addTearDown(() => channel.shutdown());
+        final client = EchoClient(channel);
+
+        // Request 500 chunks of 1KB each (500KB total — well exceeds
+        // the 64KB pipe buffer). This saturates the pipe buffer,
+        // ensuring there is pending data when we shut down.
+        final request = encodeStreamBytesRequest(500, 1024);
+        final received = <List<int>>[];
+        final streamDone = Completer<void>();
+        final unexpectedErrors = <Object>[];
+
+        final subscription = client
+            .serverStreamBytes(request)
+            .listen(
+              (chunk) {
+                received.add(chunk);
+              },
+              onError: (Object e) {
+                if (e is! GrpcError) {
+                  unexpectedErrors.add(e);
+                }
+                if (!streamDone.isCompleted) {
+                  streamDone.complete();
+                }
+              },
+              onDone: () {
+                if (!streamDone.isCompleted) {
+                  streamDone.complete();
+                }
+              },
+            );
+
+        // Wait until we've received enough chunks to prove the pipe
+        // buffer has been saturated at least once (> 64 chunks of
+        // 1KB = 64KB = buffer size).
+        final bufferDeadline = DateTime.now().add(const Duration(seconds: 10));
+        while (DateTime.now().isBefore(bufferDeadline)) {
+          if (received.length >= 64) break;
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        if (received.length < 64) {
+          fail(
+            'Stream did not receive 64 chunks within 10s '
+            '(got ${received.length}) — pipe buffer may not be saturated',
+          );
+        }
+
+        // Shut down the server while the pipe buffer is full of
+        // pending data. DisconnectNamedPipe discards unread data,
+        // creating the ERROR_NO_DATA -> ERROR_BROKEN_PIPE
+        // transition.
+        await server.shutdown();
+
+        // Client stream must terminate — not hang in ERROR_NO_DATA
+        // retry loop.
+        await streamDone.future.timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            fail(
+              'Client stream did not terminate after server '
+              'shutdown during buffer-saturating transfer '
+              '(received ${received.length} chunks). '
+              'ERROR_NO_DATA retry loop may be stuck.',
+            );
+          },
+        );
+
+        await subscription.cancel();
+
+        // Data integrity on received chunks.
+        for (var i = 0; i < received.length; i++) {
+          expect(
+            received[i].length,
+            equals(1024),
+            reason: 'Chunk $i has wrong size',
+          );
+          // Verify fill pattern: byte j in chunk i = (i+j) & 0xFF.
+          for (var j = 0; j < received[i].length; j++) {
+            expect(
+              received[i][j],
+              equals((i + j) & 0xFF),
+              reason: 'Chunk $i byte $j corrupted',
+            );
+          }
+        }
+
+        // Soft: shutdown races chunk delivery; at least 1 chunk
+        // must arrive to prove the stream was active.
+        expect(
+          received.length,
+          greaterThanOrEqualTo(1),
+          reason: 'Should have received chunks before shutdown',
+        );
+        expect(
+          received.length,
+          lessThan(500),
+          reason: 'Stream should be truncated by server shutdown',
+        );
+
+        expect(
+          unexpectedErrors,
+          isEmpty,
+          reason:
+              'ERROR_NO_DATA must be handled internally by the '
+              'retry loop, not propagated as transport errors',
+        );
+
+        await channel.shutdown();
       },
     );
   });

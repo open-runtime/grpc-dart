@@ -654,11 +654,12 @@ void main() {
       final results = streamResult is List<int> ? streamResult : collected;
       log('stream done, received ${results.length} items total');
 
-      // We should have received some (possibly all) doubled values.
-      // At least 1 must arrive, and no more than 20 (total sent).
+      // Soft: shutdown races the bidi stream; the exact count is
+      // nondeterministic but at least 1 must arrive, no more
+      // than 20 (total sent).
       expect(
         results.length,
-        greaterThan(0),
+        greaterThanOrEqualTo(1),
         reason: 'Should have received at least 1 echoed item',
       );
       expect(

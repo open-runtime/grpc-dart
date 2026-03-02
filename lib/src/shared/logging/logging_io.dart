@@ -123,9 +123,16 @@ void logGrpcEvent(
   required String context,
   Object? error,
 }) {
-  logGrpcError(message);
-  final logger = grpcEventLogger;
-  if (logger != null) {
-    logger(GrpcLogEvent(component: component, event: event, context: context, formattedMessage: message, error: error));
+  try {
+    logGrpcError(message);
+    final logger = grpcEventLogger;
+    if (logger != null) {
+      logger(
+        GrpcLogEvent(component: component, event: event, context: context, formattedMessage: message, error: error),
+      );
+    }
+  } catch (_) {
+    // Logging must never throw — swallow to protect callers in
+    // catch blocks and Timer callbacks.
   }
 }

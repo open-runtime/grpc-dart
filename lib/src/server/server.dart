@@ -93,6 +93,14 @@ class ConnectionServer {
 
   final _connections = <ServerTransportConnection>[];
 
+  /// Tracks the `incomingStreams` subscription for each connection so
+  /// [shutdownActiveConnections] can cancel it immediately. Cancelling
+  /// this subscription stops the server from processing any further
+  /// HTTP/2 streams (and thus new data frames) from clients, which
+  /// prevents `connection.finish()` from blocking when a client is
+  /// still actively sending data.
+  final _incomingSubscriptions = <ServerTransportConnection, StreamSubscription<ServerTransportStream>>{};
+
   /// Create a server for the given [services].
   ConnectionServer(
     List<Service> services, [
@@ -128,7 +136,7 @@ class ConnectionServer {
       pingNotifier: connection.onPingReceived,
       dataNotifier: onDataReceivedController.stream,
     ).handle();
-    connection.incomingStreams.listen(
+    final incomingSub = connection.incomingStreams.listen(
       (stream) {
         // Guard: onError may have already cleaned up this connection.
         // Without this check, handlers[connection]! throws a null check
@@ -168,6 +176,7 @@ class ConnectionServer {
         }
         _connections.remove(connection);
         handlers.remove(connection);
+        _incomingSubscriptions.remove(connection);
         onDataReceivedController.close();
       },
       onDone: () async {
@@ -182,32 +191,44 @@ class ConnectionServer {
         }
         _connections.remove(connection);
         handlers.remove(connection);
+        _incomingSubscriptions.remove(connection);
         await onDataReceivedController.close();
       },
     );
+    _incomingSubscriptions[connection] = incomingSub;
   }
 
   /// Cancels all active gRPC handlers and finishes all HTTP/2 connections.
   ///
   /// This is the core cleanup logic shared by [Server.shutdown] and
-  /// [NamedPipeServer.shutdown]. Handlers must be cancelled BEFORE
-  /// connections are finished to avoid deadlock: `connection.finish()`
-  /// waits for all HTTP/2 streams to close, but active response streams
-  /// (e.g. server-side streaming RPCs) won't close on their own.
-  /// Cancelling handlers first terminates in-flight streams so
-  /// `connection.finish()` can complete.
+  /// [NamedPipeServer.shutdown]. The shutdown sequence is:
   ///
-  /// A yield (`Future.delayed(Duration.zero)`) is inserted between
-  /// cancelling handlers and finishing connections. This gives the
-  /// http2 package's `ConnectionMessageQueueOut` at least one event-loop
-  /// turn to flush the RST_STREAM frames enqueued by `handler.cancel()`
-  /// before `connection.finish()` enqueues GOAWAY and potentially closes
-  /// the socket. Without this yield, RST_STREAM frames may be silently
-  /// dropped because `_frameWriter.close()` can fire before the outgoing
-  /// queue has drained. GOAWAY alone does NOT terminate
-  /// already-acknowledged streams on the client side (it only terminates
-  /// streams with IDs > `lastStreamId`), so the RST_STREAM frames are
-  /// the only reliable per-stream termination signal.
+  /// 1. **Cancel incoming stream subscriptions** — stops the server
+  ///    from accepting new HTTP/2 streams and, critically, stops
+  ///    processing new DATA frames from clients. Without this, a
+  ///    client that is continuously sending data can prevent
+  ///    `connection.finish()` from ever completing.
+  ///
+  /// 2. **Cancel all handlers** — terminates in-flight RPCs and
+  ///    enqueues RST_STREAM frames. Handlers must be cancelled
+  ///    BEFORE connections are finished to avoid deadlock:
+  ///    `connection.finish()` waits for all HTTP/2 streams to
+  ///    close, but active response streams (e.g. server-side
+  ///    streaming RPCs) won't close on their own.
+  ///
+  /// 3. **Yield** — gives the http2 `ConnectionMessageQueueOut`
+  ///    at least one event-loop turn to flush RST_STREAM frames
+  ///    before GOAWAY closes the socket. GOAWAY alone does NOT
+  ///    terminate already-acknowledged streams on the client side
+  ///    (only streams with IDs > `lastStreamId`).
+  ///
+  /// 4. **Finish each connection independently** — each connection
+  ///    gets its own bounded shutdown via a [Completer] + [Timer]
+  ///    pattern (NOT `.timeout()` which can fail to fire if the
+  ///    event loop is saturated with incoming data). If `finish()`
+  ///    doesn't complete within the grace period, `terminate()` is
+  ///    called. If `terminate()` itself fails, we log and move on.
+  ///    One hung connection must never block shutdown of others.
   ///
   /// Snapshots [_connections] before iterating because finishing a
   /// connection triggers the `onDone` callback in [serveConnection],
@@ -215,6 +236,32 @@ class ConnectionServer {
   @protected
   Future<void> shutdownActiveConnections() async {
     final activeConnections = List.of(_connections);
+
+    // Step 1: Cancel incoming stream subscriptions in parallel
+    // with a bounded timeout to stop processing new data from
+    // clients immediately.
+    final cancelSubFutures = <Future<void>>[];
+    for (final connection in activeConnections) {
+      final sub = _incomingSubscriptions.remove(connection);
+      if (sub != null) {
+        cancelSubFutures.add(
+          sub.cancel().catchError((e) {
+            logGrpcEvent(
+              '[gRPC] incoming subscription cancel error: $e',
+              component: 'ConnectionServer',
+              event: 'subscription_cancel_error',
+              context: 'shutdownActiveConnections',
+              error: e,
+            );
+          }),
+        );
+      }
+    }
+    if (cancelSubFutures.isNotEmpty) {
+      await Future.wait(cancelSubFutures).timeout(const Duration(seconds: 5), onTimeout: () => <void>[]);
+    }
+
+    // Step 2: Cancel all handlers to terminate in-flight RPCs.
     final cancelFutures = <Future<void>>[];
     for (final connection in activeConnections) {
       final connectionHandlers = handlers[connection];
@@ -229,27 +276,121 @@ class ConnectionServer {
     // Wait for all response subscription cancellations to complete.
     // async* generators (e.g. server-streaming RPCs) need event loop
     // turns to process the cancel signal and stop yielding values.
-    // Without this, connection.finish() can block indefinitely because
-    // HTTP/2 streams remain open while generators are still producing.
-    await Future.wait(cancelFutures);
+    // Without this, connection.finish() can block indefinitely
+    // because HTTP/2 streams remain open while generators are
+    // still producing.
+    await Future.wait(cancelFutures).timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        logGrpcEvent(
+          '[gRPC] handler.onResponseCancelDone timeout after 5s '
+          '(event loop saturated?)',
+          component: 'ConnectionServer',
+          event: 'response_cancel_timeout',
+          context: 'shutdownActiveConnections',
+        );
+        return <void>[];
+      },
+    );
 
-    // Yield to let the http2 outgoing queue flush RST_STREAM frames
-    // before connection.finish() enqueues GOAWAY and closes the socket.
+    // Step 3: Yield to let the http2 outgoing queue flush
+    // RST_STREAM frames before connection.finish() enqueues
+    // GOAWAY and closes the socket.
     await Future.delayed(Duration.zero);
 
-    // Graceful shutdown: finish() sends GOAWAY and waits for all HTTP/2
-    // streams to fully close (both sides). If a client hasn't sent
-    // END_STREAM on its request side, finish() blocks indefinitely.
-    // Standard gRPC shutdown pattern: try finish() with a grace period,
-    // then forcefully terminate() remaining connections.
-    await Future.wait([
-      for (final connection in activeConnections)
-        connection.finish().timeout(const Duration(seconds: 5)).catchError((_) {
-          try {
-            connection.terminate();
-          } catch (_) {}
-        }),
-    ]);
+    // Step 4: Finish each connection with an independent,
+    // timer-guaranteed deadline. Using Completer + Timer instead
+    // of Future.timeout() because .timeout() relies on the same
+    // event loop that may be saturated by incoming data frames,
+    // causing the timeout to never fire.
+    await Future.wait([for (final connection in activeConnections) _finishConnection(connection)], eagerError: false);
+  }
+
+  /// Finishes a single connection with a hard timer-based deadline.
+  ///
+  /// Tries `connection.finish()` (graceful GOAWAY + wait for streams
+  /// to close). If that doesn't complete within 5 seconds, forcefully
+  /// calls `connection.terminate()`. If terminate itself fails or times
+  /// out (2s), logs and completes anyway — a broken connection must
+  /// never block the entire server shutdown.
+  ///
+  /// The timeout is truly enforced: we do NOT await [connection.finish]
+  /// directly. Instead we fire it off and return a Future that completes
+  /// when either finish resolves or the timer fires. If finish hangs,
+  /// the timer fires, we call terminate (at most once), wait for it to
+  /// settle or time out (2s), then complete.
+  Future<void> _finishConnection(ServerTransportConnection connection) async {
+    final done = Completer<void>();
+    Timer? deadline;
+    var terminateCalled = false;
+
+    void complete() {
+      deadline?.cancel();
+      if (!done.isCompleted) done.complete();
+    }
+
+    void forceTerminate() {
+      if (terminateCalled) return;
+      terminateCalled = true;
+
+      try {
+        connection
+            .terminate()
+            .timeout(const Duration(seconds: 2))
+            .catchError((e) {
+              if (e is TimeoutException) {
+                logGrpcEvent(
+                  '[gRPC] connection.terminate() timed out after 2s',
+                  component: 'ConnectionServer',
+                  event: 'terminate_timeout',
+                  context: 'shutdownActiveConnections',
+                );
+                return;
+              }
+              logGrpcEvent(
+                '[gRPC] connection.terminate() async error: $e',
+                component: 'ConnectionServer',
+                event: 'terminate_async_error',
+                context: 'shutdownActiveConnections',
+                error: e,
+              );
+            })
+            .whenComplete(complete);
+      } catch (e) {
+        logGrpcEvent(
+          '[gRPC] connection.terminate() failed: $e',
+          component: 'ConnectionServer',
+          event: 'terminate_error',
+          context: 'shutdownActiveConnections',
+          error: e,
+        );
+        complete();
+      }
+    }
+
+    // Start the hard deadline timer BEFORE calling finish().
+    deadline = Timer(const Duration(seconds: 5), forceTerminate);
+
+    // Fire finish() without awaiting — otherwise we block until it
+    // resolves, defeating the timeout. Return done.future so the
+    // caller completes when either finish() or the timer wins.
+    connection
+        .finish()
+        .then((_) {
+          complete();
+        })
+        .catchError((e) {
+          logGrpcEvent(
+            '[gRPC] connection.finish() failed: $e',
+            component: 'ConnectionServer',
+            event: 'finish_error',
+            context: 'shutdownActiveConnections',
+            error: e,
+          );
+          forceTerminate();
+        });
+
+    return done.future;
   }
 
   @visibleForTesting
