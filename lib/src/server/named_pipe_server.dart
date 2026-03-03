@@ -103,6 +103,15 @@ class NamedPipeServer extends ConnectionServer {
   /// Subscription to the receive port.
   StreamSubscription<dynamic>? _receivePortSubscription;
 
+  /// Port for sending a cooperative stop signal to the accept loop isolate.
+  ///
+  /// The accept loop creates a [ReceivePort] and sends its [SendPort] back
+  /// through a bootstrap port. During shutdown, the main isolate sends a
+  /// message through this port to set the accept loop's `shouldStop` flag.
+  /// This ensures the loop exits at the next yield point instead of
+  /// re-entering the blocking [ConnectNamedPipe] FFI call.
+  SendPort? _stopSendPort;
+
   /// The name of the pipe being served.
   String? _pipeName;
 
@@ -177,14 +186,38 @@ class NamedPipeServer extends ConnectionServer {
     _receivePort = ReceivePort();
     _readyCompleter = Completer<void>();
 
+    // Bootstrap port: the accept loop isolate creates a ReceivePort and
+    // sends its SendPort back through this port. We store it in
+    // _stopSendPort to send a cooperative stop signal during shutdown.
+    final stopBootstrapPort = ReceivePort();
+    final stopBootstrapCompleter = Completer<SendPort>();
+    final stopBootstrapSub = stopBootstrapPort.listen((message) {
+      if (message is SendPort && !stopBootstrapCompleter.isCompleted) {
+        stopBootstrapCompleter.complete(message);
+      }
+    });
+
     // Listen for incoming connections from the isolate
     _receivePortSubscription = _receivePort!.listen(_handleIsolateMessage);
 
     // Start the accept loop in a separate isolate
     _serverIsolate = await Isolate.spawn(
       _acceptLoop,
-      _AcceptLoopConfig(pipeName: pipeName, mainPort: _receivePort!.sendPort, maxInstances: maxInstances),
+      _AcceptLoopConfig(
+        pipeName: pipeName,
+        mainPort: _receivePort!.sendPort,
+        maxInstances: maxInstances,
+        stopPort: stopBootstrapPort.sendPort,
+      ),
     );
+
+    // Wait for the isolate to send back its stop SendPort.
+    _stopSendPort = await stopBootstrapCompleter.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => throw StateError('NamedPipeServer timed out waiting for stop port from accept loop.'),
+    );
+    await stopBootstrapSub.cancel();
+    stopBootstrapPort.close();
 
     // Wait for the isolate to confirm the pipe has been created.
     // This guarantees the pipe exists in the Windows namespace and clients
@@ -322,6 +355,17 @@ class NamedPipeServer extends ConnectionServer {
 
     // Step 2.5: Wait for handler/connection shutdown to complete.
     await shutdownConnectionsFuture;
+
+    // Step 2.75: Send cooperative stop signal to the accept loop.
+    //
+    // This sets `shouldStop = true` in the accept loop isolate. After
+    // the dummy client unblocks ConnectNamedPipe (step 4), the loop
+    // checks this flag and exits instead of re-entering ConnectNamedPipe.
+    // Without this, the loop can re-enter the blocking FFI call before
+    // Isolate.kill() fires at a VM safepoint, causing the isolate to
+    // block forever (no more dummy clients) and keeping the VM alive.
+    _stopSendPort?.send(null);
+    _stopSendPort = null;
 
     // Step 3: Register an exit listener BEFORE killing the isolate.
     //
@@ -920,7 +964,23 @@ class _AcceptLoopConfig {
   final SendPort mainPort;
   final int maxInstances;
 
-  _AcceptLoopConfig({required this.pipeName, required this.mainPort, required this.maxInstances});
+  /// Port that the accept loop listens on for a stop signal.
+  ///
+  /// When the main isolate sends ANY message through this port, the accept
+  /// loop sets `_shouldStop = true` and breaks at the next yield point.
+  /// This is necessary because [Isolate.kill] with [Isolate.immediate]
+  /// cannot interrupt a blocking [ConnectNamedPipe] FFI call — the loop
+  /// can re-enter ConnectNamedPipe between the kill and the next VM
+  /// safepoint, causing it to block indefinitely with no dummy client
+  /// to unblock it.
+  final SendPort stopPort;
+
+  _AcceptLoopConfig({
+    required this.pipeName,
+    required this.mainPort,
+    required this.maxInstances,
+    required this.stopPort,
+  });
 }
 
 /// Message indicating the server has created the first pipe instance and is
@@ -968,8 +1028,20 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   var readySent = false;
   var pipeBusyBackoffMs = 1;
 
+  // Listen for stop signal from main isolate. The main isolate sends
+  // a message through this port during shutdown, BEFORE killing the
+  // isolate. This cooperative signal lets the loop exit at the next
+  // yield point instead of re-entering ConnectNamedPipe (which would
+  // block forever with no dummy client to unblock it).
+  var shouldStop = false;
+  final stopPort = ReceivePort();
+  config.stopPort.send(stopPort.sendPort);
+  stopPort.listen((_) {
+    shouldStop = true;
+  });
+
   try {
-    while (true) {
+    while (!shouldStop) {
       // Create a new pipe instance for each connection
       final hPipe = CreateNamedPipe(
         pipePathPtr,
@@ -1022,6 +1094,14 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         continue;
       }
 
+      // Check the stop flag BEFORE sending the handle. During shutdown,
+      // the dummy client unblocks ConnectNamedPipe, but we must NOT send
+      // the handle to the main isolate (it would be ignored and leaked).
+      if (shouldStop) {
+        CloseHandle(hPipe);
+        break;
+      }
+
       // Send the raw handle to the main isolate for data I/O.
       // The main isolate will handle all reads/writes using PeekNamedPipe
       // polling, keeping its event loop responsive.
@@ -1034,11 +1114,12 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
       // With Isolate.immediate, the kill takes effect at VM safepoints
       // (including before FFI calls), so the isolate can be terminated
       // even between this yield and the next ConnectNamedPipe. This yield
-      // provides an additional clean exit point where the event loop can
-      // process the kill message if it arrives during the await.
+      // also processes any pending stop signal from the main isolate,
+      // allowing a clean cooperative exit.
       await Future<void>.delayed(Duration.zero);
     }
   } finally {
+    stopPort.close();
     calloc.free(pipePathPtr);
   }
 }

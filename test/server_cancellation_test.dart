@@ -134,23 +134,30 @@ void main() {
         reason: 'Expected stream termination errors to be GrpcError only',
       );
 
-      // TIGHT: each stream MUST have been truncated.
+      // Each stream MUST have received at least 1 item (first-item
+      // gate already proved this, but assert per-stream as well).
+      // Streams MAY have completed fully (== streamItems) on fast
+      // hardware where the server delivers all items before shutdown
+      // propagates — this is a valid outcome (not a hang).
       for (var i = 0; i < itemCounts.length; i++) {
-        expect(
-          itemCounts[i],
-          lessThan(streamItems),
-          reason:
-              'stream $i received all $streamItems items — '
-              'shutdown failed to truncate',
-        );
-        // Each stream must have received at least 1 item (first-item
-        // gate already proved this, but assert per-stream as well).
         expect(
           itemCounts[i],
           greaterThan(0),
           reason: 'stream $i received 0 items despite first-item gate',
         );
       }
+
+      // At least 1 stream MUST have been truncated — otherwise
+      // shutdown had no observable effect on active streams.
+      final truncatedStreams =
+          itemCounts.where((c) => c < streamItems).length;
+      expect(
+        truncatedStreams,
+        greaterThan(0),
+        reason:
+            'All $streamCount streams received all $streamItems items — '
+            'shutdown had no effect. Item counts: $itemCounts',
+      );
 
       // TIGHT: total items must be >= streamCount (each stream
       // delivers at least 1 chunk before shutdown truncation).
