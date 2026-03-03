@@ -221,16 +221,18 @@ jobs:
           sudo mv /tmp/envoy /usr/local/bin/envoy
           envoy --version
 
-      - name: Run browser channel tests
+      - name: Run browser XHR transport tests
         env:
           CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path || 'google-chrome' }}
-        run: |
-          dart test -p chrome \
-            test/client_tests/client_xhr_transport_test.dart \
-            test/client_tests/grpc_or_grpcweb_channel_web_test.dart
+        run: dart test -p chrome --concurrency=1 test/client_tests/client_xhr_transport_test.dart
+
+      - name: Run browser channel selection tests
+        env:
+          CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path || 'google-chrome' }}
+        run: dart test -p chrome --concurrency=1 test/client_tests/grpc_or_grpcweb_channel_web_test.dart
 
       - name: Run gRPC-web integration tests
         env:
           CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path || 'google-chrome' }}
-        run: dart test -p chrome test/grpc_web_test.dart
+        run: dart test -p chrome --concurrency=1 test/grpc_web_test.dart
 # --- END USER: extra-jobs ---
