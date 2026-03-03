@@ -748,6 +748,19 @@ void main() {
       const cycles = 6;
       const rpcsPerCycle = 25;
 
+      // Track all servers so addTearDown can clean up leaked resources
+      // if the test times out mid-cycle. Without this, a leaked
+      // NamedPipeServer's ReceivePort and accept-loop Isolate keep the
+      // Dart VM alive indefinitely, hanging the dart test process.
+      final servers = <NamedPipeServer>[];
+      addTearDown(() async {
+        for (final s in servers) {
+          try {
+            await s.shutdown();
+          } catch (_) {}
+        }
+      });
+
       final channel = NamedPipeClientChannel(
         pipeName,
         options: const NamedPipeChannelOptions(),
@@ -757,6 +770,7 @@ void main() {
 
       for (var cycle = 0; cycle < cycles; cycle++) {
         final server = NamedPipeServer.create(services: [EchoService()]);
+        servers.add(server);
         await server.serve(pipeName: pipeName);
         try {
           final settled =

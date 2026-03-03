@@ -791,14 +791,35 @@ void main() {
     testNamedPipe('8 rapid server restart cycles with fresh client each time', (
       pipeName,
     ) async {
+      // Track all servers/channels so addTearDown can clean up leaked
+      // resources if the test times out mid-cycle. Without this, a leaked
+      // NamedPipeServer's ReceivePort and accept-loop Isolate keep the
+      // Dart VM alive indefinitely, hanging the dart test process.
+      final servers = <NamedPipeServer>[];
+      final channels = <NamedPipeClientChannel>[];
+      addTearDown(() async {
+        for (final ch in channels) {
+          try {
+            await ch.shutdown();
+          } catch (_) {}
+        }
+        for (final s in servers) {
+          try {
+            await s.shutdown();
+          } catch (_) {}
+        }
+      });
+
       for (var cycle = 0; cycle < 8; cycle++) {
         final server = NamedPipeServer.create(services: [EchoService()]);
+        servers.add(server);
         await server.serve(pipeName: pipeName);
 
         final channel = NamedPipeClientChannel(
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        channels.add(channel);
         final client = EchoClient(channel);
 
         // Verify the cycle works. Values must be ≤255 because the echo

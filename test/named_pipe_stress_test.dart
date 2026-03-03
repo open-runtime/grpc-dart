@@ -965,6 +965,9 @@ void main() {
       pipeName,
     ) async {
       var server = NamedPipeServer.create(services: [EchoService()]);
+      // Track server across reassignment so addTearDown can clean up the
+      // latest instance if the test fails or times out.
+      addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
       final connector = NamedPipeTransportConnector(pipeName);
@@ -1023,6 +1026,9 @@ void main() {
       'same channel remains stable across repeated server restarts',
       (pipeName) async {
         var server = NamedPipeServer.create(services: [EchoService()]);
+        // Track server across loop reassignment so addTearDown can clean
+        // up the latest instance if the test fails or times out.
+        addTearDown(() => server.shutdown());
         await server.serve(pipeName: pipeName);
 
         final channel = NamedPipeClientChannel(
