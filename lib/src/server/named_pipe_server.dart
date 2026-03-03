@@ -415,7 +415,7 @@ class NamedPipeServer extends ConnectionServer {
       // _PipeHandle message — the port must still be open for that
       // send (it will be a no-op because _isRunning is false).
       if (pipeName != null && exitCompleter != null) {
-        await _unblockAndConfirmDeath(pipeName, exitCompleter);
+        await _unblockAndConfirmDeath(pipeName, exitCompleter, serverIsolate);
       }
     } finally {
       _serverIsolate = null;
@@ -454,7 +454,11 @@ class NamedPipeServer extends ConnectionServer {
   /// which indicates the isolate is either dead (killed at a VM
   /// safepoint) or between loop iterations. Consecutive FILE_NOT_FOUND
   /// results strongly suggest the isolate is dead.
-  static Future<void> _unblockAndConfirmDeath(String pipeName, Completer<void> exitCompleter) async {
+  static Future<void> _unblockAndConfirmDeath(
+    String pipeName,
+    Completer<void> exitCompleter,
+    Isolate? serverIsolate,
+  ) async {
     // Fast path: isolate already dead (killed at a VM safepoint
     // before reaching ConnectNamedPipe).
     if (exitCompleter.isCompleted) return;
@@ -463,8 +467,12 @@ class NamedPipeServer extends ConnectionServer {
     final pipePathPtr = path.toNativeUtf16(allocator: calloc);
     try {
       final deadline = Stopwatch()..start();
-      const maxWait = Duration(seconds: 10);
-      var consecutiveNotFound = 0;
+      // 20 seconds is generous. The accept loop has two yield points
+      // per iteration; each dummy client unblocks one ConnectNamedPipe.
+      // Even with pathological Timer-before-ReceivePort ordering, two
+      // dummy clients should be sufficient. The long deadline covers
+      // slow CI runners where event delivery is delayed.
+      const maxWait = Duration(seconds: 20);
 
       while (deadline.elapsed < maxWait) {
         if (exitCompleter.isCompleted) return;
@@ -472,35 +480,28 @@ class NamedPipeServer extends ConnectionServer {
         final hPipe = CreateFile(pipePathPtr, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, NULL);
         if (hPipe != INVALID_HANDLE_VALUE) {
           CloseHandle(hPipe);
-          consecutiveNotFound = 0;
           // Dummy client connected — isolate's ConnectNamedPipe
           // returned. Wait for kill to fire at the next safepoint.
           try {
-            await exitCompleter.future.timeout(const Duration(milliseconds: 300));
+            await exitCompleter.future.timeout(const Duration(milliseconds: 500));
           } on TimeoutException {
             // Isolate may have re-entered ConnectNamedPipe for a
             // new iteration before the kill fired. Keep retrying.
           }
           if (exitCompleter.isCompleted) return;
-        } else {
-          consecutiveNotFound++;
-          // Many consecutive FILE_NOT_FOUND = isolate is dead (no pipe
-          // instances being created). Wait for the exit listener.
-          if (consecutiveNotFound >= 15) {
-            try {
-              await exitCompleter.future.timeout(const Duration(seconds: 3));
-            } on TimeoutException {
-              // Fall through to final wait below.
-            }
-            break;
-          }
         }
+        // FILE_NOT_FOUND means no pipe instance exists right now.
+        // This does NOT mean the isolate is dead — it could be
+        // between loop iterations (after CloseHandle, before
+        // CreateNamedPipe). Keep retrying; do NOT break early.
 
-        await Future<void>.delayed(const Duration(milliseconds: 15));
+        await Future<void>.delayed(const Duration(milliseconds: 10));
       }
 
-      // Final wait for exit listener confirmation.
-      if (!exitCompleter.isCompleted) {
+      // Deadline exhausted — try one more kill in case the first was
+      // lost or the isolate was in a state where it couldn't process it.
+      if (!exitCompleter.isCompleted && serverIsolate != null) {
+        serverIsolate.kill(priority: Isolate.immediate);
         try {
           await exitCompleter.future.timeout(const Duration(seconds: 3));
         } on TimeoutException {
@@ -1147,5 +1148,12 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   } finally {
     stopPort.close();
     calloc.free(pipePathPtr);
+    // Explicitly terminate this isolate. Without this, the isolate
+    // stays alive if Isolate.kill(immediate) was consumed at a
+    // safepoint before reaching the accept loop (e.g. during a yield),
+    // but a Timer or other microtask keeps the event loop active.
+    // Isolate.exit() is unconditional — it terminates the isolate
+    // regardless of open ReceivePorts or pending Timers.
+    Isolate.exit();
   }
 }
