@@ -24,9 +24,13 @@ export 'src/client/connection.dart' show ConnectionState;
 export 'src/client/http2_channel.dart' show ClientChannel, ClientTransportConnectorChannel;
 export 'src/client/interceptor.dart' show ClientInterceptor, ClientUnaryInvoker, ClientStreamingInvoker;
 export 'src/client/method.dart' show ClientMethod;
-// Windows named pipe support (only usable on Windows)
-export 'src/client/named_pipe_channel.dart' show NamedPipeClientChannel, NamedPipeChannelOptions;
-export 'src/client/named_pipe_transport.dart' show NamedPipeTransportConnector, NamedPipeException;
+// Windows named pipe support — conditional to avoid pulling dart:ffi on web.
+export 'src/client/named_pipe_channel_stub.dart'
+    if (dart.library.ffi) 'src/client/named_pipe_channel.dart'
+    show NamedPipeClientChannel, NamedPipeChannelOptions;
+export 'src/client/named_pipe_transport_stub.dart'
+    if (dart.library.ffi) 'src/client/named_pipe_transport.dart'
+    show NamedPipeTransportConnector, NamedPipeException;
 export 'src/client/options.dart' show defaultIdleTimeout, BackoffStrategy, defaultBackoffStrategy, ChannelOptions;
 export 'src/client/proxy.dart' show Proxy;
 export 'src/client/transport/http2_credentials.dart'
@@ -34,7 +38,9 @@ export 'src/client/transport/http2_credentials.dart'
 export 'src/generated/google/rpc/error_details.pb.dart';
 export 'src/server/call.dart' show ServiceCall;
 export 'src/server/interceptor.dart' show Interceptor, ServerInterceptor, ServerStreamingInvoker;
-export 'src/server/named_pipe_server.dart' show NamedPipeServer;
+export 'src/server/named_pipe_server_stub.dart'
+    if (dart.library.ffi) 'src/server/named_pipe_server.dart'
+    show NamedPipeServer;
 export 'src/server/server.dart'
     show ServerCredentials, ServerLocalCredentials, ServerTlsCredentials, ConnectionServer, Server;
 export 'src/server/server_keepalive.dart' show ServerKeepAliveOptions;
