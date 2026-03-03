@@ -281,10 +281,11 @@ class NamedPipeServer extends ConnectionServer {
   ///
   /// This method:
   /// 1. Stops accepting new connections (`_isRunning = false`)
-  /// 1.5. Cancels all active gRPC handlers and finishes HTTP/2
-  ///    connections (via [ConnectionServer.shutdownActiveConnections])
-  /// 2. Closes all active pipe streams (breaking their PeekNamedPipe
-  ///    read loops and cleaning up Win32 handles)
+  /// 1.5. Starts active gRPC handler/connection shutdown
+  ///    ([ConnectionServer.shutdownActiveConnections]), which snapshots
+  ///    active connections up-front.
+  /// 2. Force-closes active pipe streams to break blocking named-pipe I/O
+  ///    and release Win32 handles, then awaits shutdown completion.
   /// 3. Opens a dummy client connection to unblock the server
   ///    isolate's blocking ConnectNamedPipe call (Isolate.kill cannot
   ///    interrupt FFI)
@@ -299,17 +300,17 @@ class NamedPipeServer extends ConnectionServer {
     _isRunning = false;
     final pipeName = _pipeName;
 
-    // Step 1.5: Cancel all active gRPC handlers and finish HTTP/2
-    // connections. Must happen BEFORE closing pipe streams (step 2) so
-    // that in-flight RPCs are terminated first, preventing the HTTP/2
-    // transport from waiting indefinitely for streams that will never
-    // complete.
-    //
-    // Uses the shared shutdownActiveConnections() from ConnectionServer,
-    // which mirrors the Server.shutdown() pattern from server.dart.
-    await shutdownActiveConnections();
+    // Step 1.5: Start connection shutdown first so ConnectionServer takes
+    // a stable snapshot of active connections before transport teardown.
+    final shutdownConnectionsFuture = shutdownActiveConnections();
 
-    // Step 2: Force-close all active pipe streams. Using force: true
+    // Step 2: Force-close all active pipe streams. On Windows,
+    // WriteFile/ReadFile are synchronous FFI calls; under heavy load a
+    // stream can block in pipe I/O and starve shutdown progression.
+    // Closing handles breaks those blocking paths so the in-flight
+    // shutdownActiveConnections future can complete instead of stalling.
+    //
+    // Using force: true
     // calls DisconnectNamedPipe to immediately terminate connections,
     // discarding any unread data in the pipe buffer. This is necessary
     // during shutdown because FlushFileBuffers would block the event loop
@@ -318,6 +319,9 @@ class NamedPipeServer extends ConnectionServer {
       stream.close(force: true);
     }
     _activeStreams.clear();
+
+    // Step 2.5: Wait for handler/connection shutdown to complete.
+    await shutdownConnectionsFuture;
 
     // Step 3: Register an exit listener BEFORE killing the isolate.
     //
@@ -330,10 +334,11 @@ class NamedPipeServer extends ConnectionServer {
     final serverIsolate = _serverIsolate;
     ReceivePort? exitPort;
     Completer<void>? exitCompleter;
+    StreamSubscription<dynamic>? exitPortSub;
     if (serverIsolate != null) {
       exitPort = ReceivePort();
       exitCompleter = Completer<void>();
-      exitPort.listen((_) {
+      exitPortSub = exitPort.listen((_) {
         if (!exitCompleter!.isCompleted) exitCompleter.complete();
       });
       serverIsolate.addOnExitListener(exitPort.sendPort);
@@ -365,6 +370,7 @@ class NamedPipeServer extends ConnectionServer {
     }
 
     _serverIsolate = null;
+    await exitPortSub?.cancel();
     exitPort?.close();
 
     // Step 5: Clean up the receive port AFTER killing the isolate.

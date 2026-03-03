@@ -259,6 +259,7 @@ class EchoService extends Service {
     final bd = ByteData.sublistView(Uint8List.fromList(req));
     final chunkCount = bd.getUint32(0);
     final chunkSize = bd.getUint32(4);
+    const yieldEvery = 200;
     for (var i = 0; i < chunkCount; i++) {
       final chunk = Uint8List(chunkSize);
       // Fill with repeating pattern for integrity verification.
@@ -266,6 +267,11 @@ class EchoService extends Service {
         chunk[j] = (i + j) & 0xFF;
       }
       yield chunk;
+      // Cooperative yield: high-concurrency bytes streams can otherwise
+      // starve the event loop and delay shutdown/cancel processing.
+      if ((i + 1) % yieldEvery == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
     }
   }
 

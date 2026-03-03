@@ -24,6 +24,7 @@ import 'package:grpc/src/client/http2_connection.dart';
 import 'package:grpc/src/server/server_keepalive.dart';
 import 'package:test/test.dart';
 
+import 'common.dart';
 import 'src/echo_service.dart';
 
 /// Production regression coverage for high-risk lifecycle paths.
@@ -58,16 +59,13 @@ void main() {
         addTearDown(() => channel.shutdown());
         final client = EchoClient(channel);
 
-        final firstItemSeen = Completer<void>();
         final subs = <StreamSubscription<int>>[];
         final unexpectedErrors = <Object>[];
         for (var i = 0; i < 5; i++) {
           final sub = client
               .serverStream(255)
               .listen(
-                (_) {
-                  if (!firstItemSeen.isCompleted) firstItemSeen.complete();
-                },
+                (_) {},
                 onError: (Object error) {
                   if (error is! GrpcError) unexpectedErrors.add(error);
                 },
@@ -75,11 +73,11 @@ void main() {
           subs.add(sub);
         }
 
-        await firstItemSeen.future.timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {
-            fail('streams never became active before shutdown');
-          },
+        await waitForHandlers(
+          server,
+          minCount: 5,
+          timeout: const Duration(seconds: 10),
+          reason: 'expected 5 active streaming handlers before shutdown',
         );
 
         await server.shutdown().timeout(

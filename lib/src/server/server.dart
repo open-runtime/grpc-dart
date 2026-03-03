@@ -101,6 +101,15 @@ class ConnectionServer {
   /// still actively sending data.
   final _incomingSubscriptions = <ServerTransportConnection, StreamSubscription<ServerTransportStream>>{};
 
+  /// Maps connections to their underlying raw sockets, enabling forceful
+  /// shutdown when the event loop is saturated by incoming data.
+  ///
+  /// Only populated by [Server] (TCP/TLS); [NamedPipeServer] connections
+  /// do not have a raw [Socket] and are simply absent from this map.
+  /// [_finishConnection]'s `socket?.destroy()` is a safe no-op when
+  /// the connection has no entry.
+  final _connectionSockets = <ServerTransportConnection, Socket>{};
+
   /// Create a server for the given [services].
   ConnectionServer(
     List<Service> services, [
@@ -177,6 +186,7 @@ class ConnectionServer {
         _connections.remove(connection);
         handlers.remove(connection);
         _incomingSubscriptions.remove(connection);
+        _connectionSockets.remove(connection);
         onDataReceivedController.close();
       },
       onDone: () async {
@@ -192,6 +202,7 @@ class ConnectionServer {
         _connections.remove(connection);
         handlers.remove(connection);
         _incomingSubscriptions.remove(connection);
+        _connectionSockets.remove(connection);
         await onDataReceivedController.close();
       },
     );
@@ -314,11 +325,11 @@ class ConnectionServer {
   /// out (2s), logs and completes anyway — a broken connection must
   /// never block the entire server shutdown.
   ///
-  /// The timeout is truly enforced: we do NOT await [connection.finish]
-  /// directly. Instead we fire it off and return a Future that completes
-  /// when either finish resolves or the timer fires. If finish hangs,
-  /// the timer fires, we call terminate (at most once), wait for it to
-  /// settle or time out (2s), then complete.
+  /// After terminate completes, the raw socket (if tracked in
+  /// [_connectionSockets]) is destroyed to stop any lingering IO
+  /// from the http2 package's `FrameReader` (which has a missing
+  /// `onCancel` handler that lets the raw socket subscription
+  /// continue processing data after the transport is closed).
   Future<void> _finishConnection(ServerTransportConnection connection) async {
     final done = Completer<void>();
     Timer? deadline;
@@ -355,7 +366,18 @@ class ConnectionServer {
                 error: e,
               );
             })
-            .whenComplete(complete);
+            .whenComplete(() {
+              // Destroy the raw socket to break event loop saturation
+              // from the http2 FrameReader's orphaned socket
+              // subscription (missing onCancel handler in
+              // package:http2). On TCP with a client still pumping
+              // data, the FrameReader continues processing frames
+              // after terminate(), flooding IO callbacks. Destroying
+              // the socket stops the flood.
+              // No-op for NamedPipeServer (not in map).
+              _connectionSockets.remove(connection)?.destroy();
+              complete();
+            });
       } catch (e) {
         logGrpcEvent(
           '[gRPC] connection.terminate() failed: $e',
@@ -364,6 +386,7 @@ class ConnectionServer {
           context: 'shutdownActiveConnections',
           error: e,
         );
+        _connectionSockets.remove(connection)?.destroy();
         complete();
       }
     }
@@ -520,6 +543,7 @@ class Server extends ConnectionServer {
         }
 
         final connection = ServerTransportConnection.viaSocket(socket, settings: http2ServerSettings);
+        _connectionSockets[connection] = socket;
 
         serveConnection(
           connection: connection,

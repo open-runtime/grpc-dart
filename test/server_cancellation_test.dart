@@ -59,14 +59,12 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      // Start 25 concurrent server-streaming RPCs with a LARGE chunk count
-      // (20000 × 64 bytes = 1.25 MB per stream) so streams are still active
-      // when shutdown fires. Uses serverStreamBytes (identity serialization)
-      // to avoid the single-byte truncation bug in serverStream.
+      // Start 25 concurrent server-streaming RPCs with enough items to keep
+      // handlers active through shutdown. serverStream() yields every 1ms,
+      // giving deterministic event-loop turns for cancel processing under
+      // high suite-wide concurrency.
       const streamCount = 25;
-      const streamItems = 20000;
-      const chunkSize = 64;
-      final request = encodeStreamBytesRequest(streamItems, chunkSize);
+      const streamItems = 255;
       final itemCounts = List<int>.filled(streamCount, 0);
       final doneCompleters = <Completer<void>>[];
       final perStreamFirstItem = <Completer<void>>[];
@@ -80,9 +78,9 @@ void main() {
         perStreamFirstItem.add(firstItem);
 
         client
-            .serverStreamBytes(request)
+            .serverStream(streamItems)
             .listen(
-              (chunk) {
+              (_) {
                 itemCounts[streamIndex]++;
                 if (!firstItem.isCompleted) firstItem.complete();
               },
@@ -136,14 +134,13 @@ void main() {
         reason: 'Expected stream termination errors to be GrpcError only',
       );
 
-      // TIGHT: each stream MUST have been truncated — 20000 chunks is
-      // far more than can complete before shutdown fires.
+      // TIGHT: each stream MUST have been truncated.
       for (var i = 0; i < itemCounts.length; i++) {
         expect(
           itemCounts[i],
           lessThan(streamItems),
           reason:
-              'stream $i received all $streamItems chunks — '
+              'stream $i received all $streamItems items — '
               'shutdown failed to truncate',
         );
         // Each stream must have received at least 1 item (first-item

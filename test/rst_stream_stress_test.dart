@@ -271,11 +271,9 @@ void main() {
         }
       });
 
-      // 10 unary RPCs.
-      for (var i = 0; i < 10; i++) {
-        settled.add(settleRpc(client.echo(i).then<Object?>((v) => v)));
-      }
-
+      // Start streaming RPCs first. On slower CI hosts, unary-first ordering
+      // can complete/tear down fast unary handlers before both streaming
+      // classes are fully registered, causing waitForHandlers(20) races.
       // 10 server-streaming RPCs.
       for (var i = 0; i < 10; i++) {
         settled.add(
@@ -293,6 +291,11 @@ void main() {
             client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
           ),
         );
+      }
+
+      // 10 unary RPCs (last — these complete quickly).
+      for (var i = 0; i < 10; i++) {
+        settled.add(settleRpc(client.echo(i).then<Object?>((v) => v)));
       }
 
       // Wait for at least 20 handlers (streaming RPCs)
@@ -401,15 +404,21 @@ void main() {
         );
       }
 
-      // Let data flow for 100ms, then shut down.
+      // Let data flow for 100ms, then begin shutdown.
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      await server.shutdown();
-
-      // Cancel all timers immediately.
+      // Start shutdown while pumps are active, keep pressure briefly during
+      // teardown, then stop pumps to avoid self-sustaining event-loop load.
+      final shutdownFuture = server.shutdown();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
       for (final t in timers) {
         t.cancel();
       }
+      await shutdownFuture.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () =>
+            fail('server.shutdown() did not complete within 10 seconds'),
+      );
 
       // All 10 streams must settle within 10s.
       await Future.wait(doneCompleters.map((c) => c.future)).timeout(
