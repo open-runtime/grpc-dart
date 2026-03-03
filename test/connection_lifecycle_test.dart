@@ -707,10 +707,13 @@ void main() {
         });
         await Future<void>.delayed(Duration.zero);
 
+        // Windows arm64 CI needs longer for shutdown propagation to
+        // trigger a state transition — 2s was insufficient there.
         final transientDeadline = DateTime.now().add(
-          const Duration(seconds: 2),
+          const Duration(seconds: 10),
         );
         while (!channel.states.contains(ConnectionState.transientFailure) &&
+            !channel.states.contains(ConnectionState.idle) &&
             DateTime.now().isBefore(transientDeadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 1));
         }

@@ -110,6 +110,15 @@ class ConnectionServer {
   /// the connection has no entry.
   final _connectionSockets = <ServerTransportConnection, Socket>{};
 
+  /// Maps connections to their keepalive data-received controllers.
+  ///
+  /// These controllers are closed during [shutdownActiveConnections] to
+  /// prevent the Dart VM from staying alive due to unclosed streams.
+  /// Without explicit closure, cancelling the incoming subscription
+  /// (Step 1 of shutdown) does NOT fire onDone/onError, leaving the
+  /// controller's stream listener permanently pending.
+  final _keepAliveControllers = <ServerTransportConnection, StreamController<void>>{};
+
   /// Create a server for the given [services].
   ConnectionServer(
     List<Service> services, [
@@ -139,6 +148,7 @@ class ConnectionServer {
     // TODO(jakobr): Set active state handlers, close connection after idle
     // timeout.
     final onDataReceivedController = StreamController<void>();
+    _keepAliveControllers[connection] = onDataReceivedController;
     ServerKeepAlive(
       options: _keepAliveOptions,
       tooManyBadPings: () async => await connection.terminate(ErrorCode.ENHANCE_YOUR_CALM),
@@ -187,6 +197,7 @@ class ConnectionServer {
         handlers.remove(connection);
         _incomingSubscriptions.remove(connection);
         _connectionSockets.remove(connection);
+        _keepAliveControllers.remove(connection);
         onDataReceivedController.close();
       },
       onDone: () async {
@@ -203,6 +214,7 @@ class ConnectionServer {
         handlers.remove(connection);
         _incomingSubscriptions.remove(connection);
         _connectionSockets.remove(connection);
+        _keepAliveControllers.remove(connection);
         await onDataReceivedController.close();
       },
     );
@@ -270,6 +282,15 @@ class ConnectionServer {
     }
     if (cancelSubFutures.isNotEmpty) {
       await Future.wait(cancelSubFutures).timeout(const Duration(seconds: 5), onTimeout: () => <void>[]);
+    }
+
+    // Step 1.5: Close keepalive data-received controllers.
+    // Cancelling a subscription (Step 1) does NOT fire onDone/onError,
+    // so the StreamController from serveConnection() is never closed.
+    // An unclosed controller keeps the Dart VM alive indefinitely —
+    // this was the root cause of 30-minute process hangs on Windows CI.
+    for (final connection in activeConnections) {
+      _keepAliveControllers.remove(connection)?.close();
     }
 
     // Step 2: Cancel all handlers to terminate in-flight RPCs.

@@ -95,6 +95,34 @@ dart test --platform vm    # VM tests only
 dart test --platform chrome # Browser tests (Linux)
 ```
 
+### Timing and Synchronization Hard Rules (Dart)
+
+These are strict anti-flake rules for tests and implementations.
+
+1. Never use arbitrary `Future.delayed(...)` as synchronization.
+   Use explicit barriers (`Completer`, `expectLater(..., completes)`,
+   or polling concrete state with a deadline).
+2. Never "fix" races by only increasing timeouts or retries.
+   Find and fix the missing signal, ownership, or cancel path first.
+3. Never weaken assertions to make flakes pass.
+   Do not replace exact checks with broad checks (for example,
+   `equals` -> `greaterThan`, broad `anyOf`, or accepting
+   `TimeoutException` as success).
+4. Never swallow async errors or teardown failures.
+   Do not use `catch (_) {}`, ignored `Future`s, or `onError: (_) {}`.
+   Fail loudly with context.
+5. Never bypass deterministic lifecycle coordination.
+   Always await `shutdown()`, `cancel()`, and `done`.
+   Prefer ordered phases: start -> ready barrier -> action ->
+   settlement barrier -> cleanup barrier.
+
+Common masking shortcuts (code smells):
+- Adding `skip:` to hide flaky behavior.
+- Replacing event-driven checks with sleep-driven checks.
+- Treating timeout as expected success in stress/race tests.
+- Making assertions approximate where exact behavior is expected.
+- Moving cleanup to best effort and ignoring failures.
+
 ### Commit Messages (Conventional Commits)
 ```
 feat:     New feature        → MINOR version
