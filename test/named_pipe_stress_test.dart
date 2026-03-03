@@ -1035,7 +1035,9 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
-        addTearDown(() => channel.shutdown());
+        // Use terminate() not shutdown() — if the test timed out,
+        // shutdown() hangs waiting for RPCs that will never settle.
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         expect(await client.echo(0), equals(0));

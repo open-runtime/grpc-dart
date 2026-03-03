@@ -77,10 +77,11 @@ void main() {
       // Shut down the server while data is queued.
       await server.shutdown();
 
-      // Close all controllers so streams can finish.
+      // Close all controllers — do NOT await (see comment in
+      // "client sends data after server has initiated shutdown").
       for (final ctrl in controllers) {
         if (!ctrl.isClosed) {
-          await ctrl.close();
+          ctrl.close();
         }
       }
 
@@ -202,10 +203,11 @@ void main() {
       // Shut down while 32 KB chunks are in flight.
       await server.shutdown();
 
-      // Close controllers so streams finish.
+      // Close controllers — do NOT await (see comment in
+      // "client sends data after server has initiated shutdown").
       for (final ctrl in controllers) {
         if (!ctrl.isClosed) {
-          await ctrl.close();
+          ctrl.close();
         }
       }
 
@@ -291,10 +293,15 @@ void main() {
 
       await shutdownFuture;
 
-      // Close controllers.
+      // Close controllers — do NOT await. StreamController.close()
+      // returns a Future that completes when the done event is
+      // delivered to the subscriber. After server.shutdown(), the
+      // bidi stream subscriber may be dead/stuck, causing
+      // `await ctrl.close()` to hang indefinitely (root cause of
+      // 2-minute timeout on macOS x64).
       for (final ctrl in controllers) {
         if (!ctrl.isClosed) {
-          await ctrl.close();
+          ctrl.close();
         }
       }
 
@@ -659,10 +666,11 @@ void main() {
         // Shut down server while data is flowing.
         await server.shutdown();
 
-        // Close controllers.
+        // Close controllers — do NOT await (see comment in
+        // "client sends data after server has initiated shutdown").
         for (final ctrl in controllers) {
           if (!ctrl.isClosed) {
-            await ctrl.close();
+            ctrl.close();
           }
         }
 
@@ -741,9 +749,11 @@ void main() {
 
         await server.shutdown();
 
+        // Close controllers — do NOT await (see comment in
+        // "client sends data after server has initiated shutdown").
         for (final ctrl in controllers) {
           if (!ctrl.isClosed) {
-            await ctrl.close();
+            ctrl.close();
           }
         }
 

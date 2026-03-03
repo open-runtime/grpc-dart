@@ -798,9 +798,11 @@ void main() {
       final servers = <NamedPipeServer>[];
       final channels = <NamedPipeClientChannel>[];
       addTearDown(() async {
+        // Use terminate() not shutdown() — if the test timed out,
+        // shutdown() hangs waiting for RPCs that will never settle.
         for (final ch in channels) {
           try {
-            await ch.shutdown();
+            await ch.terminate();
           } catch (_) {}
         }
         for (final s in servers) {

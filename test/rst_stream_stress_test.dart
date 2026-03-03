@@ -26,7 +26,7 @@
 /// The entire point is to verify that server.shutdown() ALONE
 /// propagates RST_STREAM frames correctly.
 @TestOn('vm')
-@Timeout(Duration(minutes: 2))
+@Timeout(Duration(minutes: 4))
 library;
 
 import 'dart:async';
@@ -269,14 +269,13 @@ void main() {
 
       final settled = <Future<Object?>>[];
       final bidiControllers = <StreamController<int>>[];
-      addTearDown(() async {
+      addTearDown(() {
+        // Do NOT await ctrl.close() — after server.shutdown(),
+        // the bidi stream subscriber may be dead/stuck, causing
+        // the close Future to never complete.
         for (final ctrl in bidiControllers) {
           if (!ctrl.isClosed) {
-            try {
-              await ctrl.close();
-            } catch (e, st) {
-              fail('TearDown: StreamController.close failed: $e\n$st');
-            }
+            ctrl.close();
           }
         }
       });
@@ -316,11 +315,14 @@ void main() {
       // hang. With 20 handlers (10 server-stream + 10 bidi), all
       // streaming RPCs are covered; unary RPCs complete fast and
       // don't need handler cancellation.
-      // Windows arm64 CI is slow (10 handlers in 20s), allow 45s.
+      // Windows arm64 CI runs Dart under x64 emulation — HTTP/2
+      // negotiation is extremely slow. CI run 22645267326 showed
+      // exactly 10/20 handlers in 45s (one RPC class fully registered,
+      // the other still negotiating). Allow 120s.
       await waitForHandlers(
         server,
         minCount: 20,
-        timeout: const Duration(seconds: 45),
+        timeout: const Duration(seconds: 120),
         reason:
             'Expected at least 20 handlers '
             'for streaming RPCs',

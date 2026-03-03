@@ -765,7 +765,11 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
-      addTearDown(() => channel.shutdown());
+      // Use terminate() not shutdown() — addTearDown runs after test
+      // timeout, and shutdown() waits indefinitely for pending RPCs that
+      // will never settle (the literal reason the test timed out).
+      // This was the root cause of the 30-minute Windows CI process hang.
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       for (var cycle = 0; cycle < cycles; cycle++) {
