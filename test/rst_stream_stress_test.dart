@@ -253,9 +253,16 @@ void main() {
       final channel = createTestChannel(address, server.port!);
       addTearDown(() async {
         try {
-          await channel.shutdown();
+          // Use terminate() not shutdown(): the test calls
+          // server.shutdown() which destroys sockets. After that,
+          // channel.shutdown() → transportConnection.finish() can
+          // hang indefinitely because the http2 package's finish()
+          // waits for all HTTP/2 streams to close, but streams
+          // that didn't receive RST_STREAM before socket death
+          // never close. terminate() force-closes immediately.
+          await channel.terminate();
         } catch (e, st) {
-          fail('TearDown: channel.shutdown failed: $e\n$st');
+          fail('TearDown: channel.terminate failed: $e\n$st');
         }
       });
       final client = EchoClient(channel);
@@ -301,17 +308,21 @@ void main() {
         settled.add(settleRpc(client.echo(i).then<Object?>((v) => v)));
       }
 
-      // Wait for at least 10 handlers (streaming RPCs)
-      // to be registered on the server side. Windows arm64 CI
-      // runners can be slow establishing HTTP/2 streams — 20 was
-      // too aggressive (only 10 registered in 20s on arm64 CI).
-      // 10 handlers is sufficient to exercise shutdown propagation.
+      // Wait for at least 20 handlers so shutdown can cancel them
+      // with RST_STREAM. RPCs without server handlers don't get
+      // RST_STREAM; they rely on GOAWAY + socket destruction, but
+      // the http2 package's client transport doesn't propagate
+      // socket death to all pending streams cleanly — those RPCs
+      // hang. With 20 handlers (10 server-stream + 10 bidi), all
+      // streaming RPCs are covered; unary RPCs complete fast and
+      // don't need handler cancellation.
+      // Windows arm64 CI is slow (10 handlers in 20s), allow 45s.
       await waitForHandlers(
         server,
-        minCount: 10,
-        timeout: const Duration(seconds: 30),
+        minCount: 20,
+        timeout: const Duration(seconds: 45),
         reason:
-            'Expected at least 10 handlers '
+            'Expected at least 20 handlers '
             'for streaming RPCs',
       );
 
