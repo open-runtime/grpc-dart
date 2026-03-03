@@ -281,19 +281,7 @@ class Http2ClientConnection implements connection.ClientConnection {
   @override
   void dispatchCall(ClientCall call) {
     if (_transportConnection != null) {
-      // Run refresh check BEFORE timer reset. If we reset first, we mask
-      // age-based refresh (connectionTimeout); _refreshConnectionIfUnhealthy
-      // would never see elapsed > connectionTimeout, causing readyCount
-      // failures and stale connections.
       _refreshConnectionIfUnhealthy();
-      // Only reset when connection remains ready and call proceeds on same
-      // connection. If refresh abandoned the connection, state changed and
-      // we must not reset (and the call will be re-queued or failed).
-      if (_state == ConnectionState.ready) {
-        _connectionLifeTimer
-          ..reset()
-          ..start();
-      }
     }
     switch (_state) {
       case ConnectionState.ready:
