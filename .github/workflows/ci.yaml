@@ -170,4 +170,67 @@ jobs:
 # --- END USER: post-test ---
 
 # --- BEGIN USER: extra-jobs ---
+  web-tests:
+    needs: [pre-check, analyze, auto-format]
+    if: needs.pre-check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.auto-format.outputs.sha }}
+          persist-credentials: false
+
+      - name: Configure Git for HTTPS with Token
+        shell: bash
+        run: |
+          TOKEN="${{ secrets.TSAVO_AT_PIECES_PERSONAL_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "git@github.com:"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
+
+      - uses: dart-lang/setup-dart@v1.7.1
+        with:
+          sdk: "3.9.2"
+
+      - name: Cache Dart pub dependencies
+        uses: actions/cache@v5.0.3
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-${{ runner.arch }}-dart-pub-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-dart-pub-
+
+      - run: dart pub get
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1"
+
+      - name: Setup Chrome
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          install-dependencies: true
+
+      - name: Install Envoy
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENVOY_VERSION="1.37.0"
+          curl -fsSL -o /tmp/envoy \
+            "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-x86_64"
+          chmod +x /tmp/envoy
+          sudo mv /tmp/envoy /usr/local/bin/envoy
+          envoy --version
+
+      - name: Run browser channel tests
+        env:
+          CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path || 'google-chrome' }}
+        run: |
+          dart test -p chrome \
+            test/client_tests/client_xhr_transport_test.dart \
+            test/client_tests/grpc_or_grpcweb_channel_web_test.dart
+
+      - name: Run gRPC-web integration tests
+        env:
+          CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path || 'google-chrome' }}
+        run: dart test -p chrome test/grpc_web_test.dart
 # --- END USER: extra-jobs ---
