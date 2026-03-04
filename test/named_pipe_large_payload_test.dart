@@ -79,6 +79,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       final payload = generatePayload(65536);
@@ -107,6 +108,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       final payload = generatePayload(102400);
@@ -135,6 +137,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       final payload = generatePayload(262144);
@@ -163,6 +166,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       final payload = generatePayload(524288);
@@ -200,6 +204,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // 65535 bytes: buffer - 1
@@ -246,6 +251,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // Encode request: [chunkCount=10, chunkSize=10240] as 8 bytes BE.
@@ -292,6 +298,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // Encode request: [chunkCount=5, chunkSize=65536] as 8 bytes BE.
@@ -338,6 +345,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // Encode request: [chunkCount=100, chunkSize=1024] as 8 bytes BE.
@@ -382,6 +390,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // Build 20 chunks of 8KB each with unique patterns.
@@ -449,6 +458,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // Build 5 chunks of 32KB each with unique patterns.
@@ -526,6 +536,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Create 5 payloads of 20KB each with different seeds.
@@ -575,6 +586,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // Send 200KB payload.
@@ -609,6 +621,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       for (var i = 0; i < 10; i++) {

@@ -909,6 +909,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
 
         final client = EchoClient(channel);
         expect(await client.echo(42), equals(42));
@@ -926,6 +927,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
 
         final client = EchoClient(channel);
         final results = await client.serverStream(5).toList();
@@ -944,6 +946,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
 
         final client = EchoClient(channel);
         final result = await client.clientStream(
@@ -964,6 +967,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
 
         final client = EchoClient(channel);
         // Use a controller with event-loop yields to prevent flow-control
@@ -994,6 +998,7 @@ void main() {
             pipeName,
             options: const NamedPipeChannelOptions(),
           );
+          addTearDown(() => channel.terminate());
           final client = EchoClient(channel);
 
           const itemCount = 100;
@@ -1034,6 +1039,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
 
         final client = EchoClient(channel);
 
@@ -1071,6 +1077,7 @@ void main() {
               pipeName,
               options: const NamedPipeChannelOptions(),
             );
+            addTearDown(() => channel.terminate());
 
             final client = EchoClient(channel);
             expect(await client.echo(42), equals(42));
@@ -1191,12 +1198,14 @@ void main() {
         final server = NamedPipeServer.create(
           services: [_ThrowingStreamService()],
         );
+        addTearDown(() => server.shutdown());
         await server.serve(pipeName: pipeName);
 
         final channel = NamedPipeClientChannel(
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
 
         final client = _ThrowingStreamClient(channel);
 

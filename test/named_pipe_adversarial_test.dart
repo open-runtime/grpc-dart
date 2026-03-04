@@ -894,7 +894,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
-      addTearDown(() => channel.shutdown());
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // Request 1000 chunks of 64 bytes (64KB total): enough to saturate the
@@ -1440,7 +1440,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
-        addTearDown(() => channel.shutdown());
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Request a server stream of 255 items (~255ms at 1ms each).
@@ -1650,7 +1650,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
-        addTearDown(() => channel2.shutdown());
+        addTearDown(() => channel2.terminate());
         final client2 = EchoClient(channel2);
         final result = await client2.echo(42);
         expect(result, equals(42));
@@ -1762,7 +1762,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
-        addTearDown(() => verifyChannel.shutdown());
+        addTearDown(() => verifyChannel.terminate());
         final verifyClient = EchoClient(verifyChannel);
         expect(await verifyClient.echo(99), equals(99));
 
@@ -1852,7 +1852,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
-        addTearDown(() => verifyChannel.shutdown());
+        addTearDown(() => verifyChannel.terminate());
         final verifyClient = EchoClient(verifyChannel);
         expect(await verifyClient.echo(77), equals(77));
 
@@ -1892,7 +1892,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
-        addTearDown(() => channel.shutdown());
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Request 500 chunks of 1KB each (500KB total — well exceeds
