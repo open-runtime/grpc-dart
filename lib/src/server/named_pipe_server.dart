@@ -248,11 +248,11 @@ class NamedPipeServer extends ConnectionServer {
             'The server isolate may have crashed.',
           ),
         );
+        _isRunning = true;
       } finally {
         await stopBootstrapSub.cancel();
         stopBootstrapPort.close();
       }
-      _isRunning = true;
     } catch (error, stackTrace) {
       await _cleanupAfterServeStartupFailureAndRethrow(startupError: error, startupStackTrace: stackTrace);
     }
@@ -315,7 +315,14 @@ class NamedPipeServer extends ConnectionServer {
       error: error,
     );
 
-    if (!_isRunning) return;
+    final readySignaled = _readyCompleter?.isCompleted ?? false;
+    if (!_isRunning && !readySignaled) return;
+
+    // Handle the tiny serve() transition window where readiness is complete
+    // but _isRunning has not yet been observed as true.
+    if (!_isRunning && readySignaled) {
+      _isRunning = true;
+    }
 
     try {
       await shutdown();
@@ -339,6 +346,14 @@ class NamedPipeServer extends ConnectionServer {
   @visibleForTesting
   void markRunningForTest() {
     _isRunning = true;
+  }
+
+  @visibleForTesting
+  void markReadyForTest() {
+    _readyCompleter ??= Completer<void>();
+    if (!_readyCompleter!.isCompleted) {
+      _readyCompleter!.complete();
+    }
   }
 
   /// Handles messages from the server isolate.

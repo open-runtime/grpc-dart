@@ -142,6 +142,19 @@ class Http2ClientConnection implements connection.ClientConnection {
     _setState(ConnectionState.connecting);
     connectTransport()
         .then<void>((transport) async {
+          // Guard against race: terminate() may have been called while
+          // connectTransport() was in progress. If so, tear down the
+          // newly-created transport and bail out. Without this check,
+          // the transport is set as _transportConnection and resources
+          // (keepalive Timers, frame subscriptions) are created that
+          // terminate() has already cleaned up — orphaning them. These
+          // orphaned Timers keep the Dart VM event loop alive
+          // indefinitely, causing the test process to hang until the
+          // CI timeout kills it (~30 minutes).
+          if (_state == ConnectionState.shutdown) {
+            await transport.terminate();
+            return;
+          }
           _currentReconnectDelay = null;
           _transportConnection = transport;
           if (options.keepAlive.shouldSendPings) {

@@ -194,6 +194,24 @@ void main() {
       expect(server.isRunning, isFalse);
     });
 
+    test('post-startup error during readiness-running transition triggers '
+        'fail-safe shutdown', () async {
+      final server = _RuntimeErrorHandlingTestServer();
+      addTearDown(server.shutdown);
+
+      server.markReadyForTest();
+      await server.handlePostStartupAcceptLoopErrorForTest('forced transition-window accept-loop failure');
+
+      expect(
+        server.shutdownCallCount,
+        equals(1),
+        reason:
+            'If readiness is already signaled, post-startup errors must '
+            'trigger fail-safe shutdown even before serve() marks running.',
+      );
+      expect(server.isRunning, isFalse);
+    });
+
     test('post-startup error does nothing when server is already stopped', () async {
       final server = _RuntimeErrorHandlingTestServer();
       addTearDown(server.shutdown);
