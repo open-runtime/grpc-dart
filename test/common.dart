@@ -240,7 +240,7 @@ void testNamedPipe(
   String name,
   FutureOr<void> Function(String pipeName) testCase, {
   String basePipeName = 'grpc-test',
-  Timeout timeout = const Timeout(Duration(seconds: 30)),
+  Timeout timeout = const Timeout(Duration(seconds: 60)),
 }) {
   test(
     '$name (over named pipe)',

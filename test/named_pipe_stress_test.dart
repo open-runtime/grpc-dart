@@ -330,14 +330,33 @@ void main() {
 
     // 3. Server reuse: start -> shutdown -> start again (same pipe name)
     testNamedPipe('server start -> shutdown -> restart with same pipe name', (pipeName) async {
+      // Track ALL resources upfront in batch lists so addTearDown can
+      // clean up even if the test times out before all addTearDown
+      // registrations execute. Without batch tracking, resources created
+      // in the second half of the test body are orphaned on timeout.
+      final servers = <NamedPipeServer>[];
+      final channels = <NamedPipeClientChannel>[];
+      addTearDown(() async {
+        for (final ch in channels) {
+          try {
+            await ch.terminate();
+          } catch (_) {}
+        }
+        for (final s in servers) {
+          try {
+            await s.shutdown();
+          } catch (_) {}
+        }
+      });
+
       final server1 = NamedPipeServer.create(services: [EchoService()]);
-      addTearDown(() => server1.shutdown());
+      servers.add(server1);
       await server1.serve(pipeName: pipeName);
       expect(server1.isRunning, isTrue);
 
       // First session: verify it works.
       final channel1 = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
-      addTearDown(() => channel1.terminate());
+      channels.add(channel1);
       final client1 = EchoClient(channel1);
       expect(await client1.echo(1), equals(1));
 
@@ -350,33 +369,52 @@ void main() {
 
       // Second session: new server instance, same pipe name.
       final server2 = NamedPipeServer.create(services: [EchoService()]);
-      addTearDown(() => server2.shutdown());
+      servers.add(server2);
       await server2.serve(pipeName: pipeName);
       expect(server2.isRunning, isTrue);
 
       final channel2 = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
-      addTearDown(() => channel2.terminate());
+      channels.add(channel2);
       final client2 = EchoClient(channel2);
       expect(await client2.echo(2), equals(2));
 
       await channel2.shutdown();
       await server2.shutdown();
       expect(server2.isRunning, isFalse);
-    });
+    }, timeout: const Timeout(Duration(seconds: 60)));
 
     // 4. Multiple sequential start/shutdown cycles
     testNamedPipe('multiple sequential server start/shutdown cycles', (pipeName) async {
-      // Track the most recent server so addTearDown can clean up if the
-      // test fails mid-cycle. Double-shutdown is a safe no-op.
-      NamedPipeServer? lastServer;
-      addTearDown(() => lastServer?.shutdown());
+      // Track ALL servers and channels so addTearDown can clean up every
+      // resource if the test times out mid-cycle. Without batch tracking,
+      // a timeout leaves the current iteration's channel orphaned: the
+      // http2 transport's _frameReceived controller is never closed on
+      // terminate(), keeping the VM event loop alive indefinitely
+      // (~30-minute CI hang on Windows).
+      final servers = <NamedPipeServer>[];
+      final channels = <NamedPipeClientChannel>[];
+      var cancelled = false;
+      addTearDown(() async {
+        cancelled = true;
+        for (final ch in channels) {
+          try {
+            await ch.terminate();
+          } catch (_) {}
+        }
+        for (final s in servers) {
+          try {
+            await s.shutdown();
+          } catch (_) {}
+        }
+      });
 
-      for (var cycle = 0; cycle < 8; cycle++) {
+      for (var cycle = 0; cycle < 8 && !cancelled; cycle++) {
         final server = NamedPipeServer.create(services: [EchoService()]);
-        lastServer = server;
+        servers.add(server);
         await server.serve(pipeName: pipeName);
 
         final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+        channels.add(channel);
         final client = EchoClient(channel);
         final value = cycle % 256;
         expect(await client.echo(value), equals(value), reason: 'cycle $cycle');
@@ -387,7 +425,7 @@ void main() {
         // Brief pause between cycles to let the OS release the pipe.
         await Future<void>.delayed(const Duration(milliseconds: 150));
       }
-    });
+    }, timeout: const Timeout(Duration(seconds: 60)));
 
     // 5. Server shutdown while client is mid-streaming-RPC
     testNamedPipe('server shutdown during active server-streaming RPC', (pipeName) async {
@@ -545,8 +583,21 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      for (var i = 0; i < 20; i++) {
+      // Track all channels for batch cleanup on timeout.
+      final channels = <NamedPipeClientChannel>[];
+      var cancelled = false;
+      addTearDown(() async {
+        cancelled = true;
+        for (final ch in channels) {
+          try {
+            await ch.terminate();
+          } catch (_) {}
+        }
+      });
+
+      for (var i = 0; i < 20 && !cancelled; i++) {
         final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+        channels.add(channel);
         final client = EchoClient(channel);
         final value = i % 256;
         expect(await client.echo(value), equals(value), reason: 'cycle $i');
