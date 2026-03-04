@@ -195,6 +195,21 @@ class TrackingHarness {
   }
 }
 
+Future<void> waitForPredicate({
+  required bool Function() predicate,
+  required String reason,
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (predicate()) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  fail(reason);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -228,10 +243,14 @@ void main() {
       harness.sendData(1);
 
       await handlerStarted.future;
-      await Future.delayed(const Duration(milliseconds: 100));
+      await waitForPredicate(
+        predicate: () => harness.stream.sentTrailers.isNotEmpty && harness.stream.terminateCount >= 1,
+        reason:
+            'Timed-out unary call must send trailers and terminate the '
+            'underlying stream',
+      );
 
       await harness.toServer.close();
-      await Future.delayed(const Duration(milliseconds: 50));
 
       final status = harness.firstTrailerStatus();
       expect(status, equals(StatusCode.deadlineExceeded), reason: 'Server must reply DEADLINE_EXCEEDED on timeout');
@@ -267,14 +286,17 @@ void main() {
       harness.sendData(1);
 
       await handlerStarted.future;
-      await Future.delayed(const Duration(milliseconds: 100));
+      await waitForPredicate(
+        predicate: () => harness.stream.sentTrailers.isNotEmpty && harness.stream.terminateCount >= 1,
+        reason:
+            'Timed-out server-streaming call must send trailers and terminate '
+            'the stream before post-timeout frames are observed',
+      );
 
       try {
         harness.sendData(99);
         harness.sendData(100);
       } catch (_) {}
-
-      await Future.delayed(const Duration(milliseconds: 50));
 
       final status = harness.firstTrailerStatus();
       expect(
@@ -312,7 +334,12 @@ void main() {
       harness.fromServer.stream.listen((_) {}, onError: (_) {}, onDone: () {});
 
       harness.toServer.close();
-      await Future.delayed(const Duration(milliseconds: 100));
+      await waitForPredicate(
+        predicate: () => harness.stream.sentTrailers.isNotEmpty && harness.stream.terminateCount >= 1,
+        reason:
+            'Unexpected request-stream close must produce trailers and '
+            'terminate the underlying stream',
+      );
 
       final status = harness.firstTrailerStatus();
       expect(status, equals(StatusCode.unavailable), reason: 'Unexpected close must produce UNAVAILABLE status');
@@ -338,10 +365,11 @@ void main() {
       harness.fromServer.stream.listen((_) {}, onError: (_) {}, onDone: () {});
 
       harness.sendData(42);
-      await Future.delayed(const Duration(milliseconds: 50));
-
       harness.toServer.close();
-      await Future.delayed(const Duration(milliseconds: 100));
+      await waitForPredicate(
+        predicate: () => harness.stream.sentTrailers.isNotEmpty,
+        reason: 'Invalid frame followed by close must emit exactly one trailer set',
+      );
 
       // The _trailersSent guard ensures trailers are sent exactly once.
       expect(
@@ -376,7 +404,10 @@ void main() {
       harness.fromServer.stream.listen((_) {}, onError: (_) {}, onDone: () {});
 
       harness.sendRequestHeader('/Test/Unary');
-      await Future.delayed(const Duration(milliseconds: 50));
+      await waitForPredicate(
+        predicate: () => harness.firstTrailerStatus() != null,
+        reason: 'Interceptor-thrown GrpcError must produce response trailers',
+      );
 
       final status = harness.firstTrailerStatus();
       expect(
@@ -399,7 +430,10 @@ void main() {
       harness.fromServer.stream.listen((_) {}, onError: (_) {}, onDone: () {});
 
       harness.sendRequestHeader('/Test/Unary');
-      await Future.delayed(const Duration(milliseconds: 50));
+      await waitForPredicate(
+        predicate: () => harness.firstTrailerStatus() != null,
+        reason: 'Thrown Exception from interceptor must produce trailers',
+      );
 
       final status = harness.firstTrailerStatus();
       expect(
@@ -422,7 +456,10 @@ void main() {
       harness.fromServer.stream.listen((_) {}, onError: (_) {}, onDone: () {});
 
       harness.sendRequestHeader('/Test/Unary');
-      await Future.delayed(const Duration(milliseconds: 50));
+      await waitForPredicate(
+        predicate: () => harness.firstTrailerStatus() != null,
+        reason: 'Interceptor-thrown permissionDenied must produce response trailers',
+      );
 
       final status = harness.firstTrailerStatus();
       expect(
@@ -446,7 +483,10 @@ void main() {
       harness.fromServer.stream.listen((_) {}, onError: (_) {}, onDone: () {});
 
       harness.sendRequestHeader('/Test/Unary');
-      await Future.delayed(const Duration(milliseconds: 100));
+      await waitForPredicate(
+        predicate: () => harness.firstTrailerStatus() != null,
+        reason: 'Async interceptor throw must complete and send response trailers',
+      );
 
       final status = harness.firstTrailerStatus();
       expect(
@@ -496,7 +536,6 @@ void main() {
       harness.toServer.close();
 
       await done.future.timeout(const Duration(seconds: 2));
-      await Future.delayed(const Duration(milliseconds: 50));
 
       // After endStream: true, a single terminate() is acceptable —
       // the http2 package triggers cancel() via outgoingMessages.done

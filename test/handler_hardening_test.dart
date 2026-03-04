@@ -1117,6 +1117,13 @@ void main() {
       await done.future.timeout(const Duration(seconds: 5), onTimeout: () => fail('Handler did not complete'));
 
       expect(sawOkStatus, isTrue);
+      expect(
+        handler.isCanceled,
+        isFalse,
+        reason:
+            'Normal successful completion must not be reported as '
+            'client cancellation.',
+      );
 
       // Handler has already completed normally. Now call cancel()
       // which invokes _terminateStream() a second time. The

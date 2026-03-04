@@ -114,6 +114,18 @@ class _StartupTimeoutTestServer extends NamedPipeServer {
   }
 }
 
+class _RuntimeErrorHandlingTestServer extends NamedPipeServer {
+  int shutdownCallCount = 0;
+
+  _RuntimeErrorHandlingTestServer() : super.create(services: [EchoService()]);
+
+  @override
+  Future<void> shutdown() async {
+    shutdownCallCount++;
+    await super.shutdown();
+  }
+}
+
 Future<Isolate> _spawnAcceptLoopWithoutStopBootstrapPort({
   required String pipeName,
   required SendPort mainPort,
@@ -166,6 +178,33 @@ void _acceptLoopWithoutReadySignal(({String pipeName, SendPort mainPort, SendPor
 // =============================================================================
 
 void main() {
+  group('Named Pipe post-startup isolate error handling', () {
+    test('post-startup error triggers fail-safe shutdown', () async {
+      final server = _RuntimeErrorHandlingTestServer();
+      addTearDown(server.shutdown);
+
+      server.markRunningForTest();
+      await server.handlePostStartupAcceptLoopErrorForTest('forced accept-loop failure');
+
+      expect(
+        server.shutdownCallCount,
+        equals(1),
+        reason: 'Post-startup accept-loop error must trigger fail-safe shutdown.',
+      );
+      expect(server.isRunning, isFalse);
+    });
+
+    test('post-startup error does nothing when server is already stopped', () async {
+      final server = _RuntimeErrorHandlingTestServer();
+      addTearDown(server.shutdown);
+
+      await server.handlePostStartupAcceptLoopErrorForTest('forced accept-loop failure');
+
+      expect(server.shutdownCallCount, equals(0));
+      expect(server.isRunning, isFalse);
+    });
+  });
+
   group('Named Pipe startup timeout cleanup', () {
     test('stop-bootstrap timeout cleans startup resources', () async {
       final server = _StartupTimeoutTestServer(
@@ -947,6 +986,7 @@ void main() {
       await server2.serve(pipeName: pipeName);
 
       final channel2 = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel2.terminate());
       final client2 = EchoClient(channel2);
       expect(await client2.echo(99), equals(99));
 

@@ -79,16 +79,25 @@ class ServerHandler extends ServiceCall {
   final Sink<void>? onDataReceived;
 
   final Completer<void> _isCanceledCompleter = Completer<void>();
+  final Completer<void> _onTerminatedCompleter = Completer<void>();
 
   Future<void> get onCanceled => _isCanceledCompleter.future;
+  Future<void> get onTerminated => _onTerminatedCompleter.future;
 
   /// Completes when the response subscription cancel has finished.
   /// Call after [cancel] to ensure async* generators are fully stopped.
   Future<void> get onResponseCancelDone => _responseCancelFuture ?? Future.value();
 
+  void _markTerminated() {
+    if (!_onTerminatedCompleter.isCompleted) {
+      _onTerminatedCompleter.complete();
+    }
+  }
+
   set isCanceled(bool value) {
     if (!isCanceled) {
       _isCanceledCompleter.complete();
+      _markTerminated();
     }
   }
 
@@ -143,6 +152,12 @@ class ServerHandler extends ServiceCall {
         .transform(grpcDecompressor(codecRegistry: _codecRegistry))
         .listen(_onDataIdle, onError: _onError, onDone: _onDoneError, cancelOnError: true);
     _stream.outgoingMessages.done.whenComplete(() {
+      if (_trailersSent) {
+        // Normal completion path: trailers with endStream already completed
+        // this handler lifecycle. Do not mark it as canceled.
+        _markTerminated();
+        return;
+      }
       cancel();
     });
   }
@@ -517,12 +532,9 @@ class ServerHandler extends ServiceCall {
       );
     }
 
-    // Signal completion so Server.handlers cleanup fires.
-    // The server tracks handlers via onCanceled.then(remove). On normal
-    // completion (_onResponseDone → sendTrailers), isCanceled was never
-    // set, so the handler leaked in the map until the connection closed.
-    // The setter is idempotent — no-op if already completed by cancel().
-    isCanceled = true;
+    // Mark lifecycle complete so ConnectionServer can remove this handler from
+    // tracking without misreporting successful calls as client-canceled.
+    _markTerminated();
 
     // We're done!
     _cancelResponseSubscription();

@@ -300,6 +300,47 @@ class NamedPipeServer extends ConnectionServer {
     Error.throwWithStackTrace(startupError, startupStackTrace);
   }
 
+  /// Handles a fatal accept-loop error after startup readiness.
+  ///
+  /// Before startup readiness, serve() receives the error via
+  /// [_readyCompleter]. After readiness, there is no waiting caller, so
+  /// this path triggers a fail-safe shutdown to avoid a "running but no
+  /// longer accepting connections" state.
+  Future<void> _handlePostStartupAcceptLoopError(String error) async {
+    logGrpcEvent(
+      '[gRPC] NamedPipeServer error: $error',
+      component: 'NamedPipeServer',
+      event: 'isolate_error',
+      context: '_handleIsolateMessage',
+      error: error,
+    );
+
+    if (!_isRunning) return;
+
+    try {
+      await shutdown();
+    } catch (shutdownError) {
+      logGrpcEvent(
+        '[gRPC] NamedPipeServer fail-safe shutdown failed after isolate error: '
+        '$shutdownError',
+        component: 'NamedPipeServer',
+        event: 'isolate_error_shutdown_failed',
+        context: '_handlePostStartupAcceptLoopError',
+        error: shutdownError,
+      );
+    }
+  }
+
+  @visibleForTesting
+  Future<void> handlePostStartupAcceptLoopErrorForTest(String error) {
+    return _handlePostStartupAcceptLoopError(error);
+  }
+
+  @visibleForTesting
+  void markRunningForTest() {
+    _isRunning = true;
+  }
+
   /// Handles messages from the server isolate.
   void _handleIsolateMessage(dynamic message) {
     if (message is _ServerReady) {
@@ -320,13 +361,7 @@ class NamedPipeServer extends ConnectionServer {
       if (!(_readyCompleter?.isCompleted ?? true)) {
         _readyCompleter!.completeError(StateError(message.error));
       } else {
-        logGrpcEvent(
-          '[gRPC] NamedPipeServer error: ${message.error}',
-          component: 'NamedPipeServer',
-          event: 'isolate_error',
-          context: '_handleIsolateMessage',
-          error: message.error,
-        );
+        unawaited(_handlePostStartupAcceptLoopError(message.error));
       }
     }
   }

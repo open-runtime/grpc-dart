@@ -30,6 +30,21 @@ import 'package:test/test.dart';
 import 'common.dart';
 import 'src/echo_service.dart';
 
+Future<void> waitForPredicate({
+  required bool Function() predicate,
+  required String reason,
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (predicate()) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  fail(reason);
+}
+
 void main() {
   // ==============================================================
   // Group 1: Connection recovery and re-dispatch
@@ -49,15 +64,8 @@ void main() {
 
       final result1 = await client1
           .echo(42)
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => fail('echo(42) on server1 timed out'),
-          );
-      expect(
-        result1,
-        equals(42),
-        reason: 'First echo on server1 should return 42',
-      );
+          .timeout(const Duration(seconds: 10), onTimeout: () => fail('echo(42) on server1 timed out'));
+      expect(result1, equals(42), reason: 'First echo on server1 should return 42');
 
       await channel1.shutdown();
       await server1.shutdown();
@@ -74,10 +82,7 @@ void main() {
 
       final result2 = await client2
           .echo(99)
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => fail('echo(99) on server2 timed out'),
-          );
+          .timeout(const Duration(seconds: 10), onTimeout: () => fail('echo(99) on server2 timed out'));
       expect(
         result2,
         equals(99),
@@ -106,10 +111,7 @@ void main() {
         10,
         (i) => client
             .echo(i % 256)
-            .timeout(
-              const Duration(seconds: 10),
-              onTimeout: () => fail('Concurrent echo($i) timed out'),
-            ),
+            .timeout(const Duration(seconds: 10), onTimeout: () => fail('Concurrent echo($i) timed out')),
       );
       final results = await Future.wait(futures);
 
@@ -123,9 +125,7 @@ void main() {
 
       // There should be exactly 1 ready transition,
       // not 10 separate connections.
-      final readyCount = channel.states
-          .where((s) => s == ConnectionState.ready)
-          .length;
+      final readyCount = channel.states.where((s) => s == ConnectionState.ready).length;
       expect(
         readyCount,
         equals(1),
@@ -139,9 +139,7 @@ void main() {
       await server.shutdown();
     });
 
-    testTcpAndUds('RPCs across 5 sequential server restart cycles', (
-      address,
-    ) async {
+    testTcpAndUds('RPCs across 5 sequential server restart cycles', (address) async {
       for (var cycle = 0; cycle < 5; cycle++) {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);
@@ -189,10 +187,7 @@ void main() {
       // Successful RPC before shutdown.
       final result = await client
           .echo(42)
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => fail('Initial echo(42) timed out'),
-          );
+          .timeout(const Duration(seconds: 10), onTimeout: () => fail('Initial echo(42) timed out'));
       expect(
         result,
         equals(42),
@@ -252,10 +247,7 @@ void main() {
           client
               .serverStream(10)
               .toList()
-              .timeout(
-                const Duration(seconds: 30),
-                onTimeout: () => fail('serverStream($i) timed out'),
-              )
+              .timeout(const Duration(seconds: 30), onTimeout: () => fail('serverStream($i) timed out'))
               .then<Object?>((v) => v),
         ),
       );
@@ -325,10 +317,7 @@ void main() {
 
       final result = await client
           .clientStream(pacedStream(items, yieldEvery: 10))
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () => fail('clientStream with 500 items timed out'),
-          );
+          .timeout(const Duration(seconds: 30), onTimeout: () => fail('clientStream with 500 items timed out'));
 
       expect(
         result,
@@ -358,10 +347,7 @@ void main() {
       final results = await client
           .bidiStream(pacedStream(items, yieldEvery: 5))
           .toList()
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () => fail('bidiStream with 200 items timed out'),
-          );
+          .timeout(const Duration(seconds: 30), onTimeout: () => fail('bidiStream with 200 items timed out'));
 
       expect(
         results.length,
@@ -416,10 +402,7 @@ void main() {
 
       final result = await client
           .echo(1)
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => fail('First echo(1) timed out'),
-          );
+          .timeout(const Duration(seconds: 10), onTimeout: () => fail('First echo(1) timed out'));
       expect(result, equals(1), reason: 'echo(1) should succeed');
 
       expect(
@@ -467,12 +450,8 @@ void main() {
       }
 
       // Count connecting and ready transitions.
-      final connectingCount = channel.states
-          .where((s) => s == ConnectionState.connecting)
-          .length;
-      final readyCount = channel.states
-          .where((s) => s == ConnectionState.ready)
-          .length;
+      final connectingCount = channel.states.where((s) => s == ConnectionState.connecting).length;
+      final readyCount = channel.states.where((s) => s == ConnectionState.ready).length;
 
       expect(
         connectingCount,
@@ -508,10 +487,7 @@ void main() {
 
       final result = await client
           .echo(7)
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => fail('echo(7) timed out'),
-          );
+          .timeout(const Duration(seconds: 10), onTimeout: () => fail('echo(7) timed out'));
       expect(
         result,
         equals(7),
@@ -554,19 +530,18 @@ void main() {
       // After the failed RPC, the channel should
       // eventually transition away from ready. The
       // GOAWAY / socket-close may not be processed
-      // synchronously, so poll with a bounded timeout.
-      final deadline = DateTime.now().add(const Duration(seconds: 5));
-      var hasNonReady = false;
-      while (DateTime.now().isBefore(deadline)) {
-        hasNonReady = channel.states.any(
-          (s) =>
-              s == ConnectionState.transientFailure ||
-              s == ConnectionState.idle ||
-              s == ConnectionState.shutdown,
-        );
-        if (hasNonReady) break;
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
+      // synchronously, so wait on the concrete state predicate.
+      await waitForPredicate(
+        predicate: () => channel.states.any(
+          (s) => s == ConnectionState.transientFailure || s == ConnectionState.idle || s == ConnectionState.shutdown,
+        ),
+        reason:
+            'Channel did not record a non-ready transition after server '
+            'shutdown within the bounded wait window',
+      );
+      final hasNonReady = channel.states.any(
+        (s) => s == ConnectionState.transientFailure || s == ConnectionState.idle || s == ConnectionState.shutdown,
+      );
       expect(
         hasNonReady,
         isTrue,
@@ -644,12 +619,7 @@ void main() {
           // short timeout of 1 millisecond.
           final settled = await settleRpc(
             client
-                .echo(
-                  i % 256,
-                  options: CallOptions(
-                    timeout: const Duration(milliseconds: 1),
-                  ),
-                )
+                .echo(i % 256, options: CallOptions(timeout: const Duration(milliseconds: 1)))
                 .timeout(
                   const Duration(seconds: 10),
                   onTimeout: () => fail(
@@ -676,7 +646,13 @@ void main() {
           // Allow the channel time to recover
           // from any connection disruption before
           // the next RPC.
-          await Future.delayed(const Duration(milliseconds: 50));
+          await waitForPredicate(
+            predicate: () => channel.states.isNotEmpty && channel.states.last != ConnectionState.connecting,
+            timeout: const Duration(seconds: 2),
+            reason:
+                'Channel stayed in connecting after deadline-injected RPC '
+                'at i=$i',
+          );
         } else {
           // Normal RPC — settle it so transient
           // connection errors from a prior deadline
@@ -742,9 +718,7 @@ void main() {
   });
 
   group('Named pipe dispatch re-queue hardening', () {
-    testNamedPipe('single channel survives 6 named-pipe server restarts', (
-      pipeName,
-    ) async {
+    testNamedPipe('single channel survives 6 named-pipe server restarts', (pipeName) async {
       const cycles = 6;
       const rpcsPerCycle = 25;
 
@@ -761,10 +735,7 @@ void main() {
         }
       });
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       // Use terminate() not shutdown() — addTearDown runs after test
       // timeout, and shutdown() waits indefinitely for pending RPCs that
       // will never settle (the literal reason the test timed out).
@@ -785,17 +756,13 @@ void main() {
                 }),
               ).timeout(
                 const Duration(seconds: 30),
-                onTimeout: () =>
-                    fail('Cycle $cycle: named-pipe RPC batch did not settle'),
+                onTimeout: () => fail('Cycle $cycle: named-pipe RPC batch did not settle'),
               );
 
           var successCount = 0;
           for (var i = 0; i < settled.length; i++) {
             final expected = (cycle * rpcsPerCycle + i) % 256;
-            expectHardcoreRpcSettlement(
-              settled[i],
-              reason: 'Cycle $cycle RPC $i settled with unexpected type',
-            );
+            expectHardcoreRpcSettlement(settled[i], reason: 'Cycle $cycle RPC $i settled with unexpected type');
             // During server restart, some RPCs may fail with transport
             // errors. Only verify value correctness for successful RPCs.
             if (settled[i] == expected) successCount++;
@@ -819,6 +786,6 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 100));
         }
       }
-    });
+    }, timeout: const Timeout(Duration(seconds: 60)));
   });
 }

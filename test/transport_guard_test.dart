@@ -707,12 +707,14 @@ void main() {
         const itemsPerStream = 40;
 
         final server = NamedPipeServer.create(services: [EchoService()]);
+        addTearDown(() => server.shutdown());
         await server.serve(pipeName: pipeName);
 
         final channel = NamedPipeClientChannel(
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         final controllers = List.generate(

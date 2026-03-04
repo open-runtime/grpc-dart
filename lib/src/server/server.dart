@@ -148,7 +148,8 @@ class ConnectionServer {
     StreamController<void> onDataReceivedController,
   ) async {
     // Snapshot via List.of() avoids ConcurrentModificationError:
-    // handler.cancel() triggers onCanceled.then() which removes
+    // handler.cancel() / normal completion triggers onTerminated.then()
+    // which removes
     // from the live list while we iterate.
     final connectionHandlers = List.of(handlers[connection] ?? <ServerHandler>[]);
     for (final handler in connectionHandlers) {
@@ -195,7 +196,7 @@ class ConnectionServer {
           remoteAddress: remoteAddress,
           onDataReceived: onDataReceivedController.sink,
         );
-        handler.onCanceled.then((_) => handlers[connection]?.remove(handler));
+        handler.onTerminated.then((_) => handlers[connection]?.remove(handler));
         connectionHandlers.add(handler);
       },
       onError: (error, stackTrace) {
@@ -601,6 +602,27 @@ class Server extends ConnectionServer {
     }
     server.listen(
       (socket) {
+        if (security != null) {
+          bool isAllowed;
+          try {
+            isAllowed = security.validateClient(socket);
+          } catch (e) {
+            logGrpcEvent(
+              '[gRPC] validateClient threw: $e',
+              component: 'Server',
+              event: 'validate_client_error',
+              context: 'serve',
+              error: e,
+            );
+            socket.destroy();
+            return;
+          }
+          if (!isAllowed) {
+            socket.destroy();
+            return;
+          }
+        }
+
         // Don't wait for io buffers to fill up before sending requests.
         if (socket.address.type != InternetAddressType.unix) {
           socket.setOption(SocketOption.tcpNoDelay, true);

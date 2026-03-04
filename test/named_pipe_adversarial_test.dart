@@ -330,6 +330,7 @@ void main() {
 
         log('Creating server...');
         final server = NamedPipeServer.create(services: [EchoService()]);
+        addTearDown(() => server.shutdown());
         log('Starting server on pipe: $pipeName');
         await server.serve(pipeName: pipeName);
         log('Server started.');
@@ -855,7 +856,7 @@ void main() {
         // for the OS to reclaim the pipe name most of the time.
         await Future.delayed(const Duration(milliseconds: 100));
       }
-    });
+    }, timeout: const Timeout(Duration(seconds: 60)));
   });
 
   // ===========================================================================
