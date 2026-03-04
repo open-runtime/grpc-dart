@@ -104,6 +104,14 @@ Future<void> _assertTransportNotUsableForRpc(
       // Also acceptable: transport may hang rather than fail cleanly.
     }
   }
+
+  // CRITICAL: terminate the channel to break any reconnect loop.
+  // Without this, orphaned ClientCalls (whose .timeout() fired but whose
+  // underlying call was never cancelled) stay in _pendingCalls, causing
+  // _abandonConnection() → reconnect Timer → infinite loop with exponential
+  // backoff. Those Timers keep the Dart VM event loop alive, preventing
+  // `dart test` from exiting (observed as 29-minute CI hangs on Windows).
+  await channel.terminate();
 }
 
 // =============================================================================
