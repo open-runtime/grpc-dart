@@ -483,12 +483,23 @@ class NamedPipeServer extends ConnectionServer {
       _stopSendPort?.send(null);
       _stopSendPort = null;
 
-      // Step 4: Register an exit listener and kill the isolate.
+      // Step 4: Wait for cooperative exit, then kill only as last resort.
       //
-      // The exit listener confirms the isolate has terminated.
-      // Isolate.kill(immediate) is a safety net — the cooperative
-      // stop signal should terminate the loop, but the kill ensures
-      // termination even if the stop message is delayed.
+      // CRITICAL: Do NOT call Isolate.kill() before the cooperative stop
+      // signal has been processed. Isolate.kill(immediate) uses a control
+      // event which has HIGHER PRIORITY than regular SendPort messages.
+      // If kill fires before the stop signal is processed, the accept
+      // loop's finally block never runs — leaking the CreateNamedPipe
+      // handle. The leaked pipe instance stays in "listening" state in
+      // the Windows kernel namespace. When the next server cycle starts,
+      // CreateFile may connect to the leaked instance instead of the new
+      // server's instance, causing RPCs to hang indefinitely.
+      //
+      // The accept loop polls ConnectNamedPipe with PIPE_NOWAIT and yields
+      // every ~1ms (real: ~15.6ms on Windows due to timer resolution).
+      // After the stop signal sets shouldStop=true, the loop exits within
+      // one yield cycle and calls Isolate.exit() in its finally block.
+      // 500ms is >30x the worst-case single yield, providing ample margin.
       final serverIsolate = _serverIsolate;
       if (serverIsolate != null) {
         exitPort = ReceivePort();
@@ -497,21 +508,33 @@ class NamedPipeServer extends ConnectionServer {
           if (!exitCompleter.isCompleted) exitCompleter.complete();
         });
         serverIsolate.addOnExitListener(exitPort.sendPort);
-        serverIsolate.kill(priority: Isolate.immediate);
 
-        // Wait for confirmed termination. The accept loop yields
-        // every 1ms and calls Isolate.exit() in its finally block,
-        // so 5 seconds is extremely generous.
+        // Wait for the accept loop to process the stop signal and exit
+        // cooperatively via Isolate.exit().
         try {
-          await exitCompleter.future.timeout(const Duration(seconds: 5));
+          await exitCompleter.future.timeout(const Duration(milliseconds: 500));
         } on TimeoutException {
+          // Cooperative exit failed — force kill as last resort.
+          // This may leak a CreateNamedPipe handle, but it's better than
+          // hanging indefinitely.
           logGrpcEvent(
-            '[gRPC] Server isolate did not confirm exit within '
-            'timeout. Process may not exit cleanly.',
+            '[gRPC] Accept loop did not exit cooperatively within 500ms. '
+            'Forcing kill. Pipe handles may leak.',
             component: 'NamedPipeServer',
-            event: 'isolate_exit_timeout',
+            event: 'cooperative_exit_timeout',
             context: 'shutdown',
           );
+          serverIsolate.kill(priority: Isolate.immediate);
+          try {
+            await exitCompleter.future.timeout(const Duration(seconds: 5));
+          } on TimeoutException {
+            logGrpcEvent(
+              '[gRPC] Server isolate did not confirm exit after forced kill.',
+              component: 'NamedPipeServer',
+              event: 'isolate_exit_timeout',
+              context: 'shutdown',
+            );
+          }
         }
       }
     } finally {
