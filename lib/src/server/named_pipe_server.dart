@@ -688,6 +688,39 @@ class _ServerPipeStream {
     _deferredCloseTimer = null;
   }
 
+  /// Cancels the outgoing subscription and chains controller close AFTER
+  /// the cancellation completes.
+  ///
+  /// Closing a [StreamController] while an [addStream] is active throws
+  /// [StateError] ("Cannot close while a stream is being added"). The
+  /// HTTP/2 transport writes frames via [addStream] on the outgoing
+  /// controller. Cancelling the subscription triggers the addStream
+  /// cascade that unlocks the controller, but this cascade is async.
+  ///
+  /// Previously, `cancel()` was fire-and-forget followed by a synchronous
+  /// `close()` — which threw, leaving the controller open. The unclosed
+  /// controller's internal addStream subscription kept the Dart VM event
+  /// loop alive indefinitely, causing 30-minute process hangs on Windows CI.
+  void _cancelOutgoingAndCloseController() {
+    final sub = _outgoingSubscription;
+    _outgoingSubscription = null;
+    if (sub != null) {
+      unawaited(
+        sub.cancel().whenComplete(() {
+          if (!_outgoingController.isClosed) {
+            try {
+              _outgoingController.close();
+            } catch (_) {}
+          }
+        }),
+      );
+    } else if (!_outgoingController.isClosed) {
+      try {
+        _outgoingController.close();
+      } catch (_) {}
+    }
+  }
+
   void _armDeferredCloseTimer() {
     _cancelDeferredCloseTimer();
     _deferredCloseTimer = Timer(_deferredCloseTimeout, () {
@@ -703,19 +736,9 @@ class _ServerPipeStream {
         context: '_ServerPipeStream.close',
       );
 
-      _outgoingSubscription?.cancel();
-      _outgoingSubscription = null;
-      try {
-        _outgoingController.close();
-      } catch (e) {
-        logGrpcEvent(
-          '[gRPC] named pipe close error: $e',
-          component: 'NamedPipeServer',
-          event: 'close_error',
-          context: 'deferred_close_timer_callback',
-          error: e,
-        );
-      }
+      // Chain controller close AFTER subscription cancel completes.
+      // See _cancelOutgoingAndCloseController doc for why this is critical.
+      _cancelOutgoingAndCloseController();
       if (!_incomingController.isClosed) {
         _incomingController.close();
       }
@@ -776,19 +799,12 @@ class _ServerPipeStream {
       // the server is shutting down before the transport finishes writing.
       if (force) {
         _cancelDeferredCloseTimer();
-        _outgoingSubscription?.cancel();
-        _outgoingSubscription = null;
-        try {
-          _outgoingController.close();
-        } catch (e) {
-          logGrpcEvent(
-            '[gRPC] named pipe close error: $e',
-            component: 'NamedPipeServer',
-            event: 'close_error',
-            context: 'close_force_upgrade',
-            error: e,
-          );
-        }
+        // Chain controller close AFTER subscription cancel completes.
+        // Closing the controller while addStream() is active throws
+        // StateError ("Cannot close while a stream is being added").
+        // The unawaited cancel() left the addStream() source alive,
+        // keeping the VM process alive indefinitely (30-minute CI hang).
+        _cancelOutgoingAndCloseController();
         // Close incoming if deferred from normal close (see below).
         if (!_incomingController.isClosed) {
           _incomingController.close();
@@ -803,24 +819,9 @@ class _ServerPipeStream {
       // Close incoming immediately — forced shutdown tears everything down.
       _incomingController.close();
       _cancelDeferredCloseTimer();
-      // Forced shutdown: cancel outgoing subscription immediately.
-      // This triggers the addStream() cascade (see doc above) that unlocks
-      // the controller so close() succeeds.
-      _outgoingSubscription?.cancel();
-      _outgoingSubscription = null;
-
-      try {
-        _outgoingController.close();
-      } catch (e) {
-        logGrpcEvent(
-          '[gRPC] named pipe close error: $e',
-          component: 'NamedPipeServer',
-          event: 'close_error',
-          context: 'close_force_initial',
-          error: e,
-        );
-      }
-
+      // Chain controller close AFTER subscription cancel completes.
+      // See _cancelOutgoingAndCloseController doc for why this is critical.
+      _cancelOutgoingAndCloseController();
       _closeHandle(disconnect: true);
     }
     // Normal close: Do NOT cancel the outgoing subscription. The HTTP/2

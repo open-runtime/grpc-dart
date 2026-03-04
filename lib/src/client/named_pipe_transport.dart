@@ -567,15 +567,55 @@ class _NamedPipeStream {
     _deferredCloseTimer = null;
   }
 
+  /// Cancels the outgoing subscription and chains controller close AFTER
+  /// the cancellation completes.
+  ///
+  /// Closing a [StreamController] while an [addStream] is active throws
+  /// [StateError] ("Cannot close while a stream is being added"). The
+  /// HTTP/2 transport writes frames via [addStream] on the outgoing
+  /// controller. Cancelling the subscription triggers the addStream
+  /// cascade that unlocks the controller, but this cascade is async.
+  ///
+  /// Previously, `cancel()` was fire-and-forget followed by a synchronous
+  /// `close()` via `_finalizeClose()` — which threw, leaving the controller
+  /// open. The unclosed controller's internal addStream subscription kept the
+  /// Dart VM event loop alive indefinitely, causing 30-minute process hangs
+  /// on Windows CI.
+  void _cancelOutgoingAndCloseController() {
+    final sub = _outgoingSubscription;
+    _outgoingSubscription = null;
+    if (sub != null) {
+      unawaited(
+        sub.cancel().whenComplete(() {
+          if (!_outgoingController.isClosed) {
+            try {
+              _outgoingController.close();
+            } catch (_) {}
+          }
+        }),
+      );
+    } else if (!_outgoingController.isClosed) {
+      try {
+        _outgoingController.close();
+      } catch (_) {}
+    }
+  }
+
   void _armDeferredCloseTimer() {
     _cancelDeferredCloseTimer();
     _deferredCloseTimer = Timer(_deferredCloseTimeout, () {
       if (_outgoingSubscription == null) {
         return;
       }
-      _outgoingSubscription?.cancel();
-      _outgoingSubscription = null;
-      _finalizeClose();
+      // Chain controller close AFTER subscription cancel completes.
+      // See _cancelOutgoingAndCloseController doc for why this is critical.
+      _cancelOutgoingAndCloseController();
+      if (!_incomingController.isClosed) {
+        _incomingController.close();
+      }
+      if (!_doneCompleter.isCompleted) {
+        _doneCompleter.complete();
+      }
     });
   }
 
@@ -615,9 +655,18 @@ class _NamedPipeStream {
       if (force) {
         _cancelDeferredCloseTimer();
         _writesClosed = true;
-        _outgoingSubscription?.cancel();
-        _outgoingSubscription = null;
-        _finalizeClose();
+        // Chain controller close AFTER subscription cancel completes.
+        // Closing the controller while addStream() is active throws
+        // StateError ("Cannot close while a stream is being added").
+        // The unawaited cancel() left the addStream() source alive,
+        // keeping the VM process alive indefinitely (30-minute CI hang).
+        _cancelOutgoingAndCloseController();
+        if (!_incomingController.isClosed) {
+          _incomingController.close();
+        }
+        if (!_doneCompleter.isCompleted) {
+          _doneCompleter.complete();
+        }
       }
       return;
     }
@@ -626,9 +675,15 @@ class _NamedPipeStream {
     if (force) {
       _cancelDeferredCloseTimer();
       _writesClosed = true;
-      _outgoingSubscription?.cancel();
-      _outgoingSubscription = null;
-      _finalizeClose();
+      // Chain controller close AFTER subscription cancel completes.
+      // See _cancelOutgoingAndCloseController doc for why this is critical.
+      _cancelOutgoingAndCloseController();
+      if (!_incomingController.isClosed) {
+        _incomingController.close();
+      }
+      if (!_doneCompleter.isCompleted) {
+        _doneCompleter.complete();
+      }
       return;
     }
 
