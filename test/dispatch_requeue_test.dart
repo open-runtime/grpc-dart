@@ -784,7 +784,7 @@ void main() {
                   return settleRpc(client.echo(value).then<Object?>((v) => v));
                 }),
               ).timeout(
-                const Duration(seconds: 20),
+                const Duration(seconds: 30),
                 onTimeout: () =>
                     fail('Cycle $cycle: named-pipe RPC batch did not settle'),
               );

@@ -447,6 +447,7 @@ void main() {
         pipeName,
         options: const NamedPipeChannelOptions(),
       );
+      addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
       // Fire the RPC (triggers lazy connect) and immediately shut down.
@@ -500,6 +501,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Create a long-lived bidi stream: the client sends 200 items with
@@ -575,6 +577,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Create a slow client stream that sends values over ~2 seconds.
@@ -657,6 +660,11 @@ void main() {
           options: const NamedPipeChannelOptions(),
         ),
       );
+      addTearDown(() async {
+        for (final ch in channels) {
+          await ch.terminate();
+        }
+      });
       final clients = channels.map(EchoClient.new).toList();
 
       // Warm up: ensure all 3 channels are connected.
@@ -737,6 +745,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel1.terminate());
         final client1 = EchoClient(channel1);
 
         // Request 255 items (~255ms of streaming). 255 is the maximum
@@ -767,6 +776,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel2.terminate());
         final client2 = EchoClient(channel2);
         // Value must be ≤255 — the echo service serializes int as a single
         // byte ([value]), so values >255 are truncated by Uint8List.
@@ -938,6 +948,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Launch 5 bidi streams in parallel, each sending 100 items.
@@ -1021,6 +1032,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Create a 100KB payload with a repeating pattern.
@@ -1085,6 +1097,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Build request: 8 bytes big-endian [chunkCount(4), chunkSize(4)].
@@ -1151,6 +1164,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Request a large server-stream and intentionally do not listen to
@@ -1198,6 +1212,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => recoveryChannel.terminate());
         final recoveryClient = EchoClient(recoveryChannel);
         expect(await recoveryClient.echo(7), equals(7));
 
@@ -1230,6 +1245,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Request a large server-stream and do not consume the response.
@@ -1348,6 +1364,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
         log('Calling echo(42)...');
         final result = await client.echo(42);
@@ -1555,6 +1572,7 @@ void main() {
           pipeName,
           options: const NamedPipeChannelOptions(),
         );
+        addTearDown(() => channel.terminate());
         final client = EchoClient(channel);
 
         // Open a bidi stream and send data to establish active I/O.
@@ -1671,11 +1689,20 @@ void main() {
         // 12 rapid cycles. Each cycle: connect, fire RPC, terminate
         // (not graceful shutdown — terminate is harsher, more likely
         // to produce ERROR_NO_DATA on server side).
+        final cycleChannels = <NamedPipeClientChannel>[];
+        addTearDown(() async {
+          for (final ch in cycleChannels) {
+            try {
+              await ch.terminate();
+            } catch (_) {}
+          }
+        });
         for (var cycle = 0; cycle < 12; cycle++) {
           final channel = NamedPipeClientChannel(
             pipeName,
             options: const NamedPipeChannelOptions(),
           );
+          cycleChannels.add(channel);
           final client = EchoClient(channel);
 
           // Fire RPC and settle (allow error).
@@ -1771,6 +1798,13 @@ void main() {
 
         // Connect 5 clients and verify they all work.
         final channels = <NamedPipeClientChannel>[];
+        addTearDown(() async {
+          for (final ch in channels) {
+            try {
+              await ch.terminate();
+            } catch (_) {}
+          }
+        });
         for (var i = 0; i < 5; i++) {
           final channel = NamedPipeClientChannel(
             pipeName,
