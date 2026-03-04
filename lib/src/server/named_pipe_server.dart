@@ -286,6 +286,17 @@ class NamedPipeServer extends ConnectionServer {
   /// handle obtained by ConnectNamedPipe in the server isolate can be used
   /// here in the main isolate.
   void _handleNewConnection(int hPipe) {
+    if (hPipe == 0 || hPipe == INVALID_HANDLE_VALUE) {
+      logGrpcEvent(
+        '[gRPC] Received invalid pipe handle: $hPipe',
+        component: 'NamedPipeServer',
+        event: 'invalid_pipe_handle',
+        context: '_handleNewConnection',
+        error: hPipe,
+      );
+      return;
+    }
+
     final stream = _ServerPipeStream(hPipe);
     _activeStreams.add(stream);
 

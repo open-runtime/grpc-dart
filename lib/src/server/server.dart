@@ -81,6 +81,11 @@ class ServerTlsCredentials extends ServerCredentials {
 /// Unlike [Server], the caller has the responsibility of configuring and
 /// managing the connection from a client.
 class ConnectionServer {
+  static const Duration _incomingSubscriptionCancelTimeout = Duration(seconds: 5);
+  static const Duration _responseCancelTimeout = Duration(seconds: 5);
+  static const Duration _finishConnectionDeadline = Duration(seconds: 5);
+  static const Duration _terminateConnectionTimeout = Duration(seconds: 2);
+
   final Map<String, Service> _services = {};
   final List<Interceptor> _interceptors;
   final List<ServerInterceptor> _serverInterceptors;
@@ -138,6 +143,27 @@ class ConnectionServer {
 
   Service? lookupService(String service) => _services[service];
 
+  Future<void> _cleanupConnection(
+    ServerTransportConnection connection,
+    StreamController<void> onDataReceivedController,
+  ) async {
+    // Snapshot via List.of() avoids ConcurrentModificationError:
+    // handler.cancel() triggers onCanceled.then() which removes
+    // from the live list while we iterate.
+    final connectionHandlers = List.of(handlers[connection] ?? <ServerHandler>[]);
+    for (final handler in connectionHandlers) {
+      handler.cancel();
+    }
+    _connections.remove(connection);
+    handlers.remove(connection);
+    _incomingSubscriptions.remove(connection);
+    _connectionSockets.remove(connection);
+    _keepAliveControllers.remove(connection);
+    if (!onDataReceivedController.isClosed) {
+      await onDataReceivedController.close();
+    }
+  }
+
   Future<void> serveConnection({
     required ServerTransportConnection connection,
     X509Certificate? clientCertificate,
@@ -183,39 +209,15 @@ class ConnectionServer {
           context: 'serveConnection',
           error: error,
         );
-        // Clean up connection state on stream error — mirrors onDone
-        // cleanup. Without this, the connection and its handlers leak
-        // permanently in the _connections list and handlers map.
-        // Snapshot via List.of() avoids ConcurrentModificationError:
-        // handler.cancel() triggers onCanceled.then() which removes
-        // from the live list while we iterate.
-        final connectionHandlers = List.of(handlers[connection] ?? <ServerHandler>[]);
-        for (final handler in connectionHandlers) {
-          handler.cancel();
-        }
-        _connections.remove(connection);
-        handlers.remove(connection);
-        _incomingSubscriptions.remove(connection);
-        _connectionSockets.remove(connection);
-        _keepAliveControllers.remove(connection);
-        onDataReceivedController.close();
+        // Keep onError non-blocking; cleanup mirrors onDone via shared helper.
+        unawaited(_cleanupConnection(connection, onDataReceivedController));
       },
       onDone: () async {
         // TODO(sigurdm): This is not correct behavior in the presence of
         // half-closed tcp streams.
         // Half-closed  streams seems to not be fully supported by package:http2.
         // https://github.com/dart-lang/http2/issues/42
-        // Snapshot avoids races with onCanceled list removals.
-        final connectionHandlers = List.of(handlers[connection] ?? []);
-        for (var handler in connectionHandlers) {
-          handler.cancel();
-        }
-        _connections.remove(connection);
-        handlers.remove(connection);
-        _incomingSubscriptions.remove(connection);
-        _connectionSockets.remove(connection);
-        _keepAliveControllers.remove(connection);
-        await onDataReceivedController.close();
+        await _cleanupConnection(connection, onDataReceivedController);
       },
     );
     _incomingSubscriptions[connection] = incomingSub;
@@ -281,7 +283,19 @@ class ConnectionServer {
       }
     }
     if (cancelSubFutures.isNotEmpty) {
-      await Future.wait(cancelSubFutures).timeout(const Duration(seconds: 5), onTimeout: () => <void>[]);
+      await Future.wait(cancelSubFutures).timeout(
+        _incomingSubscriptionCancelTimeout,
+        onTimeout: () {
+          logGrpcEvent(
+            '[gRPC] incoming subscription cancel timeout after '
+            '${_incomingSubscriptionCancelTimeout.inSeconds}s',
+            component: 'ConnectionServer',
+            event: 'subscription_cancel_timeout',
+            context: 'shutdownActiveConnections',
+          );
+          return <void>[];
+        },
+      );
     }
 
     // Step 1.5: Close keepalive data-received controllers.
@@ -296,12 +310,10 @@ class ConnectionServer {
     // Step 2: Cancel all handlers to terminate in-flight RPCs.
     final cancelFutures = <Future<void>>[];
     for (final connection in activeConnections) {
-      final connectionHandlers = handlers[connection];
-      if (connectionHandlers != null) {
-        for (final handler in connectionHandlers) {
-          handler.cancel();
-          cancelFutures.add(handler.onResponseCancelDone);
-        }
+      final connectionHandlers = List.of(handlers[connection] ?? <ServerHandler>[]);
+      for (final handler in connectionHandlers) {
+        handler.cancel();
+        cancelFutures.add(handler.onResponseCancelDone);
       }
     }
 
@@ -312,10 +324,11 @@ class ConnectionServer {
     // because HTTP/2 streams remain open while generators are
     // still producing.
     await Future.wait(cancelFutures).timeout(
-      const Duration(seconds: 5),
+      _responseCancelTimeout,
       onTimeout: () {
         logGrpcEvent(
-          '[gRPC] handler.onResponseCancelDone timeout after 5s '
+          '[gRPC] handler.onResponseCancelDone timeout after '
+          '${_responseCancelTimeout.inSeconds}s '
           '(event loop saturated?)',
           component: 'ConnectionServer',
           event: 'response_cancel_timeout',
@@ -343,8 +356,8 @@ class ConnectionServer {
   /// Tries `connection.finish()` (graceful GOAWAY + wait for streams
   /// to close). If that doesn't complete within 5 seconds, forcefully
   /// calls `connection.terminate()`. If terminate itself fails or times
-  /// out (2s), logs and completes anyway — a broken connection must
-  /// never block the entire server shutdown.
+  /// out, logs and completes anyway — a broken connection must never
+  /// block the entire server shutdown.
   ///
   /// After terminate completes, the raw socket (if tracked in
   /// [_connectionSockets]) is destroyed to stop any lingering IO
@@ -365,20 +378,32 @@ class ConnectionServer {
       if (terminateCalled) return;
       terminateCalled = true;
 
+      final terminateDone = Completer<void>();
+      Timer? terminateDeadline;
+
+      void completeTerminate() {
+        terminateDeadline?.cancel();
+        if (!terminateDone.isCompleted) terminateDone.complete();
+      }
+
+      terminateDeadline = Timer(_terminateConnectionTimeout, () {
+        logGrpcEvent(
+          '[gRPC] connection.terminate() timed out after '
+          '${_terminateConnectionTimeout.inSeconds}s',
+          component: 'ConnectionServer',
+          event: 'terminate_timeout',
+          context: 'shutdownActiveConnections',
+        );
+        completeTerminate();
+      });
+
       try {
         connection
             .terminate()
-            .timeout(const Duration(seconds: 2))
+            .then((_) {
+              completeTerminate();
+            })
             .catchError((e) {
-              if (e is TimeoutException) {
-                logGrpcEvent(
-                  '[gRPC] connection.terminate() timed out after 2s',
-                  component: 'ConnectionServer',
-                  event: 'terminate_timeout',
-                  context: 'shutdownActiveConnections',
-                );
-                return;
-              }
               logGrpcEvent(
                 '[gRPC] connection.terminate() async error: $e',
                 component: 'ConnectionServer',
@@ -386,18 +411,7 @@ class ConnectionServer {
                 context: 'shutdownActiveConnections',
                 error: e,
               );
-            })
-            .whenComplete(() {
-              // Destroy the raw socket to break event loop saturation
-              // from the http2 FrameReader's orphaned socket
-              // subscription (missing onCancel handler in
-              // package:http2). On TCP with a client still pumping
-              // data, the FrameReader continues processing frames
-              // after terminate(), flooding IO callbacks. Destroying
-              // the socket stops the flood.
-              // No-op for NamedPipeServer (not in map).
-              _connectionSockets.remove(connection)?.destroy();
-              complete();
+              completeTerminate();
             });
       } catch (e) {
         logGrpcEvent(
@@ -407,32 +421,55 @@ class ConnectionServer {
           context: 'shutdownActiveConnections',
           error: e,
         );
+        completeTerminate();
+      }
+
+      terminateDone.future.whenComplete(() {
+        // Destroy the raw socket to break event loop saturation
+        // from the http2 FrameReader's orphaned socket
+        // subscription (missing onCancel handler in
+        // package:http2). On TCP with a client still pumping
+        // data, the FrameReader continues processing frames
+        // after terminate(), flooding IO callbacks. Destroying
+        // the socket stops the flood.
+        // No-op for NamedPipeServer (not in map).
         _connectionSockets.remove(connection)?.destroy();
         complete();
-      }
+      });
     }
 
     // Start the hard deadline timer BEFORE calling finish().
-    deadline = Timer(const Duration(seconds: 5), forceTerminate);
+    deadline = Timer(_finishConnectionDeadline, forceTerminate);
 
     // Fire finish() without awaiting — otherwise we block until it
     // resolves, defeating the timeout. Return done.future so the
     // caller completes when either finish() or the timer wins.
-    connection
-        .finish()
-        .then((_) {
-          complete();
-        })
-        .catchError((e) {
-          logGrpcEvent(
-            '[gRPC] connection.finish() failed: $e',
-            component: 'ConnectionServer',
-            event: 'finish_error',
-            context: 'shutdownActiveConnections',
-            error: e,
-          );
-          forceTerminate();
-        });
+    try {
+      connection
+          .finish()
+          .then((_) {
+            complete();
+          })
+          .catchError((e) {
+            logGrpcEvent(
+              '[gRPC] connection.finish() failed: $e',
+              component: 'ConnectionServer',
+              event: 'finish_error',
+              context: 'shutdownActiveConnections',
+              error: e,
+            );
+            forceTerminate();
+          });
+    } catch (e) {
+      logGrpcEvent(
+        '[gRPC] connection.finish() sync error: $e',
+        component: 'ConnectionServer',
+        event: 'finish_sync_error',
+        context: 'shutdownActiveConnections',
+        error: e,
+      );
+      forceTerminate();
+    }
 
     return done.future;
   }

@@ -152,7 +152,7 @@ class ServerHandler extends ServiceCall {
   /// We need the catchError() handler here, since otherwise the error would
   /// be an unhandled exception.
   void _cancelResponseSubscription() {
-    _responseCancelFuture = _responseSubscription?.cancel().catchError((e) {
+    _responseCancelFuture ??= _responseSubscription?.cancel().catchError((e) {
       logGrpcEvent(
         '[gRPC] Response subscription cancel failed'
         ' in _cancelResponseSubscription: $e',
@@ -358,7 +358,17 @@ class ServerHandler extends ServiceCall {
       return;
     }
 
-    onDataReceived?.add(null);
+    try {
+      onDataReceived?.add(null);
+    } catch (e) {
+      logGrpcEvent(
+        '[gRPC] Failed to update keepalive data-received notifier: $e',
+        component: 'ServerHandler',
+        event: 'keepalive_data_notify_error',
+        context: '_onDataActive',
+        error: e,
+      );
+    }
     final data = message;
     Object? request;
     try {
@@ -597,7 +607,7 @@ class ServerHandler extends ServiceCall {
     // Store the cancel future so shutdownActiveConnections() can await
     // it — async* generators need event loop turns to process the cancel
     // signal and stop yielding values.
-    _responseCancelFuture = _responseSubscription?.cancel().catchError((e) {
+    _responseCancelFuture ??= _responseSubscription?.cancel().catchError((e) {
       logGrpcEvent(
         '[gRPC] Response subscription cancel failed'
         ' in cancel: $e',
