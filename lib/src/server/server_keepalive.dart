@@ -118,6 +118,9 @@ class ServerKeepAlive {
     if (_enforcesMaxBadPings) {
       _badPings = 0;
       _timeOfLastReceivedPing = null;
+      // Data starts a fresh no-data period, so a future over-limit streak
+      // should be allowed to trigger enforcement again.
+      _tooManyBadPingsTriggered = false;
     }
   }
 }

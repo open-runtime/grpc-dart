@@ -130,4 +130,82 @@ void main() {
       expect(goAway, true);
     });
   });
+
+  test('tooManyBadPings callback is not spammed under ping flood', () async {
+    FakeAsync().run((async) {
+      var tooManyBadPingsCalls = 0;
+      ServerKeepAlive(
+        options: const ServerKeepAliveOptions(
+          maxBadPings: 1,
+          minIntervalBetweenPingsWithoutData: Duration(milliseconds: 5),
+        ),
+        pingNotifier: pingStream.stream,
+        dataNotifier: dataStream.stream,
+        tooManyBadPings: () async {
+          tooManyBadPingsCalls++;
+        },
+      ).handle();
+
+      pingStream.add(null); // baseline timestamp ping
+      async.flushMicrotasks();
+
+      // First over-limit transition invokes callback once.
+      pingStream.add(null);
+      pingStream.add(null);
+      async.flushMicrotasks();
+
+      // Additional bad pings for the same no-data period must not re-invoke.
+      for (var i = 0; i < 10; i++) {
+        pingStream.add(null);
+      }
+      async.flushMicrotasks();
+
+      expect(tooManyBadPingsCalls, equals(1));
+    });
+  });
+
+  test('tooManyBadPings callback can be retried after data reset', () async {
+    FakeAsync().run((async) {
+      var tooManyBadPingsCalls = 0;
+      ServerKeepAlive(
+        options: const ServerKeepAliveOptions(
+          maxBadPings: 1,
+          minIntervalBetweenPingsWithoutData: Duration(milliseconds: 5),
+        ),
+        pingNotifier: pingStream.stream,
+        dataNotifier: dataStream.stream,
+        tooManyBadPings: () async {
+          tooManyBadPingsCalls++;
+          if (tooManyBadPingsCalls == 1) {
+            throw StateError('transient callback failure');
+          }
+        },
+      ).handle();
+
+      // First no-data bad-ping streak: callback fires once and fails.
+      pingStream.add(null);
+      pingStream.add(null);
+      pingStream.add(null);
+      async.flushMicrotasks();
+      expect(tooManyBadPingsCalls, equals(1));
+
+      // Continuous bad pings in same streak still must not spam callback.
+      for (var i = 0; i < 10; i++) {
+        pingStream.add(null);
+      }
+      async.flushMicrotasks();
+      expect(tooManyBadPingsCalls, equals(1));
+
+      // Data starts a new streak and should re-arm callback invocation.
+      dataStream.add(null);
+      async.flushMicrotasks();
+
+      pingStream.add(null);
+      pingStream.add(null);
+      pingStream.add(null);
+      async.flushMicrotasks();
+
+      expect(tooManyBadPingsCalls, equals(2));
+    });
+  });
 }

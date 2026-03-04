@@ -149,6 +149,28 @@ class NamedPipeServer extends ConnectionServer {
   @visibleForTesting
   int get activePipeStreamCount => _activeStreams.length;
 
+  @visibleForTesting
+  bool get isWindowsPlatform => Platform.isWindows;
+
+  @visibleForTesting
+  Duration get stopPortBootstrapTimeout => const Duration(seconds: 5);
+
+  @visibleForTesting
+  Duration get readinessSignalTimeout => const Duration(seconds: 10);
+
+  @visibleForTesting
+  Future<Isolate> spawnAcceptLoopIsolate({
+    required String pipeName,
+    required SendPort mainPort,
+    required SendPort stopPort,
+    required int maxInstances,
+  }) {
+    return Isolate.spawn(
+      _acceptLoop,
+      _AcceptLoopConfig(pipeName: pipeName, mainPort: mainPort, maxInstances: maxInstances, stopPort: stopPort),
+    );
+  }
+
   /// Starts the named pipe server.
   ///
   /// [pipeName] is the name of the pipe (e.g., 'my-service-12345').
@@ -168,7 +190,7 @@ class NamedPipeServer extends ConnectionServer {
   /// Throws [UnsupportedError] if not running on Windows.
   /// Throws [StateError] if the server is already running.
   Future<void> serve({required String pipeName, int maxInstances = PIPE_UNLIMITED_INSTANCES}) async {
-    if (!Platform.isWindows) {
+    if (!isWindowsPlatform) {
       throw UnsupportedError(
         'Named pipes are only supported on Windows. '
         'Use Unix domain sockets on macOS/Linux.',
@@ -197,54 +219,85 @@ class NamedPipeServer extends ConnectionServer {
       }
     });
 
-    // Listen for incoming connections from the isolate
-    _receivePortSubscription = _receivePort!.listen(_handleIsolateMessage);
-
-    // Start the accept loop in a separate isolate
-    _serverIsolate = await Isolate.spawn(
-      _acceptLoop,
-      _AcceptLoopConfig(
-        pipeName: pipeName,
-        mainPort: _receivePort!.sendPort,
-        maxInstances: maxInstances,
-        stopPort: stopBootstrapPort.sendPort,
-      ),
-    );
-
-    // Wait for the isolate to send back its stop SendPort.
-    _stopSendPort = await stopBootstrapCompleter.future.timeout(
-      const Duration(seconds: 5),
-      onTimeout: () => throw StateError('NamedPipeServer timed out waiting for stop port from accept loop.'),
-    );
-    await stopBootstrapSub.cancel();
-    stopBootstrapPort.close();
-
-    // Wait for the isolate to confirm the pipe has been created.
-    // This guarantees the pipe exists in the Windows namespace and clients
-    // can successfully call CreateFile when serve() returns.
     try {
-      await _readyCompleter!.future.timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw StateError(
-          'NamedPipeServer timed out waiting for pipe creation. '
-          'The server isolate may have crashed.',
-        ),
-      );
-    } catch (_) {
-      // Cleanup on failure: the isolate and receive port would otherwise leak
-      // because _isRunning is never set to true, so shutdown() would no-op.
+      // Listen for incoming connections from the isolate.
+      _receivePortSubscription = _receivePort!.listen(_handleIsolateMessage);
+
+      try {
+        // Start the accept loop in a separate isolate.
+        _serverIsolate = await spawnAcceptLoopIsolate(
+          pipeName: pipeName,
+          mainPort: _receivePort!.sendPort,
+          maxInstances: maxInstances,
+          stopPort: stopBootstrapPort.sendPort,
+        );
+
+        // Wait for the isolate to send back its stop SendPort.
+        _stopSendPort = await stopBootstrapCompleter.future.timeout(
+          stopPortBootstrapTimeout,
+          onTimeout: () => throw StateError('NamedPipeServer timed out waiting for stop port from accept loop.'),
+        );
+
+        // Wait for the isolate to confirm the pipe has been created.
+        // This guarantees the pipe exists in the Windows namespace and clients
+        // can successfully call CreateFile when serve() returns.
+        await _readyCompleter!.future.timeout(
+          readinessSignalTimeout,
+          onTimeout: () => throw StateError(
+            'NamedPipeServer timed out waiting for pipe creation. '
+            'The server isolate may have crashed.',
+          ),
+        );
+      } finally {
+        await stopBootstrapSub.cancel();
+        stopBootstrapPort.close();
+      }
+      _isRunning = true;
+    } catch (error, stackTrace) {
+      await _cleanupAfterServeStartupFailureAndRethrow(startupError: error, startupStackTrace: stackTrace);
+    }
+  }
+
+  /// Cleans up startup resources after serve() fails before isRunning=true.
+  ///
+  /// This path is used for both stop-port bootstrap timeout failures and
+  /// readiness timeout/error failures so shutdown() does not need to recover
+  /// partially initialized startup state.
+  Future<Never> _cleanupAfterServeStartupFailureAndRethrow({
+    required Object startupError,
+    required StackTrace startupStackTrace,
+  }) async {
+    Object? cleanupError;
+    StackTrace? cleanupStackTrace;
+    try {
       _serverIsolate?.kill(priority: Isolate.immediate);
       _serverIsolate = null;
+      _stopSendPort = null;
+
       await _receivePortSubscription?.cancel();
       _receivePortSubscription = null;
       _receivePort?.close();
       _receivePort = null;
+
       _pipeName = null;
       _readyCompleter = null;
-      rethrow;
+      _isRunning = false;
+    } catch (error, stackTrace) {
+      cleanupError = error;
+      cleanupStackTrace = stackTrace;
     }
 
-    _isRunning = true;
+    if (cleanupError != null && cleanupStackTrace != null) {
+      Error.throwWithStackTrace(
+        StateError(
+          'NamedPipeServer startup failed: $startupError. '
+          'Cleanup also failed: $cleanupError',
+        ),
+        cleanupStackTrace,
+      );
+    }
+
+    Error.throwWithStackTrace(startupError, startupStackTrace);
   }
 
   /// Handles messages from the server isolate.

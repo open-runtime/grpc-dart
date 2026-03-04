@@ -42,15 +42,28 @@ import 'package:test/test.dart';
 /// [incomingStreams] is driven by a [StreamController] the test
 /// controls.
 class MockServerTransportConnection implements ServerTransportConnection {
-  final StreamController<ServerTransportStream> _incomingController =
-      StreamController<ServerTransportStream>();
+  final StreamController<ServerTransportStream> _incomingController = StreamController<ServerTransportStream>();
 
-  bool terminateCalled = false;
-  bool finishCalled = false;
+  final int _stableHashCode = Object().hashCode;
+
+  int terminateCallCount = 0;
+  int finishCallCount = 0;
+
+  Object? finishSyncError;
+  Object? finishAsyncError;
+  Future<void>? finishFuture;
+
+  Object? terminateSyncError;
+  Object? terminateAsyncError;
+  Future<void>? terminateFuture;
+
+  bool throwOnHashCode = false;
+
+  bool get terminateCalled => terminateCallCount > 0;
+  bool get finishCalled => finishCallCount > 0;
 
   @override
-  Stream<ServerTransportStream> get incomingStreams =>
-      _incomingController.stream;
+  Stream<ServerTransportStream> get incomingStreams => _incomingController.stream;
 
   /// Inject an error into the incoming streams.
   void emitError(Object error, [StackTrace? stackTrace]) {
@@ -59,7 +72,27 @@ class MockServerTransportConnection implements ServerTransportConnection {
 
   /// Close the incoming streams normally (triggers onDone).
   void closeIncoming() {
-    _incomingController.close();
+    if (!_incomingController.isClosed) {
+      _incomingController.close();
+    }
+  }
+
+  /// Awaitable close for deterministic teardown in tests.
+  Future<void> closeIncomingAndDrain() async {
+    if (!_incomingController.isClosed) {
+      await _incomingController.close();
+    }
+  }
+
+  @override
+  bool operator ==(Object other) => identical(this, other);
+
+  @override
+  int get hashCode {
+    if (throwOnHashCode) {
+      throw StateError('forced hashCode failure in connection cleanup');
+    }
+    return _stableHashCode;
   }
 
   // -- TransportConnection interface stubs --
@@ -71,23 +104,41 @@ class MockServerTransportConnection implements ServerTransportConnection {
   Stream<void> get onFrameReceived => const Stream.empty();
 
   @override
-  Future<void> get onInitialPeerSettingsReceived => Completer<void>().future;
+  Future<void> get onInitialPeerSettingsReceived => Future<void>.value();
 
   @override
   set onActiveStateChanged(ActiveStateHandler callback) {}
 
   @override
-  Future<void> finish() async {
-    finishCalled = true;
+  Future<void> finish() {
+    finishCallCount++;
+    if (finishSyncError != null) throw finishSyncError!;
+    if (finishFuture != null) return finishFuture!;
+    if (finishAsyncError != null) {
+      return Future<void>.error(finishAsyncError!);
+    }
+    return Future<void>.value();
   }
 
   @override
-  Future<void> terminate([int? errorCode]) async {
-    terminateCalled = true;
+  Future<void> terminate([int? errorCode]) {
+    terminateCallCount++;
+    if (terminateSyncError != null) throw terminateSyncError!;
+    if (terminateFuture != null) return terminateFuture!;
+    if (terminateAsyncError != null) {
+      return Future<void>.error(terminateAsyncError!);
+    }
+    return Future<void>.value();
   }
 
   @override
   Future<void> ping() async {}
+}
+
+class _TestConnectionServer extends ConnectionServer {
+  _TestConnectionServer() : super([_NoOpService()]);
+
+  Future<void> runShutdownActiveConnections() => shutdownActiveConnections();
 }
 
 // ---------------------------------------------------------------------------
@@ -146,11 +197,7 @@ void main() {
       await Future.delayed(Duration.zero);
 
       // After onDone, state should be fully cleaned up.
-      expect(
-        server.handlers.containsKey(conn),
-        isFalse,
-        reason: 'onDone must remove the connection from handlers',
-      );
+      expect(server.handlers.containsKey(conn), isFalse, reason: 'onDone must remove the connection from handlers');
     });
 
     test('onError on incomingStreams cleans up connection '
@@ -253,11 +300,7 @@ void main() {
             'Errored connection must be removed from '
             'handlers',
       );
-      expect(
-        server.handlers.containsKey(conn2),
-        isTrue,
-        reason: 'Healthy connection must remain in handlers',
-      );
+      expect(server.handlers.containsKey(conn2), isTrue, reason: 'Healthy connection must remain in handlers');
 
       // Clean up conn2 normally.
       conn2.closeIncoming();
@@ -305,6 +348,149 @@ void main() {
             'The handlers list for the connection must '
             'be fully removed, not just emptied',
       );
+    });
+
+    test('onError cleanup failure is logged and does not leak uncaught async '
+        'errors', () async {
+      final conn = MockServerTransportConnection();
+      final cleanupFailureLogged = Completer<void>();
+      final uncaughtErrors = <Object>[];
+
+      final previousEventLogger = grpcEventLogger;
+      addTearDown(() => grpcEventLogger = previousEventLogger);
+      grpcEventLogger = (event) {
+        previousEventLogger?.call(event);
+        if (event.component == 'ConnectionServer' &&
+            event.event == 'connection_cleanup_error' &&
+            !cleanupFailureLogged.isCompleted) {
+          cleanupFailureLogged.complete();
+        }
+      };
+
+      await runZonedGuarded(
+        () async {
+          await server.serveConnection(connection: conn);
+
+          // Force _cleanupConnection to throw when looking up/removing map
+          // entries; this exercises the unawaited cleanup future error path.
+          conn.throwOnHashCode = true;
+          conn.emitError(Exception('forced incoming stream cleanup failure'));
+
+          await cleanupFailureLogged.future.timeout(
+            const Duration(seconds: 2),
+            onTimeout: () => fail('Expected connection_cleanup_error log was not emitted'),
+          );
+        },
+        (error, stack) {
+          uncaughtErrors.add(error);
+        },
+      );
+
+      expect(
+        uncaughtErrors,
+        isEmpty,
+        reason:
+            'Cleanup failures in onError must be explicitly handled/logged, '
+            'not leaked as uncaught async errors',
+      );
+
+      // Restore normal map key behavior before deterministic stream teardown.
+      conn.throwOnHashCode = false;
+      await conn.closeIncomingAndDrain();
+    });
+  });
+
+  group('ConnectionServer.shutdownActiveConnections hardening', () {
+    test('finish sync throw path still terminates and completes shutdown', () async {
+      final server = _TestConnectionServer();
+      final conn = MockServerTransportConnection()..finishSyncError = StateError('forced finish sync throw');
+
+      await server.serveConnection(connection: conn);
+
+      await server.runShutdownActiveConnections().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => fail(
+          'shutdownActiveConnections hung after finish '
+          'sync throw',
+        ),
+      );
+
+      expect(conn.finishCallCount, equals(1));
+      expect(
+        conn.terminateCallCount,
+        equals(1),
+        reason: 'finish sync throw should trigger force terminate exactly once',
+      );
+      await conn.closeIncomingAndDrain();
+    });
+
+    test('terminate async error path is logged and shutdown still completes', () async {
+      final server = _TestConnectionServer();
+      final conn = MockServerTransportConnection()
+        ..finishSyncError = StateError('force terminate path')
+        ..terminateAsyncError = StateError('forced terminate async error');
+      final terminateAsyncErrorLogged = Completer<void>();
+
+      final previousEventLogger = grpcEventLogger;
+      addTearDown(() => grpcEventLogger = previousEventLogger);
+      grpcEventLogger = (event) {
+        previousEventLogger?.call(event);
+        if (event.component == 'ConnectionServer' &&
+            event.event == 'terminate_async_error' &&
+            !terminateAsyncErrorLogged.isCompleted) {
+          terminateAsyncErrorLogged.complete();
+        }
+      };
+
+      await server.serveConnection(connection: conn);
+
+      await server.runShutdownActiveConnections().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => fail('shutdownActiveConnections hung on terminate async error'),
+      );
+      await terminateAsyncErrorLogged.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail('Expected terminate_async_error log was not emitted'),
+      );
+
+      expect(conn.finishCallCount, equals(1));
+      expect(conn.terminateCallCount, equals(1));
+      await conn.closeIncomingAndDrain();
+    });
+
+    test('terminate timeout path is logged and shutdown still completes', () async {
+      final server = _TestConnectionServer();
+      final neverCompletesTerminate = Completer<void>();
+      final conn = MockServerTransportConnection()
+        ..finishSyncError = StateError('force terminate path')
+        ..terminateFuture = neverCompletesTerminate.future;
+      final terminateTimeoutLogged = Completer<void>();
+
+      final previousEventLogger = grpcEventLogger;
+      addTearDown(() => grpcEventLogger = previousEventLogger);
+      grpcEventLogger = (event) {
+        previousEventLogger?.call(event);
+        if (event.component == 'ConnectionServer' &&
+            event.event == 'terminate_timeout' &&
+            !terminateTimeoutLogged.isCompleted) {
+          terminateTimeoutLogged.complete();
+        }
+      };
+
+      await server.serveConnection(connection: conn);
+
+      await server.runShutdownActiveConnections().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('shutdownActiveConnections hung on terminate timeout path'),
+      );
+      await terminateTimeoutLogged.future.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => fail('Expected terminate_timeout log was not emitted'),
+      );
+
+      expect(conn.finishCallCount, equals(1));
+      expect(conn.terminateCallCount, equals(1));
+      await conn.closeIncomingAndDrain();
     });
   });
 }

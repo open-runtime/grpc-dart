@@ -210,7 +210,19 @@ class ConnectionServer {
           error: error,
         );
         // Keep onError non-blocking; cleanup mirrors onDone via shared helper.
-        unawaited(_cleanupConnection(connection, onDataReceivedController));
+        // Observe failures explicitly so async cleanup errors are never silent.
+        unawaited(
+          _cleanupConnection(connection, onDataReceivedController).catchError((cleanupError, _) {
+            logGrpcEvent(
+              '[gRPC] Connection cleanup failed after stream error: '
+              '$cleanupError',
+              component: 'ConnectionServer',
+              event: 'connection_cleanup_error',
+              context: 'serveConnection.onError',
+              error: cleanupError,
+            );
+          }),
+        );
       },
       onDone: () async {
         // TODO(sigurdm): This is not correct behavior in the presence of

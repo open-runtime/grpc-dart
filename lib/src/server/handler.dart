@@ -202,9 +202,23 @@ class ServerHandler extends ServiceCall {
 
   // -- Idle state, incoming data --
 
-  void _onDataIdle(GrpcMessage headerMessage) async {
+  void _notifyDataReceived(String context) {
     try {
       onDataReceived?.add(null);
+    } catch (e) {
+      logGrpcEvent(
+        '[gRPC] Failed to update keepalive data-received notifier: $e',
+        component: 'ServerHandler',
+        event: 'keepalive_data_notify_error',
+        context: context,
+        error: e,
+      );
+    }
+  }
+
+  void _onDataIdle(GrpcMessage headerMessage) async {
+    _notifyDataReceived('_onDataIdle');
+    try {
       if (headerMessage is! GrpcMetadata) {
         _sendError(GrpcError.unimplemented('Expected header frame'));
         _sinkIncoming();
@@ -358,17 +372,7 @@ class ServerHandler extends ServiceCall {
       return;
     }
 
-    try {
-      onDataReceived?.add(null);
-    } catch (e) {
-      logGrpcEvent(
-        '[gRPC] Failed to update keepalive data-received notifier: $e',
-        component: 'ServerHandler',
-        event: 'keepalive_data_notify_error',
-        context: '_onDataActive',
-        error: e,
-      );
-    }
+    _notifyDataReceived('_onDataActive');
     final data = message;
     Object? request;
     try {
