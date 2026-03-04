@@ -41,14 +41,7 @@ class NamedPipeServer extends ConnectionServer {
     List<ServerInterceptor> serverInterceptors = const <ServerInterceptor>[],
     CodecRegistry? codecRegistry,
     GrpcErrorHandler? errorHandler,
-  }) : super(
-         services,
-         interceptors,
-         serverInterceptors,
-         codecRegistry,
-         errorHandler,
-         keepAliveOptions,
-       ) {
+  }) : super(services, interceptors, serverInterceptors, codecRegistry, errorHandler, keepAliveOptions) {
     throw _namedPipeServerUnsupported('NamedPipeServer');
   }
 
@@ -64,15 +57,11 @@ class NamedPipeServer extends ConnectionServer {
 
   /// Starts the named pipe server.
   Future<void> serve({required String pipeName}) {
-    return Future<void>.error(
-      _namedPipeServerUnsupported('NamedPipeServer.serve'),
-    );
+    return Future<void>.error(_namedPipeServerUnsupported('NamedPipeServer.serve'));
   }
 
   /// Shuts down the server gracefully.
   Future<void> shutdown() {
-    return Future<void>.error(
-      _namedPipeServerUnsupported('NamedPipeServer.shutdown'),
-    );
+    return Future<void>.error(_namedPipeServerUnsupported('NamedPipeServer.shutdown'));
   }
 }

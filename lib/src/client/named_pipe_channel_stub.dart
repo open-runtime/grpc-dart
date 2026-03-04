@@ -38,11 +38,7 @@ class NamedPipeClientChannel extends ClientChannelBase {
   final ChannelOptions options;
 
   /// Creates a named pipe client channel.
-  NamedPipeClientChannel(
-    this.pipeName, {
-    this.options = const ChannelOptions(),
-    super.channelShutdownHandler,
-  }) {
+  NamedPipeClientChannel(this.pipeName, {this.options = const ChannelOptions(), super.channelShutdownHandler}) {
     throw _namedPipeChannelUnsupported('NamedPipeClientChannel');
   }
 
@@ -51,9 +47,7 @@ class NamedPipeClientChannel extends ClientChannelBase {
 
   @override
   ClientConnection createConnection() {
-    throw _namedPipeChannelUnsupported(
-      'NamedPipeClientChannel.createConnection',
-    );
+    throw _namedPipeChannelUnsupported('NamedPipeClientChannel.createConnection');
   }
 }
 
