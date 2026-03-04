@@ -357,7 +357,14 @@ class Http2ClientConnection implements connection.ClientConnection {
   Future<void> shutdown() async {
     if (_state == ConnectionState.shutdown) return;
     _setShutdownState();
-    await _transportConnection?.finish();
+    try {
+      await _transportConnection?.finish().timeout(const Duration(seconds: 5));
+    } on TimeoutException {
+      // http2 finish() hung — likely because the outgoing controller's done
+      // Future never completed (race between subscription cancel in
+      // _cancelOutgoingAndCloseController and controller close by http2).
+      // Proceed to force-close the underlying transport.
+    }
     _disconnect();
     // Release the underlying OS resource (e.g. Win32 pipe handle, socket).
     // Only called in terminal paths (shutdown/terminate) — NOT in _disconnect()
@@ -369,7 +376,20 @@ class Http2ClientConnection implements connection.ClientConnection {
   @override
   Future<void> terminate() async {
     _setShutdownState();
-    await _transportConnection?.terminate();
+    try {
+      await _transportConnection?.terminate().timeout(const Duration(seconds: 5));
+    } on TimeoutException {
+      // http2 terminate() hung — likely because the outgoing controller's
+      // done Future never completed. This race occurs when a write error
+      // triggers _cancelOutgoingAndCloseController() (which synchronously
+      // removes the outgoing subscription) before http2's _terminate() calls
+      // _outgoingController.close(). With no subscriber, the controller's
+      // done Future is never completed, hanging Future.wait() in http2's
+      // Connection._terminate() indefinitely.
+      //
+      // Proceeding to _transportConnector.shutdown() ensures _readLoop()
+      // is stopped and the Dart VM can exit.
+    }
     _disconnect();
     // Release the underlying OS resource (e.g. Win32 pipe handle, socket).
     // Without this, terminate() closes the HTTP/2 logical connection but
