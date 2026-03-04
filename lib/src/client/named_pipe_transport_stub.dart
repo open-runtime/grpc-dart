@@ -13,5 +13,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// Stub for platforms that don't support dart:ffi (e.g. web).
-/// The real implementation is in named_pipe_transport.dart.
+// Stub for platforms that don't support dart:ffi (e.g. web).
+// The real implementation is in named_pipe_transport.dart.
+import 'dart:async';
+
+import 'package:http2/transport.dart';
+
+import 'client_transport_connector.dart';
+
+UnsupportedError _namedPipeTransportUnsupported(String member) {
+  return UnsupportedError(
+    '$member is not supported on this platform. '
+    'Named pipes require dart:ffi, which is unavailable.',
+  );
+}
+
+/// A [ClientTransportConnector] stub for platforms without `dart:ffi`.
+class NamedPipeTransportConnector implements ClientTransportConnector {
+  /// The name of the pipe (without the `\\.\pipe\` prefix).
+  final String pipeName;
+
+  /// Creates a named pipe transport connector.
+  NamedPipeTransportConnector(this.pipeName) {
+    throw _namedPipeTransportUnsupported('NamedPipeTransportConnector');
+  }
+
+  /// The full Windows path for the named pipe.
+  String get pipePath => r'\\.\pipe\' + pipeName;
+
+  @override
+  String get authority => 'localhost';
+
+  @override
+  Future<ClientTransportConnection> connect() {
+    return Future<ClientTransportConnection>.error(
+      _namedPipeTransportUnsupported('NamedPipeTransportConnector.connect'),
+    );
+  }
+
+  @override
+  Future<void> get done => Future<void>.value();
+
+  @override
+  void shutdown() {}
+}
+
+/// Exception thrown when a named pipe operation fails.
+class NamedPipeException implements Exception {
+  /// Human-readable error message.
+  final String message;
+
+  /// Win32 error code.
+  final int errorCode;
+
+  NamedPipeException(this.message, this.errorCode);
+
+  @override
+  String toString() => 'NamedPipeException: $message (code: $errorCode)';
+}
