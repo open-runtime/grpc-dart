@@ -260,6 +260,7 @@ abstract class _Harness {
     when(stream.incomingMessages).thenAnswer((_) => toClient.stream);
     when(stream.terminate()).thenReturn(null);
     when(transport.finish()).thenAnswer((_) async {});
+    when(transport.terminate()).thenAnswer((_) async {});
     client = TestClient(channel, interceptors: interceptors);
   }
 

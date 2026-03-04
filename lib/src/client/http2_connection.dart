@@ -359,11 +359,9 @@ class Http2ClientConnection implements connection.ClientConnection {
     _setShutdownState();
     try {
       await _transportConnection?.finish().timeout(const Duration(seconds: 5));
-    } on TimeoutException {
-      // http2 finish() hung — likely because the outgoing controller's done
-      // Future never completed (race between subscription cancel in
-      // _cancelOutgoingAndCloseController and controller close by http2).
-      // Proceed to force-close the underlying transport.
+    } catch (_) {
+      // finish() hung or failed — _disconnect() will terminate the orphaned
+      // HTTP/2 Connection to release its internal resources.
     }
     _disconnect();
     // Release the underlying OS resource (e.g. Win32 pipe handle, socket).
@@ -378,17 +376,9 @@ class Http2ClientConnection implements connection.ClientConnection {
     _setShutdownState();
     try {
       await _transportConnection?.terminate().timeout(const Duration(seconds: 5));
-    } on TimeoutException {
-      // http2 terminate() hung — likely because the outgoing controller's
-      // done Future never completed. This race occurs when a write error
-      // triggers _cancelOutgoingAndCloseController() (which synchronously
-      // removes the outgoing subscription) before http2's _terminate() calls
-      // _outgoingController.close(). With no subscriber, the controller's
-      // done Future is never completed, hanging Future.wait() in http2's
-      // Connection._terminate() indefinitely.
-      //
-      // Proceeding to _transportConnector.shutdown() ensures _readLoop()
-      // is stopped and the Dart VM can exit.
+    } catch (_) {
+      // terminate() hung or failed — _disconnect() will try again to release
+      // the HTTP/2 Connection's internal resources.
     }
     _disconnect();
     // Release the underlying OS resource (e.g. Win32 pipe handle, socket).
@@ -472,7 +462,28 @@ class Http2ClientConnection implements connection.ClientConnection {
   }
 
   void _disconnect() {
+    final conn = _transportConnection;
     _transportConnection = null;
+    // In terminal shutdown paths (_state == shutdown), forcefully terminate the
+    // HTTP/2 Connection to release its internal resources:
+    //   - _frameReaderSubscription (subscription on incoming byte stream)
+    //   - _frameWriter (pending BufferedSink.pipe() / Future.wait chain)
+    // Without this, orphaning the Connection leaves active event-loop sources
+    // that prevent the Dart VM from exiting — observed as 45-minute hangs on
+    // Windows CI after all tests pass.
+    //
+    // Non-terminal paths (idle timeout, abandon, connection failure) must NOT
+    // terminate here because active RPCs may still be in flight and the client
+    // intends to reconnect. Those connections will be properly shut down when
+    // the channel is eventually terminated.
+    if (_state == ConnectionState.shutdown && conn != null) {
+      try {
+        unawaited(conn.terminate().catchError((_) {}));
+      } catch (_) {
+        // Connection.terminate() may throw synchronously if the internal frame
+        // writer is already closed (e.g. "Cannot add event after closing").
+      }
+    }
     _frameReceivedSubscription?.cancel();
     _frameReceivedSubscription = null;
     _connectionLifeTimer.stop();
