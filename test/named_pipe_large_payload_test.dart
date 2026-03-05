@@ -75,10 +75,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -104,10 +101,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -133,10 +127,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -162,10 +153,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -193,17 +181,12 @@ void main() {
     //   - 65537 (buffer + 1): one byte overflows into a second read. If the
     //     transport does not correctly loop for the remaining 1 byte, it
     //     will be lost.
-    testNamedPipe('boundary payloads: buffer-1, buffer, buffer+1', (
-      pipeName,
-    ) async {
+    testNamedPipe('boundary payloads: buffer-1, buffer, buffer+1', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -247,10 +230,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -267,11 +247,7 @@ void main() {
         expect(chunks[i].length, equals(10240), reason: 'chunk $i length');
         // Verify pattern: each byte is (chunkIndex + bytePos) & 0xFF.
         for (var j = 0; j < 10240; j++) {
-          expect(
-            chunks[i][j],
-            equals((i + j) & 0xFF),
-            reason: 'chunk $i byte $j',
-          );
+          expect(chunks[i][j], equals((i + j) & 0xFF), reason: 'chunk $i byte $j');
         }
       }
 
@@ -287,17 +263,12 @@ void main() {
     // must write each chunk, and the client must read it fully before the
     // next chunk can be written. Any flow control or backpressure bugs
     // will cause deadlock here.
-    testNamedPipe('server stream: 5 chunks x 64KB (at buffer boundary)', (
-      pipeName,
-    ) async {
+    testNamedPipe('server stream: 5 chunks x 64KB (at buffer boundary)', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -314,11 +285,7 @@ void main() {
         expect(chunks[i].length, equals(65536), reason: 'chunk $i length');
         // Verify pattern: each byte is (chunkIndex + bytePos) & 0xFF.
         for (var j = 0; j < 65536; j++) {
-          expect(
-            chunks[i][j],
-            equals((i + j) & 0xFF),
-            reason: 'chunk $i byte $j',
-          );
+          expect(chunks[i][j], equals((i + j) & 0xFF), reason: 'chunk $i byte $j');
         }
       }
 
@@ -334,17 +301,12 @@ void main() {
     // HTTP/2 headers) is significant relative to the payload. This stresses
     // the transport's message framing and demuxing paths under rapid
     // sequential delivery.
-    testNamedPipe('server stream: 100 chunks x 1KB (many small chunks)', (
-      pipeName,
-    ) async {
+    testNamedPipe('server stream: 100 chunks x 1KB (many small chunks)', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -361,11 +323,7 @@ void main() {
         expect(chunks[i].length, equals(1024), reason: 'chunk $i length');
         // Verify pattern: each byte is (chunkIndex + bytePos) & 0xFF.
         for (var j = 0; j < 1024; j++) {
-          expect(
-            chunks[i][j],
-            equals((i + j) & 0xFF),
-            reason: 'chunk $i byte $j',
-          );
+          expect(chunks[i][j], equals((i + j) & 0xFF), reason: 'chunk $i byte $j');
         }
       }
 
@@ -386,10 +344,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -426,16 +381,8 @@ void main() {
 
       expect(receivedChunks.length, equals(20));
       for (var i = 0; i < 20; i++) {
-        expect(
-          receivedChunks[i].length,
-          equals(8192),
-          reason: 'chunk $i length',
-        );
-        expect(
-          receivedChunks[i],
-          equals(sentChunks[i]),
-          reason: 'chunk $i data mismatch',
-        );
+        expect(receivedChunks[i].length, equals(8192), reason: 'chunk $i length');
+        expect(receivedChunks[i], equals(sentChunks[i]), reason: 'chunk $i data mismatch');
       }
 
       await channel.shutdown();
@@ -454,10 +401,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -494,18 +438,71 @@ void main() {
 
       expect(receivedChunks.length, equals(5));
       for (var i = 0; i < 5; i++) {
-        expect(
-          receivedChunks[i].length,
-          equals(32768),
-          reason: 'chunk $i length',
-        );
-        expect(
-          receivedChunks[i],
-          equals(sentChunks[i]),
-          reason: 'chunk $i data mismatch',
-        );
+        expect(receivedChunks[i].length, equals(32768), reason: 'chunk $i length');
+        expect(receivedChunks[i], equals(sentChunks[i]), reason: 'chunk $i data mismatch');
       }
 
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 10b: Bidi stream — 3 x 96KB chunks (> pipe buffer)
+    // -------------------------------------------------------------------------
+    // Each chunk exceeds the 64KB pipe buffer, forcing partial writes while
+    // the server is simultaneously echoing large responses back to the client.
+    // This stresses duplex flow-control under large in-flight writes.
+    testNamedPipe('bidi stream: 3 x 96KB chunks (duplex >64KB)', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      final sentChunks = <Uint8List>[
+        generatePayload(96 * 1024, 11),
+        generatePayload(96 * 1024, 43),
+        generatePayload(96 * 1024, 97),
+      ];
+
+      final inputController = StreamController<List<int>>();
+      final responseStream = client.bidiStreamBytes(inputController.stream);
+
+      final receivedChunks = <List<int>>[];
+      final streamDone = Completer<void>();
+      final responseSubscription = responseStream.listen(
+        receivedChunks.add,
+        onError: (Object error, StackTrace stackTrace) {
+          if (!streamDone.isCompleted) {
+            streamDone.completeError(error, stackTrace);
+          }
+        },
+        onDone: () {
+          if (!streamDone.isCompleted) {
+            streamDone.complete();
+          }
+        },
+      );
+
+      for (final chunk in sentChunks) {
+        inputController.add(chunk);
+      }
+      await inputController.close();
+
+      await streamDone.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw StateError('bidi stream did not settle for >64KB duplex chunks'),
+      );
+
+      expect(receivedChunks.length, equals(sentChunks.length));
+      for (var i = 0; i < sentChunks.length; i++) {
+        expect(receivedChunks[i].length, equals(sentChunks[i].length), reason: 'chunk $i length');
+        expect(receivedChunks[i], equals(sentChunks[i]), reason: 'chunk $i data mismatch');
+      }
+
+      await responseSubscription.cancel();
       await channel.shutdown();
       await server.shutdown();
     });
@@ -525,48 +522,38 @@ void main() {
     // single pipe). If the transport's stream demuxing is incorrect, response
     // data will leak between streams (cross-request contamination). Each
     // response is verified against its specific request.
-    testNamedPipe(
-      'concurrent large payload RPCs (no cross-request contamination)',
-      (pipeName) async {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        addTearDown(() => server.shutdown());
-        await server.serve(pipeName: pipeName);
+    testNamedPipe('concurrent large payload RPCs (no cross-request contamination)', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        addTearDown(() => channel.terminate());
-        final client = EchoClient(channel);
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
 
-        // Create 5 payloads of 20KB each with different seeds.
-        final payloads = <Uint8List>[];
-        for (var i = 0; i < 5; i++) {
-          payloads.add(generatePayload(20480, i * 37));
-        }
+      // Create 5 payloads of 20KB each with different seeds.
+      final payloads = <Uint8List>[];
+      for (var i = 0; i < 5; i++) {
+        payloads.add(generatePayload(20480, i * 37));
+      }
 
-        // Fire all 5 RPCs concurrently.
-        final futures = <Future<List<int>>>[];
-        for (var i = 0; i < 5; i++) {
-          futures.add(client.echoBytes(payloads[i]));
-        }
+      // Fire all 5 RPCs concurrently.
+      final futures = <Future<List<int>>>[];
+      for (var i = 0; i < 5; i++) {
+        futures.add(client.echoBytes(payloads[i]));
+      }
 
-        final results = await Future.wait(futures);
+      final results = await Future.wait(futures);
 
-        // Verify each response matches its specific request.
-        for (var i = 0; i < 5; i++) {
-          expect(results[i].length, equals(20480), reason: 'RPC $i length');
-          expect(
-            results[i],
-            equals(payloads[i]),
-            reason: 'RPC $i data mismatch (cross-request contamination?)',
-          );
-        }
+      // Verify each response matches its specific request.
+      for (var i = 0; i < 5; i++) {
+        expect(results[i].length, equals(20480), reason: 'RPC $i length');
+        expect(results[i], equals(payloads[i]), reason: 'RPC $i data mismatch (cross-request contamination?)');
+      }
 
-        await channel.shutdown();
-        await server.shutdown();
-      },
-    );
+      await channel.shutdown();
+      await server.shutdown();
+    });
 
     // -------------------------------------------------------------------------
     // Test 12: Large payload followed by small payload
@@ -582,10 +569,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -617,10 +601,7 @@ void main() {
       addTearDown(() => server.shutdown());
       await server.serve(pipeName: pipeName);
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.terminate());
       final client = EchoClient(channel);
 
@@ -628,24 +609,12 @@ void main() {
         // Large payload: 50KB with seed based on iteration.
         final largePayload = generatePayload(51200, i * 17);
         final largeResult = await client.echoBytes(largePayload);
-        expect(
-          largeResult.length,
-          equals(51200),
-          reason: 'iteration $i large payload length',
-        );
-        expect(
-          largeResult,
-          equals(largePayload),
-          reason: 'iteration $i large payload data mismatch',
-        );
+        expect(largeResult.length, equals(51200), reason: 'iteration $i large payload length');
+        expect(largeResult, equals(largePayload), reason: 'iteration $i large payload data mismatch');
 
         // Small payload: echo the iteration index.
         final smallResult = await client.echo(i);
-        expect(
-          smallResult,
-          equals(i),
-          reason: 'iteration $i small echo mismatch',
-        );
+        expect(smallResult, equals(i), reason: 'iteration $i small echo mismatch');
       }
 
       await channel.shutdown();

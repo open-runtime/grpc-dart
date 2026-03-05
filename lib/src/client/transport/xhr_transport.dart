@@ -34,6 +34,8 @@ class XhrTransportStream implements GrpcTransportStream {
   final IXMLHttpRequest _request;
   final ErrorHandler _onError;
   final Function(XhrTransportStream stream) _onDone;
+  final int? _maxInboundMessageSize;
+  bool _isClosed = false;
   bool _headersReceived = false;
   int _requestBytesRead = 0;
   final StreamController<ByteBuffer> _incomingProcessor = StreamController();
@@ -46,9 +48,10 @@ class XhrTransportStream implements GrpcTransportStream {
   @override
   StreamSink<List<int>> get outgoingMessages => _outgoingMessages.sink;
 
-  XhrTransportStream(this._request, {required ErrorHandler onError, required onDone})
+  XhrTransportStream(this._request, {required ErrorHandler onError, required onDone, int? maxInboundMessageSize})
     : _onError = onError,
-      _onDone = onDone {
+      _onDone = onDone,
+      _maxInboundMessageSize = maxInboundMessageSize {
     _outgoingMessages.stream
         .map(frame)
         .listen((data) => _request.send(Uint8List.fromList(data).toJS), cancelOnError: true, onError: _onError);
@@ -87,9 +90,17 @@ class XhrTransportStream implements GrpcTransportStream {
     });
 
     _incomingProcessor.stream
-        .transform(GrpcWebDecoder())
+        .transform(GrpcWebDecoder(maxInboundMessageSize: _maxInboundMessageSize))
         .transform(grpcDecompressor())
-        .listen(_incomingMessages.add, onError: _onError, onDone: _incomingMessages.close);
+        .listen(
+          _incomingMessages.add,
+          onError: _onError,
+          onDone: () {
+            if (!_incomingMessages.isClosed) {
+              _incomingMessages.close();
+            }
+          },
+        );
   }
 
   bool _validateResponseState() {
@@ -124,8 +135,25 @@ class XhrTransportStream implements GrpcTransportStream {
   }
 
   void _close() {
-    _incomingProcessor.close();
-    _outgoingMessages.close();
+    if (_isClosed) {
+      return;
+    }
+    _isClosed = true;
+    if (!_incomingProcessor.isClosed) {
+      _incomingProcessor.close();
+    }
+    // Explicitly close _incomingMessages after processor shutdown to avoid
+    // leaking the stream controller if transform close propagation stalls.
+    unawaited(
+      _incomingProcessor.done.whenComplete(() {
+        if (!_incomingMessages.isClosed) {
+          _incomingMessages.close();
+        }
+      }),
+    );
+    if (!_outgoingMessages.isClosed) {
+      _outgoingMessages.close();
+    }
     _onDone(this);
   }
 
@@ -236,10 +264,11 @@ class XMLHttpRequestImpl implements IXMLHttpRequest {
 
 class XhrClientConnection implements ClientConnection {
   final Uri uri;
+  final int? maxInboundMessageSize;
 
   final _requests = <XhrTransportStream>{};
 
-  XhrClientConnection(this.uri);
+  XhrClientConnection(this.uri, {this.maxInboundMessageSize});
 
   @override
   String get authority => uri.authority;
@@ -295,7 +324,7 @@ class XhrClientConnection implements ClientConnection {
     ErrorHandler onError,
     void Function(XhrTransportStream stream) onDone,
   ) {
-    return XhrTransportStream(request, onError: onError, onDone: onDone);
+    return XhrTransportStream(request, onError: onError, onDone: onDone, maxInboundMessageSize: maxInboundMessageSize);
   }
 
   void _removeStream(XhrTransportStream stream) {

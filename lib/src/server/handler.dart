@@ -40,6 +40,7 @@ class ServerHandler extends ServiceCall {
   final List<Interceptor> _interceptors;
   final List<ServerInterceptor> _serverInterceptors;
   final CodecRegistry? _codecRegistry;
+  final int? _maxInboundMessageSize;
   final GrpcErrorHandler? _errorHandler;
 
   // ignore: cancel_subscriptions
@@ -107,6 +108,7 @@ class ServerHandler extends ServiceCall {
     required List<Interceptor> interceptors,
     required List<ServerInterceptor> serverInterceptors,
     required CodecRegistry? codecRegistry,
+    required int? maxInboundMessageSize,
     X509Certificate? clientCertificate,
     InternetAddress? remoteAddress,
     GrpcErrorHandler? errorHandler,
@@ -115,6 +117,7 @@ class ServerHandler extends ServiceCall {
        _serviceLookup = serviceLookup,
        _interceptors = interceptors,
        _codecRegistry = codecRegistry,
+       _maxInboundMessageSize = maxInboundMessageSize,
        _clientCertificate = clientCertificate,
        _remoteAddress = remoteAddress,
        _errorHandler = errorHandler,
@@ -148,7 +151,7 @@ class ServerHandler extends ServiceCall {
     _stream.onTerminated = (_) => cancel();
 
     _incomingSubscription = _stream.incomingMessages
-        .transform(GrpcHttpDecoder())
+        .transform(GrpcHttpDecoder(maxInboundMessageSize: _maxInboundMessageSize))
         .transform(grpcDecompressor(codecRegistry: _codecRegistry))
         .listen(_onDataIdle, onError: _onError, onDone: _onDoneError, cancelOnError: true);
     _stream.outgoingMessages.done.whenComplete(() {
@@ -544,13 +547,26 @@ class ServerHandler extends ServiceCall {
   // -- All states, incoming error / stream closed --
 
   void _onError(Object error) {
-    // Exception from the incoming stream. Most likely a cancel request from the
-    // client, so we treat it as such.
+    // Preserve explicit gRPC transport/decode errors (for example
+    // RESOURCE_EXHAUSTED from maxInboundMessageSize) so the client receives the
+    // intended status code. Non-gRPC stream errors are still treated as client
+    // cancellation because the stream is already broken.
     _timeoutTimer?.cancel();
-    isCanceled = true;
-    _addErrorAndClose(_requests, GrpcError.cancelled('Cancelled'), null, '_onError', 'deliver_cancellation');
+    final grpcError = error is GrpcError ? error : GrpcError.cancelled('Cancelled');
+    isCanceled = grpcError.code == StatusCode.cancelled;
+    _addErrorAndClose(
+      _requests,
+      grpcError,
+      null,
+      '_onError',
+      grpcError.code == StatusCode.cancelled ? 'deliver_cancellation' : 'deliver_error',
+    );
     _cancelResponseSubscription();
-    _incomingSubscription!.cancel();
+    _incomingSubscription?.cancel();
+    if (error is GrpcError) {
+      _sendError(grpcError);
+      return;
+    }
     _terminateStream();
   }
 

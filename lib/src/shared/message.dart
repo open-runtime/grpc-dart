@@ -20,6 +20,13 @@ import 'codec.dart';
 import 'codec_registry.dart';
 import 'status.dart';
 
+/// Recommended maximum inbound message size (4 MB).
+///
+/// Callers can opt into this limit through channel/server configuration.
+/// Leaving the limit unset preserves the historical grpc-dart behavior of
+/// accepting any frame size the process can allocate.
+const int defaultMaxInboundMessageSize = 4 * 1024 * 1024;
+
 abstract class GrpcMessage {}
 
 class GrpcMetadata extends GrpcMessage {

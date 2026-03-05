@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'dart:async';
+
 import 'package:clock/clock.dart';
 
 import '../shared/logging/logging.dart' show logGrpcEvent;
@@ -56,6 +58,9 @@ class ServerKeepAlive {
   Stopwatch? _timeOfLastReceivedPing;
   bool _tooManyBadPingsTriggered = false;
 
+  StreamSubscription<void>? _pingSubscription;
+  StreamSubscription<void>? _dataSubscription;
+
   ServerKeepAlive({
     this.tooManyBadPings,
     required this.options,
@@ -67,7 +72,7 @@ class ServerKeepAlive {
     // If we don't care about bad pings, there is not point in listening to
     // events.
     if (_enforcesMaxBadPings) {
-      pingNotifier.listen((_) {
+      _pingSubscription = pingNotifier.listen((_) {
         _onPingReceived().catchError((e) {
           logGrpcEvent(
             '[gRPC] Ping processing error: $e',
@@ -78,8 +83,23 @@ class ServerKeepAlive {
           );
         });
       });
-      dataNotifier.listen((_) => _onDataReceived());
+      _dataSubscription = dataNotifier.listen((_) => _onDataReceived());
     }
+  }
+
+  /// Cancels keepalive subscriptions so the Dart VM event loop can exit.
+  ///
+  /// The http2 package's `_pingReceived` StreamController is never closed
+  /// during `connection.terminate()`, so the ping subscription created in
+  /// [handle] persists indefinitely. For TCP, `socket.destroy()` kills all
+  /// lingering IO. For named pipes there is no equivalent — the orphaned
+  /// subscription keeps the VM alive (root cause of 44-minute Windows CI
+  /// hangs). Explicitly cancelling both subscriptions breaks the reference.
+  void dispose() {
+    _pingSubscription?.cancel();
+    _pingSubscription = null;
+    _dataSubscription?.cancel();
+    _dataSubscription = null;
   }
 
   bool get _enforcesMaxBadPings => (options.maxBadPings ?? 0) > 0;

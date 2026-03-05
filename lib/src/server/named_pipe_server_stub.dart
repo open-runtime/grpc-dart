@@ -57,7 +57,16 @@ class NamedPipeServer extends ConnectionServer {
     List<ServerInterceptor> serverInterceptors = const <ServerInterceptor>[],
     CodecRegistry? codecRegistry,
     GrpcErrorHandler? errorHandler,
-  }) : super(services, interceptors, serverInterceptors, codecRegistry, errorHandler, keepAliveOptions) {
+    int? maxInboundMessageSize,
+  }) : super(
+         services,
+         interceptors,
+         serverInterceptors,
+         codecRegistry,
+         errorHandler,
+         keepAliveOptions,
+         maxInboundMessageSize,
+       ) {
     throw _namedPipeServerUnsupported('NamedPipeServer');
   }
 

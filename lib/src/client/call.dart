@@ -235,14 +235,29 @@ class ClientCall<Q, R> implements Response {
     } else {
       final metadata = Map<String, String>.of(options.metadata);
       Future.forEach(
-        options.metadataProviders,
-        (MetadataProvider provider) =>
-            provider(metadata, '${connection.scheme}://${connection.authority}${audiencePath(_method)}'),
-      ).then((_) => _sendRequest(connection, _sanitizeMetadata(metadata))).catchError(_terminateWithError);
+            options.metadataProviders,
+            (MetadataProvider provider) =>
+                provider(metadata, '${connection.scheme}://${connection.authority}${audiencePath(_method)}'),
+          )
+          .then((_) {
+            if (isCancelled) return;
+            _sendRequest(connection, _sanitizeMetadata(metadata));
+          })
+          .catchError((Object e) {
+            _terminateWithError(e);
+            return null;
+          });
     }
   }
 
   void _sendRequest(ClientConnection connection, Map<String, String> metadata) {
+    // Guard against race: cancel() / _terminate() may have been called
+    // while async metadata providers were resolving. At that point _stream
+    // was still null, so _terminate() could not clean up transport
+    // resources. Proceeding here would leak an HTTP/2 stream and
+    // subscriptions that nothing will ever terminate.
+    if (isCancelled) return;
+
     late final GrpcTransportStream stream;
     try {
       stream = connection.makeRequest(_method.path, options.timeout, metadata, _onRequestError, callOptions: options);

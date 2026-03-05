@@ -135,7 +135,16 @@ class NamedPipeServer extends ConnectionServer {
     List<ServerInterceptor> serverInterceptors = const <ServerInterceptor>[],
     CodecRegistry? codecRegistry,
     GrpcErrorHandler? errorHandler,
-  }) : super(services, interceptors, serverInterceptors, codecRegistry, errorHandler, keepAliveOptions);
+    int? maxInboundMessageSize,
+  }) : super(
+         services,
+         interceptors,
+         serverInterceptors,
+         codecRegistry,
+         errorHandler,
+         keepAliveOptions,
+         maxInboundMessageSize,
+       );
 
   /// The full Windows path for the named pipe.
   String? get pipePath => _pipeName != null ? namedPipePath(_pipeName!) : null;
@@ -585,6 +594,17 @@ class _ServerPipeStream {
 
   bool _isClosed = false;
 
+  /// Write queue for non-blocking outgoing data.
+  ///
+  /// Data is enqueued by the synchronous listener callback and drained
+  /// asynchronously by [_drainWriteQueue], which yields to the event loop
+  /// between chunks. This prevents a deadlock where a blocking [WriteFile]
+  /// on a full pipe buffer starves the read loop (which needs the event
+  /// loop to process its PeekNamedPipe polling).
+  final List<List<int>> _writeQueue = [];
+  bool _draining = false;
+  bool _outgoingStreamDone = false;
+
   /// Whether the Win32 handle has been closed. Prevents double-close when
   /// both normal close (via [_onOutgoingDone]) and forced close paths run.
   bool _handleClosed = false;
@@ -633,14 +653,15 @@ class _ServerPipeStream {
   /// isolate's event loop remains responsive. [ReadFile] is only called
   /// when data is confirmed available, making it effectively non-blocking.
   ///
-  /// The 1ms delay between polls yields to the full event queue (timers,
-  /// I/O callbacks, incoming messages), allowing concurrent connections
-  /// and HTTP/2 writes to proceed between read checks.
+  /// Uses exponential idle backoff between polls (1ms to 50ms cap) to reduce
+  /// CPU wakeups on quiet connections while still yielding to the full event
+  /// queue (timers, I/O callbacks, incoming messages).
   Future<void> _readLoop() async {
     final buffer = calloc<Uint8>(kNamedPipeBufferSize);
     final bytesRead = calloc<DWORD>();
     final peekAvail = calloc<DWORD>();
     final noDataRetry = NoDataRetryState();
+    final idlePollBackoff = IdlePollBackoff();
 
     try {
       while (!_isClosed) {
@@ -652,7 +673,7 @@ class _ServerPipeStream {
           final error = GetLastError();
           if (error == ERROR_NO_DATA) {
             if (noDataRetry.recordNoData() == NoDataRetryResult.retry) {
-              await Future<void>.delayed(const Duration(milliseconds: 1));
+              await Future<void>.delayed(idlePollBackoff.nextDelay());
               continue;
             }
             logGrpcEvent(
@@ -678,7 +699,7 @@ class _ServerPipeStream {
 
         if (peekAvail.value == 0) {
           // No data yet — yield to event loop.
-          await Future.delayed(const Duration(milliseconds: 1));
+          await Future<void>.delayed(idlePollBackoff.nextDelay());
           continue;
         }
 
@@ -690,7 +711,7 @@ class _ServerPipeStream {
           final error = GetLastError();
           if (error == ERROR_NO_DATA) {
             if (noDataRetry.recordNoData() == NoDataRetryResult.retry) {
-              await Future<void>.delayed(const Duration(milliseconds: 1));
+              await Future<void>.delayed(idlePollBackoff.nextDelay());
               continue;
             }
             logGrpcEvent(
@@ -716,6 +737,7 @@ class _ServerPipeStream {
 
         final count = bytesRead.value;
         if (count > 0) {
+          idlePollBackoff.reset();
           _incomingController.add(copyFromNativeBuffer(buffer, count));
         }
       }
@@ -740,16 +762,75 @@ class _ServerPipeStream {
   /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
   /// until all bytes are written or an error occurs.
   ///
+  /// Enqueues [data] for asynchronous writing to the pipe.
+  ///
   /// Guards on [_handleClosed] rather than [_isClosed] because during normal
   /// close (force=false), the outgoing subscription continues draining while
   /// the handle remains open. Using [_isClosed] would silently drop all
   /// remaining HTTP/2 frames — causing data loss in high-throughput streaming.
+  ///
+  /// Data is written by [_drainWriteQueue] which yields to the event loop
+  /// between chunks. This prevents a deadlock where a blocking [WriteFile]
+  /// on a full pipe buffer starves the read loop running on the same
+  /// isolate.
   void _writeData(List<int> data) {
     if (_handleClosed) return;
-
-    // Guard against zero-length writes: calloc<Uint8>(0) is undefined
-    // behavior (may return nullptr on some platforms).
     if (data.isEmpty) return;
+    _enqueueWriteChunks(data);
+    if (!_draining) {
+      _draining = true;
+      Future.microtask(_drainWriteQueue);
+    }
+  }
+
+  /// Enqueues [data] as bounded write chunks.
+  ///
+  /// A single large [WriteFile] request can block this isolate until the
+  /// client drains enough bytes. Splitting payloads into bounded chunks lets
+  /// [_drainWriteQueue] yield between chunks so read polling keeps progress.
+  void _enqueueWriteChunks(List<int> data) {
+    if (data.length <= kNamedPipeWriteChunkSize) {
+      _writeQueue.add(data);
+      return;
+    }
+
+    var offset = 0;
+    while (offset < data.length) {
+      final end = (offset + kNamedPipeWriteChunkSize < data.length) ? offset + kNamedPipeWriteChunkSize : data.length;
+      _writeQueue.add(data.sublist(offset, end));
+      offset = end;
+    }
+  }
+
+  /// Asynchronously drains [_writeQueue], yielding to the event loop
+  /// between writes so the read loop can progress.
+  Future<void> _drainWriteQueue() async {
+    try {
+      while (_writeQueue.isNotEmpty) {
+        if (_handleClosed) break;
+
+        final data = _writeQueue.removeAt(0);
+        if (!_writeChunk(data)) break;
+
+        // Yield to the event loop so the read loop (and other async
+        // work) can run between write operations.
+        await Future<void>.delayed(Duration.zero);
+      }
+    } finally {
+      _draining = false;
+      // If more data was enqueued while we yielded, restart the drain.
+      if (_writeQueue.isNotEmpty && !_handleClosed) {
+        _draining = true;
+        Future.microtask(_drainWriteQueue);
+      } else {
+        _finalizeNormalCloseIfReady();
+      }
+    }
+  }
+
+  /// Writes a single chunk to the pipe. Returns `false` on error.
+  bool _writeChunk(List<int> data) {
+    if (data.isEmpty) return true;
 
     final buffer = calloc<Uint8>(data.length);
     final bytesWritten = calloc<DWORD>();
@@ -773,7 +854,7 @@ class _ServerPipeStream {
             error: error,
           );
           close(force: true);
-          return;
+          return false;
         }
 
         if (bytesWritten.value == 0) {
@@ -784,11 +865,12 @@ class _ServerPipeStream {
             context: '_writeToPipe',
           );
           close(force: true);
-          return;
+          return false;
         }
 
         offset += bytesWritten.value;
       }
+      return true;
     } finally {
       calloc.free(buffer);
       calloc.free(bytesWritten);
@@ -801,8 +883,9 @@ class _ServerPipeStream {
   /// the read loop ends and calls `close()` without force, the outgoing
   /// subscription is left running so the HTTP/2 transport can finish writing
   /// all response frames. Once the transport closes the outgoing stream
-  /// (completing the `addStream()`), this callback fires and we can safely
-  /// close the Win32 handle — all data has been written to the pipe buffer.
+  /// (completing the `addStream()`), this callback fires. Because writes are
+  /// now chunked and drained asynchronously, the final close may still need
+  /// to wait for [_writeQueue] to empty before the Win32 handle is released.
   ///
   /// This separation is critical for high-throughput streaming: without it,
   /// `close()` would cancel the subscription immediately, dropping HTTP/2
@@ -811,19 +894,8 @@ class _ServerPipeStream {
   void _onOutgoingDone() {
     _cancelDeferredCloseTimer();
     _outgoingSubscription = null;
-    // Close the incoming controller now that all outgoing frames are written.
-    // This is deferred from close(force=false) because closing _incomingController
-    // signals the HTTP/2 transport that the byte stream ended. If closed too early
-    // (before all response frames are written), the transport interprets it as
-    // connection EOF and shuts down the outgoing stream — dropping frames and
-    // causing data loss (e.g. 232/1000 items delivered in high-throughput tests).
-    if (!_incomingController.isClosed) {
-      _incomingController.close();
-    }
-    _closeHandle(disconnect: false);
-    if (!_isClosed) {
-      close();
-    }
+    _outgoingStreamDone = true;
+    _finalizeNormalCloseIfReady();
   }
 
   void _cancelDeferredCloseTimer() {
@@ -870,14 +942,30 @@ class _ServerPipeStream {
               if (!_outgoingController.isClosed) {
                 try {
                   _outgoingController.close();
-                } catch (_) {}
+                } catch (error) {
+                  logGrpcEvent(
+                    '[gRPC] Failed to close outgoing server pipe controller: $error',
+                    component: 'NamedPipeServer',
+                    event: 'close_outgoing_controller_failed',
+                    context: '_ServerPipeStream._cancelOutgoingAndCloseController.whenComplete',
+                    error: error,
+                  );
+                }
               }
             }),
       );
     } else if (!_outgoingController.isClosed) {
       try {
         _outgoingController.close();
-      } catch (_) {}
+      } catch (error) {
+        logGrpcEvent(
+          '[gRPC] Failed to close outgoing server pipe controller: $error',
+          component: 'NamedPipeServer',
+          event: 'close_outgoing_controller_failed',
+          context: '_ServerPipeStream._cancelOutgoingAndCloseController',
+          error: error,
+        );
+      }
     }
   }
 
@@ -906,6 +994,22 @@ class _ServerPipeStream {
     });
   }
 
+  void _finalizeNormalCloseIfReady({bool allowWithoutOutgoingDone = false}) {
+    if (_handleClosed || _draining || _writeQueue.isNotEmpty) {
+      return;
+    }
+    if (!_outgoingStreamDone && !allowWithoutOutgoingDone) {
+      return;
+    }
+    if (!_incomingController.isClosed) {
+      _incomingController.close();
+    }
+    _closeHandle(disconnect: false);
+    if (!_isClosed) {
+      close();
+    }
+  }
+
   /// Closes the pipe stream and cleans up resources.
   ///
   /// ## Normal close (force=false)
@@ -920,8 +1024,8 @@ class _ServerPipeStream {
   /// connection EOF and shuts down the outgoing stream — dropping response
   /// frames not yet written (e.g. 232/1000 items in high-throughput tests).
   ///
-  /// When [_onOutgoingDone] fires, all data has been written to the pipe
-  /// buffer and [CloseHandle] preserves it for the client to drain before
+  /// After [_onOutgoingDone] fires and the async write queue drains,
+  /// [CloseHandle] preserves the buffered data for the client to drain before
   /// seeing `ERROR_BROKEN_PIPE`.
   ///
   /// ## Forced close (force=true)
@@ -969,6 +1073,7 @@ class _ServerPipeStream {
         if (!_incomingController.isClosed) {
           _incomingController.close();
         }
+        _writeQueue.clear();
         _closeHandle(disconnect: true);
       }
       return;
@@ -982,6 +1087,7 @@ class _ServerPipeStream {
       // Chain controller close AFTER subscription cancel completes.
       // See _cancelOutgoingAndCloseController doc for why this is critical.
       _cancelOutgoingAndCloseController();
+      _writeQueue.clear();
       _closeHandle(disconnect: true);
     }
     // Normal close: Do NOT cancel the outgoing subscription. The HTTP/2
@@ -991,8 +1097,7 @@ class _ServerPipeStream {
     // If there's no outgoing subscription (already drained or never started),
     // close the handle now since _onOutgoingDone won't fire.
     else if (_outgoingSubscription == null) {
-      _incomingController.close();
-      _closeHandle(disconnect: false);
+      _finalizeNormalCloseIfReady(allowWithoutOutgoingDone: true);
     } else {
       // Deferred cleanup path: allow the outgoing subscription to drain
       // naturally. Do NOT close _incomingController here — the HTTP/2

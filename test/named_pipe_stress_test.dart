@@ -1299,6 +1299,28 @@ void main() {
     });
   });
 
+  group('Idle Poll Backoff', () {
+    test('nextDelay grows exponentially and caps at max delay', () {
+      final backoff = IdlePollBackoff(initialDelayMs: 1, maxDelayMs: 50);
+      final delays = List.generate(8, (_) => backoff.nextDelay().inMilliseconds);
+      expect(delays, equals([1, 2, 4, 8, 16, 32, 50, 50]));
+    });
+
+    test('reset restores initial polling delay', () {
+      final backoff = IdlePollBackoff(initialDelayMs: 1, maxDelayMs: 50);
+      backoff.nextDelay();
+      backoff.nextDelay();
+      backoff.nextDelay();
+      backoff.reset();
+      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)));
+    });
+
+    test('constructor rejects invalid delay bounds', () {
+      expect(() => IdlePollBackoff(initialDelayMs: 0, maxDelayMs: 50), throwsA(isA<ArgumentError>()));
+      expect(() => IdlePollBackoff(initialDelayMs: 5, maxDelayMs: 4), throwsA(isA<ArgumentError>()));
+    });
+  });
+
   // ===========================================================================
   // 7. Cross-Platform Skip Verification
   // ===========================================================================

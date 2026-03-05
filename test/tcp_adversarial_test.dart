@@ -34,8 +34,7 @@ import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
 import 'package:grpc/src/client/channel.dart' show ClientChannelBase;
-import 'package:http2/transport.dart'
-    show ErrorCode, TransportConnectionException;
+import 'package:http2/transport.dart' show ErrorCode, TransportConnectionException;
 import 'package:test/test.dart';
 
 import 'common.dart';
@@ -61,19 +60,14 @@ void main() {
     //
     // EXPECTED: All 5 RPCs settle (either succeed or fail with GrpcError)
     // without hanging. All channels shut down cleanly.
-    testTcpAndUds('server shutdown racing 5 concurrent client connections', (
-      address,
-    ) async {
+    testTcpAndUds('server shutdown racing 5 concurrent client connections', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
       // Start 5 clients connecting simultaneously. Some will be mid-
       // handshake when we kill the server.
-      final channels = List.generate(
-        5,
-        (_) => createTestChannel(address, server.port!),
-      );
+      final channels = List.generate(5, (_) => createTestChannel(address, server.port!));
       final clients = channels.map(EchoClient.new).toList();
 
       // Fire RPCs without awaiting -- they race against shutdown.
@@ -101,13 +95,7 @@ void main() {
       for (final result in settled) {
         expect(
           result,
-          anyOf(
-            isA<int>(),
-            isA<GrpcError>(),
-            isA<SocketException>(),
-            isA<TimeoutException>(),
-            isA<StateError>(),
-          ),
+          anyOf(isA<int>(), isA<GrpcError>(), isA<SocketException>(), isA<TimeoutException>(), isA<StateError>()),
           reason: 'Unexpected shutdown-race RPC settlement: $result',
         );
       }
@@ -131,9 +119,7 @@ void main() {
     //
     // EXPECTED: No hang, no unhandled exception. The RPC either succeeds
     // (if the handshake completed before shutdown) or fails gracefully.
-    testTcpAndUds('channel shutdown concurrent with first RPC', (
-      address,
-    ) async {
+    testTcpAndUds('channel shutdown concurrent with first RPC', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -156,13 +142,7 @@ void main() {
       );
       expect(
         result,
-        anyOf(
-          equals(42),
-          isA<GrpcError>(),
-          isA<SocketException>(),
-          isA<TimeoutException>(),
-          isA<StateError>(),
-        ),
+        anyOf(equals(42), isA<GrpcError>(), isA<SocketException>(), isA<TimeoutException>(), isA<StateError>()),
       );
 
       await server.shutdown();
@@ -189,71 +169,64 @@ void main() {
     //
     // EXPECTED: The bidi stream terminates (with error or short data)
     // within the test timeout. No hang.
-    testTcpAndUds(
-      'server shutdown during active bidi stream terminates cleanly',
-      (address) async {
-        final server = Server.create(services: [EchoService()]);
-        await server.serve(address: address, port: 0);
-        addTearDown(() => server.shutdown());
+    testTcpAndUds('server shutdown during active bidi stream terminates cleanly', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
-        final channel = createTestChannel(address, server.port!);
-        final client = EchoClient(channel);
+      final channel = createTestChannel(address, server.port!);
+      final client = EchoClient(channel);
 
-        // Create a long-lived bidi stream: the client sends 100 items
-        // with small delays, keeping the stream active while we kill
-        // the server mid-flight.
-        final inputController = StreamController<int>();
-        final responseStream = client.bidiStream(inputController.stream);
+      // Create a long-lived bidi stream: the client sends 100 items
+      // with small delays, keeping the stream active while we kill
+      // the server mid-flight.
+      final inputController = StreamController<int>();
+      final responseStream = client.bidiStream(inputController.stream);
 
-        // Collect responses (with error tolerance).
-        final received = <int>[];
-        final streamDone = Completer<void>();
-        final unexpectedStreamErrors = <Object>[];
-        responseStream.listen(
-          received.add,
-          onError: (Object error) {
-            if (error is! GrpcError) {
-              unexpectedStreamErrors.add(error);
-            }
-            if (!streamDone.isCompleted) streamDone.complete();
-          },
-          onDone: () {
-            if (!streamDone.isCompleted) streamDone.complete();
-          },
-        );
-
-        // Send a burst of data to saturate the read/write interleave.
-        // Values are kept <= 127 so doubled results fit in a single
-        // byte (the echo service serializes int as [value]).
-        for (var i = 0; i < 100; i++) {
-          inputController.add(i % 128);
-          // Tiny delay so writes interleave with reads on the server.
-          if (i % 10 == 0) {
-            await Future.delayed(const Duration(milliseconds: 5));
+      // Collect responses (with error tolerance).
+      final received = <int>[];
+      final streamDone = Completer<void>();
+      final unexpectedStreamErrors = <Object>[];
+      responseStream.listen(
+        received.add,
+        onError: (Object error) {
+          if (error is! GrpcError) {
+            unexpectedStreamErrors.add(error);
           }
+          if (!streamDone.isCompleted) streamDone.complete();
+        },
+        onDone: () {
+          if (!streamDone.isCompleted) streamDone.complete();
+        },
+      );
+
+      // Send a burst of data to saturate the read/write interleave.
+      // Values are kept <= 127 so doubled results fit in a single
+      // byte (the echo service serializes int as [value]).
+      for (var i = 0; i < 100; i++) {
+        inputController.add(i % 128);
+        // Tiny delay so writes interleave with reads on the server.
+        if (i % 10 == 0) {
+          await Future.delayed(const Duration(milliseconds: 5));
         }
+      }
 
-        // Kill the server while the bidi stream is mid-flight.
-        await server.shutdown();
+      // Kill the server while the bidi stream is mid-flight.
+      await server.shutdown();
 
-        // The stream must terminate within a reasonable time.
-        await streamDone.future.timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            fail('bidi stream did not terminate after server shutdown');
-          },
-        );
-        expect(
-          unexpectedStreamErrors,
-          isEmpty,
-          reason: 'Unexpected non-gRPC stream errors during shutdown race',
-        );
+      // The stream must terminate within a reasonable time.
+      await streamDone.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          fail('bidi stream did not terminate after server shutdown');
+        },
+      );
+      expect(unexpectedStreamErrors, isEmpty, reason: 'Unexpected non-gRPC stream errors during shutdown race');
 
-        // Close the client side.
-        await inputController.close();
-        await channel.shutdown();
-      },
-    );
+      // Close the client side.
+      await inputController.close();
+      await channel.shutdown();
+    });
 
     // -------------------------------------------------------------------------
     // Test 4: Client cancellation during active server stream
@@ -268,9 +241,7 @@ void main() {
     //
     // EXPECTED: Client receives some items, cancellation completes
     // quickly, and a fresh RPC to the same server succeeds.
-    testTcpAndUds('client cancellation during active server stream', (
-      address,
-    ) async {
+    testTcpAndUds('client cancellation during active server stream', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -334,9 +305,7 @@ void main() {
     //
     // EXPECTED: The client-stream RPC fails with GrpcError (or succeeds
     // if the server managed to return before dying). No hang.
-    testTcpAndUds('server shutdown during client-stream accumulation', (
-      address,
-    ) async {
+    testTcpAndUds('server shutdown during client-stream accumulation', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -349,9 +318,7 @@ void main() {
 
       // Start the client-stream RPC (returns when server sends
       // response after the stream closes).
-      final resultFuture = settleRpc(
-        client.clientStream(inputController.stream),
-      );
+      final resultFuture = settleRpc(client.clientStream(inputController.stream));
 
       // Send 10 values slowly.
       for (var i = 1; i <= 10; i++) {
@@ -378,13 +345,7 @@ void main() {
       // before dying, sum of 1..10 = 55. Either is acceptable.
       expect(
         result,
-        anyOf(
-          equals(55),
-          isA<GrpcError>(),
-          isA<SocketException>(),
-          isA<TimeoutException>(),
-          isA<StateError>(),
-        ),
+        anyOf(equals(55), isA<GrpcError>(), isA<SocketException>(), isA<TimeoutException>(), isA<StateError>()),
       );
 
       await channel.shutdown();
@@ -410,27 +371,18 @@ void main() {
     //
     // EXPECTED: All 100 RPCs either succeed or fail with GrpcError. The
     // server shuts down without unhandled async exceptions. No hang.
-    testTcpAndUds('server shutdown racing 100 concurrent RPCs from 3 clients', (
-      address,
-    ) async {
+    testTcpAndUds('server shutdown racing 100 concurrent RPCs from 3 clients', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
       // Spin up 3 independent channels.
-      final channels = List.generate(
-        3,
-        (_) => createTestChannel(address, server.port!),
-      );
+      final channels = List.generate(3, (_) => createTestChannel(address, server.port!));
       final clients = channels.map(EchoClient.new).toList();
 
       // Warm up: ensure all 3 channels are connected and the HTTP/2
       // sessions are established before the race begins.
-      await Future.wait([
-        clients[0].echo(0),
-        clients[1].echo(0),
-        clients[2].echo(0),
-      ]);
+      await Future.wait([clients[0].echo(0), clients[1].echo(0), clients[2].echo(0)]);
 
       // Fire 100 RPCs spread across all 3 clients, without awaiting.
       // Values are (i % 256) to stay within single-byte encoding.
@@ -458,13 +410,7 @@ void main() {
       for (final result in settled) {
         expect(
           result,
-          anyOf(
-            isA<int>(),
-            isA<GrpcError>(),
-            isA<SocketException>(),
-            isA<TimeoutException>(),
-            isA<StateError>(),
-          ),
+          anyOf(isA<int>(), isA<GrpcError>(), isA<SocketException>(), isA<TimeoutException>(), isA<StateError>()),
           reason: 'Unexpected concurrent-shutdown RPC settlement: $result',
         );
       }
@@ -486,9 +432,7 @@ void main() {
     //
     // EXPECTED: All 20 cycles succeed. The server handles rapid
     // connect/disconnect without resource exhaustion or hangs.
-    testTcpAndUds('rapid connect/disconnect cycles (20 channels in sequence)', (
-      address,
-    ) async {
+    testTcpAndUds('rapid connect/disconnect cycles (20 channels in sequence)', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -573,6 +517,37 @@ void main() {
     });
 
     // -------------------------------------------------------------------------
+    // Test 8b: Server inbound size limit rejects oversized unary request
+    // -------------------------------------------------------------------------
+    // REGRESSION TARGETED: maxInboundMessageSize is threaded through
+    // ConnectionServer -> ServerHandler -> GrpcHttpDecoder. If that wiring is
+    // broken, oversized requests will be accepted despite the configured cap.
+    //
+    // EXPECTED: A 5-byte request against a 4-byte server limit fails with
+    // RESOURCE_EXHAUSTED on both TCP and UDS transports.
+    testTcpAndUds('server maxInboundMessageSize rejects oversized unary request', (address) async {
+      final server = Server.create(services: [EchoService()], maxInboundMessageSize: 4);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = createTestChannel(address, server.port!);
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      await expectLater(
+        client.echoBytes(<int>[1, 2, 3, 4, 5]),
+        throwsA(
+          isA<GrpcError>()
+              .having((e) => e.code, 'code', StatusCode.resourceExhausted)
+              .having((e) => e.message, 'message', contains('Received message larger than max')),
+        ),
+      );
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // -------------------------------------------------------------------------
     // Test 9: Large server-stream (10 chunks x 10KB)
     // -------------------------------------------------------------------------
     // RACE TARGETED: The server sends 10 chunks of 10240 bytes each.
@@ -616,11 +591,7 @@ void main() {
 
       for (var i = 0; i < chunks.length; i++) {
         final chunk = chunks[i];
-        expect(
-          chunk.length,
-          equals(10240),
-          reason: 'chunk $i has wrong length',
-        );
+        expect(chunk.length, equals(10240), reason: 'chunk $i has wrong length');
 
         // Verify the fill pattern: (chunkIndex + byteIndex) & 0xFF.
         for (var j = 0; j < chunk.length; j++) {
@@ -712,16 +683,8 @@ void main() {
 
       // Verify each chunk was echoed back exactly.
       for (var i = 0; i < echoed.length; i++) {
-        expect(
-          echoed[i].length,
-          equals(2048),
-          reason: 'echoed chunk $i has wrong length',
-        );
-        expect(
-          echoed[i],
-          equals(chunks[i]),
-          reason: 'echoed chunk $i data mismatch',
-        );
+        expect(echoed[i].length, equals(2048), reason: 'echoed chunk $i has wrong length');
+        expect(echoed[i], equals(chunks[i]), reason: 'echoed chunk $i data mismatch');
       }
 
       await channel.shutdown();
@@ -754,10 +717,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       // Create 3 fully independent channels.
-      final channels = List.generate(
-        3,
-        (_) => createTestChannel(address, server.port!),
-      );
+      final channels = List.generate(3, (_) => createTestChannel(address, server.port!));
       final clients = channels.map(EchoClient.new).toList();
 
       // Fire 30 RPCs, interleaving across channels. Each client gets
@@ -793,11 +753,7 @@ void main() {
 
       // Verify all 30 results match expectations.
       for (var i = 0; i < 30; i++) {
-        expect(
-          results[i],
-          equals(expectedValues[i]),
-          reason: 'RPC $i (channel ${i % 3}) returned wrong value',
-        );
+        expect(results[i], equals(expectedValues[i]), reason: 'RPC $i (channel ${i % 3}) returned wrong value');
       }
 
       // Shut down channels one at a time. Verify remaining channels
@@ -805,25 +761,13 @@ void main() {
       await channels[0].shutdown();
 
       // Channel 1 and 2 should still work.
-      expect(
-        await clients[1].echo(77),
-        equals(77),
-        reason: 'channel 1 broken after channel 0 shutdown',
-      );
-      expect(
-        await clients[2].echo(88),
-        equals(88),
-        reason: 'channel 2 broken after channel 0 shutdown',
-      );
+      expect(await clients[1].echo(77), equals(77), reason: 'channel 1 broken after channel 0 shutdown');
+      expect(await clients[2].echo(88), equals(88), reason: 'channel 2 broken after channel 0 shutdown');
 
       await channels[1].shutdown();
 
       // Channel 2 should still work.
-      expect(
-        await clients[2].echo(99),
-        equals(99),
-        reason: 'channel 2 broken after channel 1 shutdown',
-      );
+      expect(await clients[2].echo(99), equals(99), reason: 'channel 2 broken after channel 1 shutdown');
 
       await channels[2].shutdown();
       await server.shutdown();
@@ -838,9 +782,7 @@ void main() {
     // -------------------------------------------------------------------------
     // Test 12: Mixed RPC types all active during server shutdown
     // -------------------------------------------------------------------------
-    testTcpAndUds('mixed RPC types survive concurrent server shutdown', (
-      address,
-    ) async {
+    testTcpAndUds('mixed RPC types survive concurrent server shutdown', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -854,13 +796,8 @@ void main() {
 
       final serverStreamFuture = settleRpc(client.serverStream(20).toList());
 
-      final clientStreamInput = pacedStream(
-        List.generate(10, (i) => i),
-        yieldEvery: 2,
-      );
-      final clientStreamFuture = settleRpc(
-        client.clientStream(clientStreamInput),
-      );
+      final clientStreamInput = pacedStream(List.generate(10, (i) => i), yieldEvery: 2);
+      final clientStreamFuture = settleRpc(client.clientStream(clientStreamInput));
 
       final bidiController = StreamController<int>();
       final bidiStream = client.bidiStream(bidiController.stream);
@@ -878,22 +815,10 @@ void main() {
       // Each RPC should either complete successfully or fail with an expected
       // transport/gRPC error — never hang or surface as unhandled.
       final settled = await Future.wait([
-        unaryFuture.timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => fail('unary did not settle'),
-        ),
-        serverStreamFuture.timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => fail('server stream did not settle'),
-        ),
-        clientStreamFuture.timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => fail('client stream did not settle'),
-        ),
-        bidiCollector.timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => fail('bidi stream did not settle'),
-        ),
+        unaryFuture.timeout(const Duration(seconds: 10), onTimeout: () => fail('unary did not settle')),
+        serverStreamFuture.timeout(const Duration(seconds: 10), onTimeout: () => fail('server stream did not settle')),
+        clientStreamFuture.timeout(const Duration(seconds: 10), onTimeout: () => fail('client stream did not settle')),
+        bidiCollector.timeout(const Duration(seconds: 10), onTimeout: () => fail('bidi stream did not settle')),
       ]);
 
       expect(
@@ -906,13 +831,7 @@ void main() {
       for (final result in settled) {
         expect(
           result,
-          anyOf(
-            isA<int>(),
-            isA<List<int>>(),
-            isA<GrpcError>(),
-            isA<SocketException>(),
-            isA<StateError>(),
-          ),
+          anyOf(isA<int>(), isA<List<int>>(), isA<GrpcError>(), isA<SocketException>(), isA<StateError>()),
           reason: 'Unexpected settled RPC result type: ${result.runtimeType}',
         );
       }
@@ -923,9 +842,7 @@ void main() {
     // -------------------------------------------------------------------------
     // Test 13: Channel reuse after server restart
     // -------------------------------------------------------------------------
-    testTcpAndUds('new channel works after server restart on new port', (
-      address,
-    ) async {
+    testTcpAndUds('new channel works after server restart on new port', (address) async {
       // First lifecycle.
       final server1 = Server.create(services: [EchoService()]);
       await server1.serve(address: address, port: 0);
@@ -954,90 +871,71 @@ void main() {
     // -------------------------------------------------------------------------
     // Test 14: Strengthened bidi shutdown with data integrity verification
     // -------------------------------------------------------------------------
-    testTcpAndUds(
-      'bidi stream with 200 items verifies data integrity under shutdown',
-      (address) async {
-        final server = Server.create(services: [EchoService()]);
-        await server.serve(address: address, port: 0);
-        addTearDown(() => server.shutdown());
+    testTcpAndUds('bidi stream with 200 items verifies data integrity under shutdown', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
-        final channel = createTestChannel(address, server.port!);
-        final client = EchoClient(channel);
+      final channel = createTestChannel(address, server.port!);
+      final client = EchoClient(channel);
 
-        final inputController = StreamController<int>();
-        final responseStream = client.bidiStream(inputController.stream);
+      final inputController = StreamController<int>();
+      final responseStream = client.bidiStream(inputController.stream);
 
-        final received = <int>[];
-        final receivedFirst = Completer<void>();
-        final streamDone = Completer<void>();
-        final unexpectedErrors = <Object>[];
-        responseStream.listen(
-          (value) {
-            received.add(value);
-            if (!receivedFirst.isCompleted) receivedFirst.complete();
-          },
-          onError: (Object error) {
-            if (error is! GrpcError) {
-              unexpectedErrors.add(error);
-            }
-            if (!streamDone.isCompleted) streamDone.complete();
-          },
-          onDone: () {
-            if (!streamDone.isCompleted) streamDone.complete();
-          },
-        );
-
-        // Send 200 items (values kept <= 127 so doubled fits in byte).
-        for (var i = 0; i < 200; i++) {
-          inputController.add(i % 128);
-          if (i % 20 == 0) {
-            await Future<void>.delayed(const Duration(milliseconds: 2));
+      final received = <int>[];
+      final receivedFirst = Completer<void>();
+      final streamDone = Completer<void>();
+      final unexpectedErrors = <Object>[];
+      responseStream.listen(
+        (value) {
+          received.add(value);
+          if (!receivedFirst.isCompleted) receivedFirst.complete();
+        },
+        onError: (Object error) {
+          if (error is! GrpcError) {
+            unexpectedErrors.add(error);
           }
+          if (!streamDone.isCompleted) streamDone.complete();
+        },
+        onDone: () {
+          if (!streamDone.isCompleted) streamDone.complete();
+        },
+      );
+
+      // Send 200 items (values kept <= 127 so doubled fits in byte).
+      for (var i = 0; i < 200; i++) {
+        inputController.add(i % 128);
+        if (i % 20 == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
         }
+      }
 
-        // Wait for at least one response before killing the server.
-        await receivedFirst.future.timeout(
-          const Duration(seconds: 5),
-          onTimeout: () => fail('no bidi response received'),
-        );
-        await server.shutdown();
-        await inputController.close();
+      // Wait for at least one response before killing the server.
+      await receivedFirst.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('no bidi response received'),
+      );
+      await server.shutdown();
+      await inputController.close();
 
-        await streamDone.future.timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            fail('bidi stream did not terminate after shutdown');
-          },
-        );
-        expect(
-          unexpectedErrors,
-          isEmpty,
-          reason: 'Expected only GrpcError termination errors',
-        );
+      await streamDone.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          fail('bidi stream did not terminate after shutdown');
+        },
+      );
+      expect(unexpectedErrors, isEmpty, reason: 'Expected only GrpcError termination errors');
 
-        // Soft: shutdown races the bidi stream; at least 1 item
-        // must arrive to prove the stream was established.
-        expect(
-          received.length,
-          greaterThanOrEqualTo(1),
-          reason: 'Should have received at least 1 echoed item',
-        );
-        expect(
-          received.length,
-          lessThanOrEqualTo(200),
-          reason: 'Cannot receive more than 200 items',
-        );
-        for (var i = 0; i < received.length; i++) {
-          expect(
-            received[i],
-            equals(((i % 128) * 2) & 0xFF),
-            reason: 'item $i has wrong value',
-          );
-        }
+      // Soft: shutdown races the bidi stream; at least 1 item
+      // must arrive to prove the stream was established.
+      expect(received.length, greaterThanOrEqualTo(1), reason: 'Should have received at least 1 echoed item');
+      expect(received.length, lessThanOrEqualTo(200), reason: 'Cannot receive more than 200 items');
+      for (var i = 0; i < received.length; i++) {
+        expect(received[i], equals(((i % 128) * 2) & 0xFF), reason: 'item $i has wrong value');
+      }
 
-        await channel.shutdown();
-      },
-    );
+      await channel.shutdown();
+    });
   });
 
   // ===========================================================================
@@ -1049,8 +947,7 @@ void main() {
       if (error == null) return false;
       // Prefer type-based check: TransportConnectionException with keepalive-related codes
       if (error is TransportConnectionException) {
-        return error.errorCode == ErrorCode.ENHANCE_YOUR_CALM ||
-            error.errorCode == ErrorCode.CONNECT_ERROR;
+        return error.errorCode == ErrorCode.ENHANCE_YOUR_CALM || error.errorCode == ErrorCode.CONNECT_ERROR;
       }
       // Fallback for wrapped/zoned errors: only match known keepalive indicators
       final message = error.toString();
@@ -1102,9 +999,7 @@ void main() {
             result.code == StatusCode.unknown ||
             result.code == StatusCode.deadlineExceeded;
       }
-      if (result is SocketException ||
-          result is StateError ||
-          result is NamedPipeException) {
+      if (result is SocketException || result is StateError || result is NamedPipeException) {
         return true;
       }
       return isExpectedKeepaliveTransportError(result);
@@ -1124,56 +1019,50 @@ void main() {
     //
     // EXPECTED: All 5 cycles complete with correct RPC results. No hangs,
     // no EADDRINUSE, no stale connection reuse across server lifetimes.
-    testTcpAndUds(
-      'rapid sequential server restart with 3 active clients (5 cycles)',
-      (address) async {
-        for (var cycle = 0; cycle < 5; cycle++) {
-          final server = Server.create(services: [EchoService()]);
-          await server.serve(address: address, port: 0);
+    testTcpAndUds('rapid sequential server restart with 3 active clients (5 cycles)', (address) async {
+      for (var cycle = 0; cycle < 5; cycle++) {
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
 
-          final channels = List.generate(
-            3,
-            (_) => createTestChannel(address, server.port!),
-          );
-          final clients = channels.map(EchoClient.new).toList();
+        final channels = List.generate(3, (_) => createTestChannel(address, server.port!));
+        final clients = channels.map(EchoClient.new).toList();
 
-          // Fire 10 RPCs per client = 30 total, all concurrently.
-          final futures = <Future<int>>[];
-          for (var c = 0; c < 3; c++) {
-            for (var r = 0; r < 10; r++) {
-              final value = (cycle * 30 + c * 10 + r) % 256;
-              futures.add(
-                clients[c]
-                    .echo(value)
-                    .timeout(
-                      const Duration(seconds: 5),
-                      onTimeout: () {
-                        fail(
-                          'cycle $cycle client $c rpc $r timed out '
-                          '-- server restart may have leaked state',
-                        );
-                      },
-                    ),
-              );
-            }
+        // Fire 10 RPCs per client = 30 total, all concurrently.
+        final futures = <Future<int>>[];
+        for (var c = 0; c < 3; c++) {
+          for (var r = 0; r < 10; r++) {
+            final value = (cycle * 30 + c * 10 + r) % 256;
+            futures.add(
+              clients[c]
+                  .echo(value)
+                  .timeout(
+                    const Duration(seconds: 5),
+                    onTimeout: () {
+                      fail(
+                        'cycle $cycle client $c rpc $r timed out '
+                        '-- server restart may have leaked state',
+                      );
+                    },
+                  ),
+            );
           }
-
-          final results = await Future.wait(futures);
-
-          // Verify every result.
-          for (var i = 0; i < results.length; i++) {
-            final expected = (cycle * 30 + i) % 256;
-            expect(results[i], equals(expected), reason: 'cycle $cycle rpc $i');
-          }
-
-          // Tear down everything before next cycle.
-          for (final ch in channels) {
-            await ch.shutdown();
-          }
-          await server.shutdown();
         }
-      },
-    );
+
+        final results = await Future.wait(futures);
+
+        // Verify every result.
+        for (var i = 0; i < results.length; i++) {
+          final expected = (cycle * 30 + i) % 256;
+          expect(results[i], equals(expected), reason: 'cycle $cycle rpc $i');
+        }
+
+        // Tear down everything before next cycle.
+        for (final ch in channels) {
+          await ch.shutdown();
+        }
+        await server.shutdown();
+      }
+    });
 
     // -------------------------------------------------------------------------
     // Test 16: 5 concurrent channels with mixed RPC types (20 RPCs)
@@ -1187,121 +1076,101 @@ void main() {
     //
     // EXPECTED: All 20 RPCs complete with correct results. No cross-
     // channel contamination or hangs.
-    testTcpAndUds(
-      '5 concurrent channels with mixed RPC types (20 concurrent RPCs)',
-      (address) async {
-        final server = Server.create(services: [EchoService()]);
-        await server.serve(address: address, port: 0);
-        addTearDown(() => server.shutdown());
+    testTcpAndUds('5 concurrent channels with mixed RPC types (20 concurrent RPCs)', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
-        final channels = List.generate(
-          5,
-          (_) => createTestChannel(address, server.port!),
+      final channels = List.generate(5, (_) => createTestChannel(address, server.port!));
+      final clients = channels.map(EchoClient.new).toList();
+
+      // Warm up all 5 connections.
+      await Future.wait(clients.map((c) => c.echo(0)));
+
+      // Fire all 4 RPC types on each of 5 channels concurrently.
+      final allFutures = <Future<void>>[];
+
+      for (var ch = 0; ch < 5; ch++) {
+        final client = clients[ch];
+        final tag = ch; // unique per-channel for verification
+
+        // Unary.
+        allFutures.add(
+          client.echo(tag).then((result) {
+            expect(result, equals(tag), reason: 'unary channel $ch');
+          }),
         );
-        final clients = channels.map(EchoClient.new).toList();
 
-        // Warm up all 5 connections.
-        await Future.wait(clients.map((c) => c.echo(0)));
-
-        // Fire all 4 RPC types on each of 5 channels concurrently.
-        final allFutures = <Future<void>>[];
-
-        for (var ch = 0; ch < 5; ch++) {
-          final client = clients[ch];
-          final tag = ch; // unique per-channel for verification
-
-          // Unary.
-          allFutures.add(
-            client.echo(tag).then((result) {
-              expect(result, equals(tag), reason: 'unary channel $ch');
-            }),
-          );
-
-          // Server stream: request 20 items, verify full data integrity.
-          allFutures.add(
-            client.serverStream(20).toList().then((items) {
-              expect(
-                items,
-                equals(List.generate(20, (i) => i + 1)),
-                reason: 'server-stream channel $ch full data integrity',
-              );
-            }),
-          );
-
-          // Client stream: send 5 values, verify sum. Use paced producer
-          // to avoid flow-control stalls under adversarial load.
-          allFutures.add(
-            client
-                .clientStream(pacedStream([1, 2, 3, 4, 5], yieldEvery: 1))
-                .then((sum) {
-                  expect(
-                    sum,
-                    equals(15),
-                    reason: 'client-stream channel $ch sum',
-                  );
-                }),
-          );
-
-          // Bidi stream: send 10 values, verify doubled.
-          allFutures.add(() async {
-            final controller = StreamController<int>();
-            final results = <int>[];
-            final done = Completer<void>();
-            client
-                .bidiStream(controller.stream)
-                .listen(
-                  results.add,
-                  onDone: () {
-                    if (!done.isCompleted) done.complete();
-                  },
-                  onError: (e) {
-                    if (!done.isCompleted) done.completeError(e);
-                  },
-                );
-
-            for (var i = 0; i < 10; i++) {
-              controller.add(i % 128);
-              if (i % 5 == 0) await Future.delayed(Duration.zero);
-            }
-            await controller.close();
-            await done.future.timeout(
-              const Duration(seconds: 10),
-              onTimeout: () {
-                fail('bidi stream channel $ch timed out');
-              },
-            );
-
+        // Server stream: request 20 items, verify full data integrity.
+        allFutures.add(
+          client.serverStream(20).toList().then((items) {
             expect(
-              results.length,
-              equals(10),
-              reason: 'bidi channel $ch item count',
+              items,
+              equals(List.generate(20, (i) => i + 1)),
+              reason: 'server-stream channel $ch full data integrity',
             );
-            for (var i = 0; i < 10; i++) {
-              expect(
-                results[i],
-                equals((i % 128) * 2),
-                reason: 'bidi channel $ch item $i',
-              );
-            }
-          }());
-        }
-
-        await Future.wait(allFutures).timeout(
-          const Duration(seconds: 30),
-          onTimeout: () {
-            fail(
-              '20 concurrent mixed RPCs did not complete '
-              'within 30s -- possible cross-channel deadlock',
-            );
-          },
+          }),
         );
 
-        for (final ch in channels) {
-          await ch.shutdown();
-        }
-        await server.shutdown();
-      },
-    );
+        // Client stream: send 5 values, verify sum. Use paced producer
+        // to avoid flow-control stalls under adversarial load.
+        allFutures.add(
+          client.clientStream(pacedStream([1, 2, 3, 4, 5], yieldEvery: 1)).then((sum) {
+            expect(sum, equals(15), reason: 'client-stream channel $ch sum');
+          }),
+        );
+
+        // Bidi stream: send 10 values, verify doubled.
+        allFutures.add(() async {
+          final controller = StreamController<int>();
+          final results = <int>[];
+          final done = Completer<void>();
+          client
+              .bidiStream(controller.stream)
+              .listen(
+                results.add,
+                onDone: () {
+                  if (!done.isCompleted) done.complete();
+                },
+                onError: (e) {
+                  if (!done.isCompleted) done.completeError(e);
+                },
+              );
+
+          for (var i = 0; i < 10; i++) {
+            controller.add(i % 128);
+            if (i % 5 == 0) await Future.delayed(Duration.zero);
+          }
+          await controller.close();
+          await done.future.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              fail('bidi stream channel $ch timed out');
+            },
+          );
+
+          expect(results.length, equals(10), reason: 'bidi channel $ch item count');
+          for (var i = 0; i < 10; i++) {
+            expect(results[i], equals((i % 128) * 2), reason: 'bidi channel $ch item $i');
+          }
+        }());
+      }
+
+      await Future.wait(allFutures).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          fail(
+            '20 concurrent mixed RPCs did not complete '
+            'within 30s -- possible cross-channel deadlock',
+          );
+        },
+      );
+
+      for (final ch in channels) {
+        await ch.shutdown();
+      }
+      await server.shutdown();
+    });
 
     // -------------------------------------------------------------------------
     // Test 17: 255-item server stream with full data integrity
@@ -1316,9 +1185,7 @@ void main() {
     // values arrive out of order or duplicated.
     //
     // EXPECTED: Exactly 255 items, item[i] == i + 1 for all i.
-    testTcpAndUds('255-item server stream with full data integrity', (
-      address,
-    ) async {
+    testTcpAndUds('255-item server stream with full data integrity', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -1339,11 +1206,7 @@ void main() {
             },
           );
 
-      expect(
-        results.length,
-        equals(255),
-        reason: 'must receive all 255 server-stream items',
-      );
+      expect(results.length, equals(255), reason: 'must receive all 255 server-stream items');
 
       for (var i = 0; i < results.length; i++) {
         expect(
@@ -1397,11 +1260,7 @@ void main() {
           )
           .toList();
 
-      expect(
-        results.length,
-        equals(100),
-        reason: 'must receive all 100 compressed bidi items',
-      );
+      expect(results.length, equals(100), reason: 'must receive all 100 compressed bidi items');
 
       for (var i = 0; i < results.length; i++) {
         expect(
@@ -1429,9 +1288,7 @@ void main() {
     // compression header + trailer correctly for minimal payloads.
     //
     // EXPECTED: Exactly 255 items, item[i] == i + 1 for all i.
-    testTcpAndUds('255-item compressed server stream with gzip', (
-      address,
-    ) async {
+    testTcpAndUds('255-item compressed server stream with gzip', (address) async {
       final server = Server.create(
         services: [EchoService()],
         codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
@@ -1447,10 +1304,7 @@ void main() {
       final client = EchoClient(channel);
 
       final results = await client
-          .serverStream(
-            255,
-            options: CallOptions(compression: const GzipCodec()),
-          )
+          .serverStream(255, options: CallOptions(compression: const GzipCodec()))
           .toList()
           .timeout(
             const Duration(seconds: 30),
@@ -1462,11 +1316,7 @@ void main() {
             },
           );
 
-      expect(
-        results.length,
-        equals(255),
-        reason: 'must receive all 255 compressed server-stream items',
-      );
+      expect(results.length, equals(255), reason: 'must receive all 255 compressed server-stream items');
 
       for (var i = 0; i < results.length; i++) {
         expect(
@@ -1521,10 +1371,7 @@ void main() {
       }
 
       final result = await client
-          .echoBytes(
-            payload,
-            options: CallOptions(compression: const GzipCodec()),
-          )
+          .echoBytes(payload, options: CallOptions(compression: const GzipCodec()))
           .timeout(
             const Duration(seconds: 20),
             onTimeout: () {
@@ -1535,11 +1382,7 @@ void main() {
             },
           );
 
-      expect(
-        result.length,
-        equals(payload.length),
-        reason: '500KB payload length mismatch',
-      );
+      expect(result.length, equals(payload.length), reason: '500KB payload length mismatch');
       expect(
         result,
         equals(payload),
@@ -1566,240 +1409,215 @@ void main() {
     // EXPECTED: All RPCs settle (success or GrpcError/TransportException)
     // with no hang. We require both successes and errors to prove overlap.
     // Force-termination (ENHANCE_YOUR_CALM) is a valid outcome.
-    testTcpAndUds(
-      'aggressive keepalive flood with shutdown overlap settles mixed RPCs',
-      (address) async {
-        // Run inside a guarded zone because the aggressive keepalive
-        // flood deliberately triggers HTTP/2 GOAWAY (ENHANCE_YOUR_CALM,
-        // error code 10) which surfaces as uncaught TransportExceptions
-        // in the client's HTTP/2 transport layer. These are EXPECTED
-        // side-effects of the adversarial keepalive configuration.
-        final testDone = Completer<void>();
-        Object? testError;
-        StackTrace? testStack;
+    testTcpAndUds('aggressive keepalive flood with shutdown overlap settles mixed RPCs', (address) async {
+      // Run inside a guarded zone because the aggressive keepalive
+      // flood deliberately triggers HTTP/2 GOAWAY (ENHANCE_YOUR_CALM,
+      // error code 10) which surfaces as uncaught TransportExceptions
+      // in the client's HTTP/2 transport layer. These are EXPECTED
+      // side-effects of the adversarial keepalive configuration.
+      final testDone = Completer<void>();
+      Object? testError;
+      StackTrace? testStack;
 
-        runZonedGuarded(
-          () async {
-            try {
-              final server = Server.create(
-                services: [EchoService()],
-                keepAliveOptions: const ServerKeepAliveOptions(
-                  maxBadPings: 3,
-                  minIntervalBetweenPingsWithoutData: Duration(
-                    milliseconds: 100,
-                  ),
-                ),
-              );
-              await server.serve(address: address, port: 0);
+      runZonedGuarded(
+        () async {
+          try {
+            final server = Server.create(
+              services: [EchoService()],
+              keepAliveOptions: const ServerKeepAliveOptions(
+                maxBadPings: 3,
+                minIntervalBetweenPingsWithoutData: Duration(milliseconds: 100),
+              ),
+            );
+            await server.serve(address: address, port: 0);
 
-              const aggressiveOptions = ChannelOptions(
-                credentials: ChannelCredentials.insecure(),
-                keepAlive: ClientKeepAliveOptions(
-                  pingInterval: Duration(milliseconds: 1),
-                  timeout: Duration(milliseconds: 300),
-                  permitWithoutCalls: true,
-                ),
-              );
+            const aggressiveOptions = ChannelOptions(
+              credentials: ChannelCredentials.insecure(),
+              keepAlive: ClientKeepAliveOptions(
+                pingInterval: Duration(milliseconds: 1),
+                timeout: Duration(milliseconds: 300),
+                permitWithoutCalls: true,
+              ),
+            );
 
-              // 3 channels × 12 ops = 36 RPCs — enough for adversarial
-              // overlap but settles within 60s file timeout.
-              final channels = List.generate(
-                3,
-                (_) => createTestChannel(
-                  address,
-                  server.port!,
-                  options: aggressiveOptions,
-                ),
-              );
-              final clients = channels.map(EchoClient.new).toList();
+            // 3 channels × 12 ops = 36 RPCs — enough for adversarial
+            // overlap but settles within 60s file timeout.
+            final channels = List.generate(
+              3,
+              (_) => createTestChannel(address, server.port!, options: aggressiveOptions),
+            );
+            final clients = channels.map(EchoClient.new).toList();
 
-              // Pre-warm: establish HTTP/2 connections on all channels
-              // before starting the race. On Windows, the 1ms keepalive
-              // interval is quantized to ~15.6ms, so ENHANCE_YOUR_CALM
-              // won't fire for ~78ms. But connection setup (TCP handshake
-              // + HTTP/2 SETTINGS exchange) can take >30ms under CI load,
-              // consuming the entire shutdown window before any RPC
-              // completes. Pre-warming separates "connection setup" from
-              // "race testing". The echo's DATA frame also resets the
-              // server's bad-ping counter, giving a fresh ~78ms window.
-              for (final client in clients) {
-                try {
-                  await client.echo(0);
-                } catch (e) {
-                  if (e is GrpcError ||
-                      e is SocketException ||
-                      e is TimeoutException ||
-                      e is StateError ||
-                      e is TransportConnectionException) {
-                    // Pre-warm failure non-fatal — channel still usable.
-                    continue;
-                  }
-                  rethrow;
-                }
-              }
-
+            // Pre-warm: establish HTTP/2 connections on all channels
+            // before starting the race. On Windows, the 1ms keepalive
+            // interval is quantized to ~15.6ms, so ENHANCE_YOUR_CALM
+            // won't fire for ~78ms. But connection setup (TCP handshake
+            // + HTTP/2 SETTINGS exchange) can take >30ms under CI load,
+            // consuming the entire shutdown window before any RPC
+            // completes. Pre-warming separates "connection setup" from
+            // "race testing". The echo's DATA frame also resets the
+            // server's bad-ping counter, giving a fresh ~78ms window.
+            for (final client in clients) {
               try {
-                const opsPerChannel = 12;
-                const streamItems = 64;
-                const bidiItems = 96;
-                final firstSuccess = Completer<void>();
-                final rpcFutures = <Future<Object?>>[];
-
-                const perRpcTimeout = Duration(seconds: 12);
-                for (var c = 0; c < clients.length; c++) {
-                  final client = clients[c];
-                  for (var op = 0; op < opsPerChannel; op++) {
-                    final jitter = Duration(milliseconds: (c + op) % 3);
-                    final tag = c * opsPerChannel + op;
-                    final routed = Future<void>.delayed(jitter).then((_) async {
-                      switch (op % 4) {
-                        case 0:
-                          return client.echo(tag % 128);
-                        case 1:
-                          final items = await client
-                              .serverStream(streamItems)
-                              .toList();
-                          return items.length;
-                        case 2:
-                          return client.clientStream(
-                            pacedStream(
-                              List<int>.generate(8, (i) => ((i + 1) % 32) + 1),
-                              yieldEvery: 1,
-                            ),
-                          );
-                        default:
-                          final items = await client
-                              .bidiStream(
-                                pacedStream(
-                                  List<int>.generate(
-                                    bidiItems,
-                                    (i) => (i + tag) % 128,
-                                  ),
-                                  yieldEvery: 1,
-                                ),
-                              )
-                              .toList();
-                          return items.length;
-                      }
-                    });
-                    rpcFutures.add(
-                      settleRpc(routed)
-                          .timeout(
-                            perRpcTimeout,
-                            onTimeout: () {
-                              fail('RPC hung under keepalive flood');
-                            },
-                          )
-                          .then((result) {
-                            if (result is int && !firstSuccess.isCompleted) {
-                              firstSuccess.complete();
-                            }
-                            return result;
-                          }),
-                    );
-                  }
+                await client.echo(0);
+              } catch (e) {
+                if (e is GrpcError ||
+                    e is SocketException ||
+                    e is TimeoutException ||
+                    e is StateError ||
+                    e is TransportConnectionException) {
+                  // Pre-warm failure non-fatal — channel still usable.
+                  continue;
                 }
+                rethrow;
+              }
+            }
 
-                // Trigger shutdown after the race has proven at least one success.
-                // This prevents all-failure vacuous runs on slow CI.
-                await firstSuccess.future.timeout(
-                  const Duration(seconds: 2),
-                  onTimeout: () =>
-                      fail('no mixed RPC succeeded before shutdown trigger'),
-                );
+            try {
+              const opsPerChannel = 12;
+              const streamItems = 64;
+              const bidiItems = 96;
+              final firstSuccess = Completer<void>();
+              final rpcFutures = <Future<Object?>>[];
 
-                try {
-                  await server.shutdown();
-                } catch (e) {
-                  if (e is StateError ||
-                      e is GrpcError ||
-                      e is SocketException ||
-                      e is TimeoutException) {
-                    return; // Duplicate/overlapping shutdown expected
-                  }
-                  rethrow;
-                }
-
-                final settled = await Future.wait(rpcFutures).timeout(
-                  const Duration(seconds: 35),
-                  onTimeout: () {
-                    fail(
-                      'mixed RPCs did not settle under keepalive flood + '
-                      'shutdown overlap',
-                    );
-                  },
-                );
-
-                var successCount = 0;
-                var errorCount = 0;
-                for (final result in settled) {
-                  if (result is int) {
-                    successCount++;
-                    continue;
-                  }
-                  if (isExpectedKeepaliveRaceRpcError(result)) {
-                    errorCount++;
-                    continue;
-                  }
-                  fail(
-                    'unexpected result type under keepalive flood race: '
-                    '${result.runtimeType}',
+              const perRpcTimeout = Duration(seconds: 12);
+              for (var c = 0; c < clients.length; c++) {
+                final client = clients[c];
+                for (var op = 0; op < opsPerChannel; op++) {
+                  final jitter = Duration(milliseconds: (c + op) % 3);
+                  final tag = c * opsPerChannel + op;
+                  final routed = Future<void>.delayed(jitter).then((_) async {
+                    switch (op % 4) {
+                      case 0:
+                        return client.echo(tag % 128);
+                      case 1:
+                        final items = await client.serverStream(streamItems).toList();
+                        return items.length;
+                      case 2:
+                        return client.clientStream(
+                          pacedStream(List<int>.generate(8, (i) => ((i + 1) % 32) + 1), yieldEvery: 1),
+                        );
+                      default:
+                        final items = await client
+                            .bidiStream(
+                              pacedStream(List<int>.generate(bidiItems, (i) => (i + tag) % 128), yieldEvery: 1),
+                            )
+                            .toList();
+                        return items.length;
+                    }
+                  });
+                  rpcFutures.add(
+                    settleRpc(routed)
+                        .timeout(
+                          perRpcTimeout,
+                          onTimeout: () {
+                            fail('RPC hung under keepalive flood');
+                          },
+                        )
+                        .then((result) {
+                          if (result is int && !firstSuccess.isCompleted) {
+                            firstSuccess.complete();
+                          }
+                          return result;
+                        }),
                   );
                 }
+              }
 
-                // Soft: the keepalive flood + shutdown race produces
-                // a nondeterministic split between successes and
-                // errors. Both must be non-zero to prove the race
-                // actually occurred.
-                expect(
-                  successCount,
-                  greaterThanOrEqualTo(1),
-                  reason:
-                      'expected at least one successful RPC before shutdown',
-                );
-                expect(
-                  errorCount,
-                  greaterThanOrEqualTo(1),
-                  reason:
-                      'expected at least one RPC to fail during shutdown '
-                      'race',
-                );
-              } finally {
-                for (final channel in channels) {
-                  await safeShutdownChannel(channel);
+              // Trigger shutdown after the race has proven at least one success.
+              // This prevents all-failure vacuous runs on slow CI.
+              await firstSuccess.future.timeout(
+                const Duration(seconds: 2),
+                onTimeout: () => fail('no mixed RPC succeeded before shutdown trigger'),
+              );
+
+              try {
+                await server.shutdown();
+              } catch (e) {
+                if (e is StateError || e is GrpcError || e is SocketException || e is TimeoutException) {
+                  return; // Duplicate/overlapping shutdown expected
                 }
-                await safeShutdownServer(server);
+                rethrow;
               }
 
-              if (!testDone.isCompleted) testDone.complete();
-            } catch (e, s) {
-              if (!testDone.isCompleted) {
-                testError = e;
-                testStack = s;
-                testDone.complete();
+              final settled = await Future.wait(rpcFutures).timeout(
+                const Duration(seconds: 35),
+                onTimeout: () {
+                  fail(
+                    'mixed RPCs did not settle under keepalive flood + '
+                    'shutdown overlap',
+                  );
+                },
+              );
+
+              var successCount = 0;
+              var errorCount = 0;
+              for (final result in settled) {
+                if (result is int) {
+                  successCount++;
+                  continue;
+                }
+                if (isExpectedKeepaliveRaceRpcError(result)) {
+                  errorCount++;
+                  continue;
+                }
+                fail(
+                  'unexpected result type under keepalive flood race: '
+                  '${result.runtimeType}',
+                );
               }
+
+              // Soft: the keepalive flood + shutdown race produces
+              // a nondeterministic split between successes and
+              // errors. Both must be non-zero to prove the race
+              // actually occurred.
+              expect(
+                successCount,
+                greaterThanOrEqualTo(1),
+                reason: 'expected at least one successful RPC before shutdown',
+              );
+              expect(
+                errorCount,
+                greaterThanOrEqualTo(1),
+                reason:
+                    'expected at least one RPC to fail during shutdown '
+                    'race',
+              );
+            } finally {
+              for (final channel in channels) {
+                await safeShutdownChannel(channel);
+              }
+              await safeShutdownServer(server);
             }
-          },
-          (error, stack) {
-            if (isExpectedKeepaliveTransportError(error)) return;
+
+            if (!testDone.isCompleted) testDone.complete();
+          } catch (e, s) {
             if (!testDone.isCompleted) {
-              testError = error;
-              testStack = stack;
+              testError = e;
+              testStack = s;
               testDone.complete();
             }
-          },
-        );
+          }
+        },
+        (error, stack) {
+          if (isExpectedKeepaliveTransportError(error)) return;
+          if (!testDone.isCompleted) {
+            testError = error;
+            testStack = stack;
+            testDone.complete();
+          }
+        },
+      );
 
-        await testDone.future.timeout(
-          const Duration(seconds: 30),
-          onTimeout: () => fail('test timed out in guarded zone'),
-        );
+      await testDone.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => fail('test timed out in guarded zone'),
+      );
 
-        if (testError != null) {
-          Error.throwWithStackTrace(testError!, testStack!);
-        }
-      },
-    );
+      if (testError != null) {
+        Error.throwWithStackTrace(testError!, testStack!);
+      }
+    });
 
     // -------------------------------------------------------------------------
     // Test 22: Keepalive-enabled mixed RPC jitter across rapid restarts
@@ -1813,182 +1631,151 @@ void main() {
     // EXPECTED: Each cycle settles all RPCs without hang; at least one RPC
     // succeeds per cycle to prove the server remains usable. Force-termination
     // errors (ENHANCE_YOUR_CALM) from aggressive keepalive are valid outcomes.
-    testTcpAndUds(
-      'keepalive-enabled mixed RPC jitter survives 6 rapid restarts',
-      (address) async {
-        // Run inside a guarded zone because aggressive keepalive can trigger
-        // HTTP/2 GOAWAY (ENHANCE_YOUR_CALM, errorCode 10) which surfaces as
-        // unhandled exceptions in the transport layer. These are expected.
-        final testDone = Completer<void>();
-        Object? testError;
-        StackTrace? testStack;
+    testTcpAndUds('keepalive-enabled mixed RPC jitter survives 6 rapid restarts', (address) async {
+      // Run inside a guarded zone because aggressive keepalive can trigger
+      // HTTP/2 GOAWAY (ENHANCE_YOUR_CALM, errorCode 10) which surfaces as
+      // unhandled exceptions in the transport layer. These are expected.
+      final testDone = Completer<void>();
+      Object? testError;
+      StackTrace? testStack;
 
-        runZonedGuarded(
-          () async {
-            try {
-              const aggressiveOptions = ChannelOptions(
-                credentials: ChannelCredentials.insecure(),
-                keepAlive: ClientKeepAliveOptions(
-                  pingInterval: Duration(milliseconds: 1),
-                  timeout: Duration(milliseconds: 300),
-                  permitWithoutCalls: true,
+      runZonedGuarded(
+        () async {
+          try {
+            const aggressiveOptions = ChannelOptions(
+              credentials: ChannelCredentials.insecure(),
+              keepAlive: ClientKeepAliveOptions(
+                pingInterval: Duration(milliseconds: 1),
+                timeout: Duration(milliseconds: 300),
+                permitWithoutCalls: true,
+              ),
+            );
+
+            const cycles = 6;
+            const opsPerClient = 10;
+            const perCycleTimeout = Duration(seconds: 8);
+
+            for (var cycle = 0; cycle < cycles; cycle++) {
+              final server = Server.create(
+                services: [EchoService()],
+                keepAliveOptions: const ServerKeepAliveOptions(
+                  maxBadPings: 10,
+                  minIntervalBetweenPingsWithoutData: Duration(milliseconds: 100),
                 ),
               );
+              await server.serve(address: address, port: 0);
 
-              const cycles = 6;
-              const opsPerClient = 10;
-              const perCycleTimeout = Duration(seconds: 8);
-
-              for (var cycle = 0; cycle < cycles; cycle++) {
-                final server = Server.create(
-                  services: [EchoService()],
-                  keepAliveOptions: const ServerKeepAliveOptions(
-                    maxBadPings: 10,
-                    minIntervalBetweenPingsWithoutData: Duration(
-                      milliseconds: 100,
-                    ),
-                  ),
-                );
-                await server.serve(address: address, port: 0);
-
-                final channels = List.generate(
-                  3,
-                  (_) => createTestChannel(
-                    address,
-                    server.port!,
-                    options: aggressiveOptions,
-                  ),
-                );
-                final clients = channels.map(EchoClient.new).toList();
-                try {
-                  const perRpcTimeout = Duration(seconds: 6);
-                  final rpcFutures = <Future<Object?>>[];
-                  for (var c = 0; c < clients.length; c++) {
-                    final client = clients[c];
-                    for (var op = 0; op < opsPerClient; op++) {
-                      final jitter = Duration(
-                        milliseconds: (cycle + c + op) % 4,
-                      );
-                      final seed = (cycle * 100 + c * opsPerClient + op) % 128;
-                      final routed = Future<void>.delayed(jitter).then((
-                        _,
-                      ) async {
-                        switch (op % 4) {
-                          case 0:
-                            return client.echo(seed);
-                          case 1:
-                            final items = await client
-                                .serverStream(10)
-                                .toList();
-                            return items.length;
-                          case 2:
-                            return client.clientStream(
-                              pacedStream(
-                                List<int>.generate(
-                                  8,
-                                  (i) => ((i + seed) % 16) + 1,
-                                ),
-                                yieldEvery: 1,
-                              ),
-                            );
-                          default:
-                            final items = await client
-                                .bidiStream(
-                                  pacedStream(
-                                    List<int>.generate(
-                                      12,
-                                      (i) => (i + seed) % 128,
-                                    ),
-                                    yieldEvery: 1,
-                                  ),
-                                )
-                                .toList();
-                            return items.length;
-                        }
-                      });
-                      rpcFutures.add(
-                        settleRpc(routed).timeout(
-                          perRpcTimeout,
-                          onTimeout: () {
-                            fail('RPC hung under keepalive restart');
-                          },
-                        ),
-                      );
-                    }
-                  }
-
-                  final settled = await Future.wait(rpcFutures).timeout(
-                    perCycleTimeout,
-                    onTimeout: () {
-                      fail(
-                        'cycle $cycle mixed RPC jitter did not settle under '
-                        'keepalive pressure',
-                      );
-                    },
-                  );
-
-                  var successCount = 0;
-                  for (final result in settled) {
-                    if (result is int) {
-                      successCount++;
-                      continue;
-                    }
-                    if (isExpectedKeepaliveRaceRpcError(result)) {
-                      continue;
-                    }
-                    fail(
-                      'cycle $cycle unexpected result type: '
-                      '${result.runtimeType}',
+              final channels = List.generate(
+                3,
+                (_) => createTestChannel(address, server.port!, options: aggressiveOptions),
+              );
+              final clients = channels.map(EchoClient.new).toList();
+              try {
+                const perRpcTimeout = Duration(seconds: 6);
+                final rpcFutures = <Future<Object?>>[];
+                for (var c = 0; c < clients.length; c++) {
+                  final client = clients[c];
+                  for (var op = 0; op < opsPerClient; op++) {
+                    final jitter = Duration(milliseconds: (cycle + c + op) % 4);
+                    final seed = (cycle * 100 + c * opsPerClient + op) % 128;
+                    final routed = Future<void>.delayed(jitter).then((_) async {
+                      switch (op % 4) {
+                        case 0:
+                          return client.echo(seed);
+                        case 1:
+                          final items = await client.serverStream(10).toList();
+                          return items.length;
+                        case 2:
+                          return client.clientStream(
+                            pacedStream(List<int>.generate(8, (i) => ((i + seed) % 16) + 1), yieldEvery: 1),
+                          );
+                        default:
+                          final items = await client
+                              .bidiStream(pacedStream(List<int>.generate(12, (i) => (i + seed) % 128), yieldEvery: 1))
+                              .toList();
+                          return items.length;
+                      }
+                    });
+                    rpcFutures.add(
+                      settleRpc(routed).timeout(
+                        perRpcTimeout,
+                        onTimeout: () {
+                          fail('RPC hung under keepalive restart');
+                        },
+                      ),
                     );
                   }
-
-                  // Soft: per-cycle minimum during restart stress;
-                  // transport errors from the previous cycle may
-                  // overlap, but at least 1 RPC must succeed.
-                  expect(
-                    successCount,
-                    greaterThanOrEqualTo(1),
-                    reason:
-                        'cycle $cycle should have at least one successful RPC',
-                  );
-                } finally {
-                  for (final channel in channels) {
-                    await safeShutdownChannel(channel);
-                  }
-                  await safeShutdownServer(server);
                 }
-              }
 
-              if (!testDone.isCompleted) testDone.complete();
-            } catch (e, s) {
-              if (!testDone.isCompleted) {
-                testError = e;
-                testStack = s;
-                testDone.complete();
+                final settled = await Future.wait(rpcFutures).timeout(
+                  perCycleTimeout,
+                  onTimeout: () {
+                    fail(
+                      'cycle $cycle mixed RPC jitter did not settle under '
+                      'keepalive pressure',
+                    );
+                  },
+                );
+
+                var successCount = 0;
+                for (final result in settled) {
+                  if (result is int) {
+                    successCount++;
+                    continue;
+                  }
+                  if (isExpectedKeepaliveRaceRpcError(result)) {
+                    continue;
+                  }
+                  fail(
+                    'cycle $cycle unexpected result type: '
+                    '${result.runtimeType}',
+                  );
+                }
+
+                // Soft: per-cycle minimum during restart stress;
+                // transport errors from the previous cycle may
+                // overlap, but at least 1 RPC must succeed.
+                expect(
+                  successCount,
+                  greaterThanOrEqualTo(1),
+                  reason: 'cycle $cycle should have at least one successful RPC',
+                );
+              } finally {
+                for (final channel in channels) {
+                  await safeShutdownChannel(channel);
+                }
+                await safeShutdownServer(server);
               }
             }
-          },
-          (error, stack) {
-            if (isExpectedKeepaliveTransportError(error)) return;
+
+            if (!testDone.isCompleted) testDone.complete();
+          } catch (e, s) {
             if (!testDone.isCompleted) {
-              testError = error;
-              testStack = stack;
+              testError = e;
+              testStack = s;
               testDone.complete();
             }
-          },
-        );
+          }
+        },
+        (error, stack) {
+          if (isExpectedKeepaliveTransportError(error)) return;
+          if (!testDone.isCompleted) {
+            testError = error;
+            testStack = stack;
+            testDone.complete();
+          }
+        },
+      );
 
-        await testDone.future.timeout(
-          const Duration(seconds: 55),
-          onTimeout: () => fail('test timed out in guarded zone'),
-        );
+      await testDone.future.timeout(
+        const Duration(seconds: 55),
+        onTimeout: () => fail('test timed out in guarded zone'),
+      );
 
-        if (testError != null) {
-          Error.throwWithStackTrace(testError!, testStack!);
-        }
-      },
-      udsTimeout: const Timeout(Duration(seconds: 60)),
-    );
+      if (testError != null) {
+        Error.throwWithStackTrace(testError!, testStack!);
+      }
+    }, udsTimeout: const Timeout(Duration(seconds: 60)));
   });
 
   // ===========================================================================
@@ -2009,9 +1796,7 @@ void main() {
     //
     // EXPECTED: Stream terminates (not hang), at least 1 item arrived
     // before shutdown, items < 255, and each item[i] == i + 1.
-    testTcpAndUds('shutdown during 255-item compressed server stream', (
-      address,
-    ) async {
+    testTcpAndUds('shutdown during 255-item compressed server stream', (address) async {
       final server = Server.create(
         services: [EchoService()],
         codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
@@ -2033,10 +1818,7 @@ void main() {
       final unexpectedErrors = <Object>[];
 
       client
-          .serverStream(
-            255,
-            options: CallOptions(compression: const GzipCodec()),
-          )
+          .serverStream(255, options: CallOptions(compression: const GzipCodec()))
           .listen(
             (value) {
               received.add(value);
@@ -2076,23 +1858,11 @@ void main() {
         ),
       );
 
-      expect(
-        unexpectedErrors,
-        isEmpty,
-        reason: 'only GrpcError expected on shutdown',
-      );
+      expect(unexpectedErrors, isEmpty, reason: 'only GrpcError expected on shutdown');
       // Soft: shutdown races the compressed server stream; at
       // least 1 item must arrive to prove the stream started.
-      expect(
-        received.length,
-        greaterThanOrEqualTo(1),
-        reason: 'must receive at least 1 item',
-      );
-      expect(
-        received.length,
-        lessThanOrEqualTo(255),
-        reason: 'cannot exceed 255 items',
-      );
+      expect(received.length, greaterThanOrEqualTo(1), reason: 'must receive at least 1 item');
+      expect(received.length, lessThanOrEqualTo(255), reason: 'cannot exceed 255 items');
 
       // Data integrity: each item[i] == i + 1.
       for (var i = 0; i < received.length; i++) {
@@ -2122,9 +1892,7 @@ void main() {
     //
     // EXPECTED: settleRpc resolves without hang; result is a known
     // settlement type via expectExpectedRpcSettlement.
-    testTcpAndUds('100-item compressed bidi stream with shutdown race', (
-      address,
-    ) async {
+    testTcpAndUds('100-item compressed bidi stream with shutdown race', (address) async {
       final server = Server.create(
         services: [EchoService()],
         codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
@@ -2140,18 +1908,10 @@ void main() {
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
-      final input = pacedStream(
-        List<int>.generate(100, (i) => i % 128),
-        yieldEvery: 1,
-      );
+      final input = pacedStream(List<int>.generate(100, (i) => i % 128), yieldEvery: 1);
 
       final rpcFuture = settleRpc(
-        client
-            .bidiStream(
-              input,
-              options: CallOptions(compression: const GzipCodec()),
-            )
-            .toList(),
+        client.bidiStream(input, options: CallOptions(compression: const GzipCodec())).toList(),
       );
 
       // Brief delay so data starts flowing, then kill.
@@ -2188,17 +1948,12 @@ void main() {
     //
     // EXPECTED: All 20 RPCs settle (not hang), each result is a known
     // settlement type.
-    testTcpAndUds('5 concurrent channels with mixed RPCs under shutdown', (
-      address,
-    ) async {
+    testTcpAndUds('5 concurrent channels with mixed RPCs under shutdown', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
 
-      final channels = List.generate(
-        5,
-        (_) => createTestChannel(address, server.port!),
-      );
+      final channels = List.generate(5, (_) => createTestChannel(address, server.port!));
       for (final ch in channels) {
         addTearDown(() => ch.shutdown());
       }
@@ -2216,28 +1971,12 @@ void main() {
 
         // Client stream (10 items)
         rpcFutures.add(
-          settleRpc(
-            c.clientStream(
-              pacedStream(
-                List<int>.generate(10, (j) => (j + i) % 256),
-                yieldEvery: 1,
-              ),
-            ),
-          ),
+          settleRpc(c.clientStream(pacedStream(List<int>.generate(10, (j) => (j + i) % 256), yieldEvery: 1))),
         );
 
         // Bidi stream (20 items)
         rpcFutures.add(
-          settleRpc(
-            c
-                .bidiStream(
-                  pacedStream(
-                    List<int>.generate(20, (j) => (j + i) % 128),
-                    yieldEvery: 1,
-                  ),
-                )
-                .toList(),
-          ),
+          settleRpc(c.bidiStream(pacedStream(List<int>.generate(20, (j) => (j + i) % 128), yieldEvery: 1)).toList()),
         );
       }
 
@@ -2263,10 +2002,7 @@ void main() {
 
       expect(settled.length, equals(20), reason: 'all 20 RPCs must settle');
       for (var i = 0; i < settled.length; i++) {
-        expectExpectedRpcSettlement(
-          settled[i],
-          reason: 'RPC $i must be a known settlement',
-        );
+        expectExpectedRpcSettlement(settled[i], reason: 'RPC $i must be a known settlement');
       }
 
       for (final ch in channels) {
@@ -2287,64 +2023,182 @@ void main() {
     // can deadlock waiting for WINDOW_UPDATE that will never arrive.
     //
     // EXPECTED: All 3 RPCs settle (data or GrpcError, not hang).
-    testTcpAndUds(
-      '500KB compressed unary payload during server shutdown race',
-      (address) async {
-        final server = Server.create(
-          services: [EchoService()],
-          codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+    testTcpAndUds('500KB compressed unary payload during server shutdown race', (address) async {
+      final server = Server.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = createTestChannel(
+        address,
+        server.port!,
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // Build a 500KB payload with a pseudo-random pattern
+      // that resists gzip compression.
+      final payload = Uint8List(500 * 1024);
+      var seed = 0xCAFEBABE;
+      for (var i = 0; i < payload.length; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
+        payload[i] = (seed >> 16) & 0xFF;
+      }
+
+      final opts = CallOptions(compression: const GzipCodec());
+
+      // Fire 3 concurrent 500KB echoBytes RPCs.
+      final rpc1 = settleRpc(client.echoBytes(payload, options: opts));
+      final rpc2 = settleRpc(client.echoBytes(payload, options: opts));
+
+      // Fire the 3rd RPC and shutdown concurrently.
+      final rpc3 = settleRpc(client.echoBytes(payload, options: opts));
+      // Do not await — let shutdown race with the 3rd
+      // RPC's DATA frames.
+      unawaited(server.shutdown());
+
+      final settled = await Future.wait([rpc1, rpc2, rpc3]).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => fail(
+          '500KB compressed unary shutdown race hung '
+          '-- HTTP/2 flow control deadlock',
+        ),
+      );
+
+      for (var i = 0; i < settled.length; i++) {
+        expectExpectedRpcSettlement(
+          settled[i],
+          reason:
+              '500KB echoBytes RPC $i must settle to '
+              'data or GrpcError',
         );
-        await server.serve(address: address, port: 0);
-        addTearDown(() => server.shutdown());
+      }
 
-        final channel = createTestChannel(
-          address,
-          server.port!,
-          codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
-        );
-        addTearDown(() => channel.shutdown());
-        final client = EchoClient(channel);
+      await channel.shutdown();
+    });
+  });
 
-        // Build a 500KB payload with a pseudo-random pattern
-        // that resists gzip compression.
-        final payload = Uint8List(500 * 1024);
-        var seed = 0xCAFEBABE;
-        for (var i = 0; i < payload.length; i++) {
-          seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
-          payload[i] = (seed >> 16) & 0xFF;
-        }
+  // ===========================================================================
+  // 14. Metadata Provider Cancellation Races
+  // ===========================================================================
+  group('Metadata Provider Cancellation Races', () {
+    // -------------------------------------------------------------------------
+    // Test 25: Cancel during async metadata provider does not leak stream
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: onConnectionReady() checks isCancelled before starting
+    // metadata providers. If cancellation happens while an async provider is
+    // executing, the .then() callback would fire _sendRequest() on a cancelled
+    // call — creating an HTTP/2 stream, request subscription, and response
+    // subscription that nothing will ever terminate.
+    //
+    // The fix adds `if (isCancelled) return;` at the top of _sendRequest().
+    // This test verifies that guard works: a slow metadata provider blocks
+    // while the call is cancelled, then the provider completes and
+    // _sendRequest must NOT be called.
+    //
+    // EXPECTED: The RPC throws GrpcError.cancelled. No stream leak, no hang.
+    testTcpAndUds('cancel during async metadata provider does not leak stream', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        await server.shutdown().timeout(const Duration(seconds: 5), onTimeout: () => fail('server shutdown timed out'));
+      });
 
-        final opts = CallOptions(compression: const GzipCodec());
+      final providerStarted = Completer<void>();
+      final providerCanProceed = Completer<void>();
 
-        // Fire 3 concurrent 500KB echoBytes RPCs.
-        final rpc1 = settleRpc(client.echoBytes(payload, options: opts));
-        final rpc2 = settleRpc(client.echoBytes(payload, options: opts));
+      final channel = createTestChannel(
+        address,
+        server.port!,
+        options: ChannelOptions(credentials: ChannelCredentials.insecure()),
+      );
+      addTearDown(() => channel.terminate());
 
-        // Fire the 3rd RPC and shutdown concurrently.
-        final rpc3 = settleRpc(client.echoBytes(payload, options: opts));
-        // Do not await — let shutdown race with the 3rd
-        // RPC's DATA frames.
-        unawaited(server.shutdown());
+      final client = EchoClient(channel);
 
-        final settled = await Future.wait([rpc1, rpc2, rpc3]).timeout(
-          const Duration(seconds: 20),
-          onTimeout: () => fail(
-            '500KB compressed unary shutdown race hung '
-            '-- HTTP/2 flow control deadlock',
-          ),
-        );
+      // Start the RPC with a slow metadata provider.
+      final call = client.echo(
+        42,
+        options: CallOptions(
+          providers: [
+            (metadata, uri) async {
+              providerStarted.complete();
+              await providerCanProceed.future;
+              metadata['x-auth'] = 'token';
+            },
+          ],
+        ),
+      );
 
-        for (var i = 0; i < settled.length; i++) {
-          expectExpectedRpcSettlement(
-            settled[i],
-            reason:
-                '500KB echoBytes RPC $i must settle to '
-                'data or GrpcError',
-          );
-        }
+      // Wait until the provider is executing.
+      await providerStarted.future;
 
-        await channel.shutdown();
-      },
-    );
+      // Cancel while the provider is blocked.
+      final cancelFuture = call.cancel();
+
+      // Unblock the provider — _sendRequest must NOT fire.
+      providerCanProceed.complete();
+
+      // The call must throw CANCELLED, not hang or leak.
+      await expectLater(call, throwsA(isA<GrpcError>().having((e) => e.code, 'code', StatusCode.cancelled)));
+      await cancelFuture;
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 26: Cancel between two sequential metadata providers
+    // -------------------------------------------------------------------------
+    // RACE TARGETED: Future.forEach runs providers sequentially. If cancel()
+    // fires during the first provider, the second provider and _sendRequest
+    // must not execute. This verifies the isCancelled guard in _sendRequest
+    // prevents resource creation even when Future.forEach continues iterating.
+    //
+    // EXPECTED: Second provider may or may not execute (Future.forEach does
+    // not check isCancelled between iterations), but _sendRequest must NOT
+    // be called. The RPC throws GrpcError.cancelled.
+    testTcpAndUds('cancel between sequential metadata providers prevents sendRequest', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() async {
+        await server.shutdown().timeout(const Duration(seconds: 5), onTimeout: () => fail('server shutdown timed out'));
+      });
+
+      final provider1Started = Completer<void>();
+      final provider1CanProceed = Completer<void>();
+
+      final channel = createTestChannel(
+        address,
+        server.port!,
+        options: ChannelOptions(credentials: ChannelCredentials.insecure()),
+      );
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+
+      final call = client.echo(
+        99,
+        options: CallOptions(
+          providers: [
+            (metadata, uri) async {
+              provider1Started.complete();
+              await provider1CanProceed.future;
+              metadata['x-provider-1'] = 'done';
+            },
+            (metadata, uri) async {
+              metadata['x-provider-2'] = 'done';
+            },
+          ],
+        ),
+      );
+
+      await provider1Started.future;
+      final cancelFuture = call.cancel();
+      provider1CanProceed.complete();
+
+      await expectLater(call, throwsA(isA<GrpcError>().having((e) => e.code, 'code', StatusCode.cancelled)));
+      await cancelFuture;
+    });
   });
 }

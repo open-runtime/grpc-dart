@@ -29,18 +29,31 @@ String namedPipePath(String pipeName) => r'\\.\pipe\' + pipeName;
 /// memory allocation reasonable for concurrent connections.
 const int kNamedPipeBufferSize = 65536;
 
+/// Maximum chunk size for a single [WriteFile] call on named pipes (16 KiB).
+///
+/// Writes larger than the pipe buffer can block until the peer drains data.
+/// By slicing outgoing payloads into bounded chunks and yielding between
+/// chunks, both read loops continue progressing and avoid duplex deadlocks.
+const int kNamedPipeWriteChunkSize = 16 * 1024;
+
 /// Default maximum retries for transient ERROR_NO_DATA from PeekNamedPipe
 /// or ReadFile.
 ///
 /// ERROR_NO_DATA can occur transiently when the pipe is in a transitional
-/// state (e.g., peer closing). Bounded retries with 1ms delay between
-/// attempts allow the connection to recover. Exhaustion is logged and
+/// state (e.g., peer closing). Bounded retries combined with idle polling
+/// backoff allow the connection to recover. Exhaustion is logged and
 /// treated as a fatal error.
 const int kNamedPipeNoDataMaxRetries = 500;
 
+/// Initial delay for idle named-pipe polling backoff.
+const int kNamedPipeIdlePollInitialDelayMs = 1;
+
+/// Maximum delay for idle named-pipe polling backoff.
+const int kNamedPipeIdlePollMaxDelayMs = 50;
+
 /// Result of evaluating ERROR_NO_DATA retry.
 enum NoDataRetryResult {
-  /// Retry: sleep 1ms and loop again.
+  /// Retry: apply idle backoff delay and loop again.
   retry,
 
   /// Exhausted: bail out and log/error.
@@ -50,14 +63,14 @@ enum NoDataRetryResult {
 /// Shared state for ERROR_NO_DATA retry logic in named pipe read loops.
 ///
 /// ERROR_NO_DATA can occur transiently when the pipe is in a transitional
-/// state (e.g., peer closing). Retrying with a bounded count and 1ms delay
-/// between attempts allows the connection to recover.
+/// state (e.g., peer closing). Retrying with a bounded count allows the
+/// connection to recover.
 ///
 /// **Usage**:
 /// - Call [recordNoData] when PeekNamedPipe or ReadFile fails with
 ///   ERROR_NO_DATA.
-/// - If [recordNoData] returns [NoDataRetryResult.retry], await a 1ms delay
-///   and continue the loop.
+/// - If [recordNoData] returns [NoDataRetryResult.retry], await the next
+///   [IdlePollBackoff.nextDelay] and continue the loop.
 /// - If [recordNoData] returns [NoDataRetryResult.exhausted], log and exit.
 /// - Call [reset] on any successful read/peek.
 class NoDataRetryState {
@@ -79,6 +92,41 @@ class NoDataRetryState {
   /// Resets the retry count. Call after any successful read or peek.
   void reset() {
     _count = 0;
+  }
+}
+
+/// Exponential backoff state for named-pipe idle polling.
+///
+/// Call [nextDelay] for each idle polling iteration (no bytes available or
+/// transient ERROR_NO_DATA). Call [reset] once bytes are received to restore
+/// low-latency polling for active traffic.
+class IdlePollBackoff {
+  final int initialDelayMs;
+  final int maxDelayMs;
+  int _currentDelayMs;
+
+  IdlePollBackoff({int? initialDelayMs, int? maxDelayMs})
+    : initialDelayMs = initialDelayMs ?? kNamedPipeIdlePollInitialDelayMs,
+      maxDelayMs = maxDelayMs ?? kNamedPipeIdlePollMaxDelayMs,
+      _currentDelayMs = initialDelayMs ?? kNamedPipeIdlePollInitialDelayMs {
+    if (this.initialDelayMs < 1) {
+      throw ArgumentError.value(this.initialDelayMs, 'initialDelayMs', 'must be >= 1');
+    }
+    if (this.maxDelayMs < this.initialDelayMs) {
+      throw ArgumentError.value(this.maxDelayMs, 'maxDelayMs', 'must be >= initialDelayMs');
+    }
+  }
+
+  Duration nextDelay() {
+    final delay = Duration(milliseconds: _currentDelayMs);
+    if (_currentDelayMs < maxDelayMs) {
+      _currentDelayMs = (_currentDelayMs * 2).clamp(initialDelayMs, maxDelayMs).toInt();
+    }
+    return delay;
+  }
+
+  void reset() {
+    _currentDelayMs = initialDelayMs;
   }
 }
 

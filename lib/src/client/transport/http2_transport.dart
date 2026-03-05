@@ -31,14 +31,20 @@ class Http2TransportStream extends GrpcTransportStream {
   final StreamController<List<int>> _outgoingMessages = StreamController();
   final ErrorHandler _onError;
   late final StreamSubscription _outgoingSubscription;
+  bool _outgoingSubscriptionCancelled = false;
 
   @override
   StreamSink<List<int>> get outgoingMessages => _outgoingMessages.sink;
 
-  Http2TransportStream(this._transportStream, this._onError, CodecRegistry? codecRegistry, Codec? compression)
-    : incomingMessages = _transportStream.incomingMessages
-          .transform(GrpcHttpDecoder(forResponse: true))
-          .transform(grpcDecompressor(codecRegistry: codecRegistry)) {
+  Http2TransportStream(
+    this._transportStream,
+    this._onError,
+    CodecRegistry? codecRegistry,
+    Codec? compression, {
+    int? maxInboundMessageSize,
+  }) : incomingMessages = _transportStream.incomingMessages
+           .transform(GrpcHttpDecoder(forResponse: true, maxInboundMessageSize: maxInboundMessageSize))
+           .transform(grpcDecompressor(codecRegistry: codecRegistry)) {
     final outSink = _transportStream.outgoingMessages;
     _outgoingSubscription = _outgoingMessages.stream
         .map((payload) => frame(payload, compression))
@@ -62,6 +68,7 @@ class Http2TransportStream extends GrpcTransportStream {
                 context: 'listen.onData',
                 error: e,
               );
+              _cancelOutgoingSubscription('listen.onData');
             }
           },
           onError: (Object error, StackTrace stackTrace) {
@@ -76,6 +83,7 @@ class Http2TransportStream extends GrpcTransportStream {
                 context: 'listen.onError',
                 error: e,
               );
+              _cancelOutgoingSubscription('listen.onError');
             }
           },
           onDone: () {
@@ -98,8 +106,29 @@ class Http2TransportStream extends GrpcTransportStream {
 
   @override
   Future<void> terminate() async {
-    await _outgoingSubscription.cancel();
+    if (!_outgoingSubscriptionCancelled) {
+      _outgoingSubscriptionCancelled = true;
+      await _outgoingSubscription.cancel();
+    }
     await _outgoingMessages.close();
     _transportStream.terminate();
+  }
+
+  void _cancelOutgoingSubscription(String context) {
+    if (_outgoingSubscriptionCancelled) {
+      return;
+    }
+    _outgoingSubscriptionCancelled = true;
+    unawaited(
+      _outgoingSubscription.cancel().catchError((Object error) {
+        logGrpcEvent(
+          '[gRPC] Failed to cancel HTTP/2 outgoing subscription: $error',
+          component: 'Http2TransportStream',
+          event: 'outgoing_subscription_cancel_failed',
+          context: context,
+          error: error,
+        );
+      }),
+    );
   }
 }

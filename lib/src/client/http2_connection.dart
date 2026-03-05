@@ -173,12 +173,17 @@ class Http2ClientConnection implements connection.ClientConnection {
                 }
               },
               onPingTimeout: () {
-                transport.finish().catchError((e) {
+                // Ping timeout means the server is unresponsive or the
+                // network is dead. finish() sends GOAWAY and waits for
+                // active streams to complete — which will hang indefinitely
+                // on a dead connection. terminate() forcefully closes the
+                // transport and immediately fails active RPCs.
+                transport.terminate().catchError((e) {
                   logGrpcEvent(
-                    '[gRPC] Failed to finish transport'
+                    '[gRPC] Failed to terminate transport'
                     ' on ping timeout: $e',
                     component: 'Http2ClientConnection',
-                    event: 'finish_transport',
+                    event: 'terminate_transport',
                     context: 'onPingTimeout',
                     error: e,
                   );
@@ -244,6 +249,11 @@ class Http2ClientConnection implements connection.ClientConnection {
             // prevents tight-loop reconnection when a server
             // repeatedly accepts and immediately GOAWAY's.
             if (_hasPendingCalls() && _state != ConnectionState.shutdown && _state != ConnectionState.connecting) {
+              // If _abandonConnection() already scheduled a reconnect timer
+              // (e.g., socket.done fired during the dispatch yield), do not
+              // create a duplicate. The old timer would be orphaned and fire
+              // spuriously, corrupting backoff state.
+              if (_state == ConnectionState.transientFailure && _timer != null) return;
               _setState(ConnectionState.transientFailure);
               _currentReconnectDelay = options.backoffStrategy(_currentReconnectDelay);
               _timer = Timer(_currentReconnectDelay!, _handleReconnect);
@@ -336,7 +346,13 @@ class Http2ClientConnection implements connection.ClientConnection {
       throw GrpcError.unavailable('Connection not ready');
     }
     final stream = _transportConnection!.makeRequest(headers);
-    return Http2TransportStream(stream, onRequestFailure, options.codecRegistry, compressionCodec);
+    return Http2TransportStream(
+      stream,
+      onRequestFailure,
+      options.codecRegistry,
+      compressionCodec,
+      maxInboundMessageSize: options.maxInboundMessageSize,
+    );
   }
 
   void _startCall(ClientCall call) {
@@ -679,7 +695,24 @@ class SocketTransportConnector implements ClientTransportConnector {
     );
 
     _sendConnect(headers);
-    await completer.future;
+    try {
+      await completer.future;
+    } on Object catch (error, stackTrace) {
+      // Proxy returned non-200 — destroy the socket to prevent resource leak.
+      try {
+        socket.destroy();
+      } on Object catch (destroyError, destroyStackTrace) {
+        logGrpcEvent(
+          '[gRPC] Failed to destroy proxy socket after CONNECT rejection: '
+          '$destroyError\n$destroyStackTrace',
+          component: 'Http2ClientConnection',
+          event: 'proxy_socket_destroy_failed',
+          context: 'connectToProxy',
+          error: destroyError,
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
     return intermediate.stream;
   }
 

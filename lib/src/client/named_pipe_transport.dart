@@ -361,6 +361,17 @@ class _NamedPipeStream {
   bool _isClosed = false;
   bool _writesClosed = false;
 
+  /// Write queue for non-blocking outgoing data.
+  ///
+  /// Data is enqueued by the synchronous listener callback and drained
+  /// asynchronously by [_drainWriteQueue], which yields to the event loop
+  /// between chunks. This prevents a deadlock where a blocking [WriteFile]
+  /// on a full pipe buffer starves the read loop (which needs the event
+  /// loop to process its PeekNamedPipe polling).
+  final List<List<int>> _writeQueue = [];
+  bool _draining = false;
+  bool _outgoingStreamDone = false;
+
   _NamedPipeStream(this._handle, this._doneCompleter) {
     // Start reading in a microtask to avoid blocking the constructor
     Future.microtask(_readLoop);
@@ -413,6 +424,7 @@ class _NamedPipeStream {
     final bytesRead = calloc<DWORD>();
     final peekAvail = calloc<DWORD>();
     final noDataRetry = NoDataRetryState();
+    final idleBackoff = IdlePollBackoff();
 
     try {
       while (!_isClosed && !_incomingController.isClosed) {
@@ -444,7 +456,7 @@ class _NamedPipeStream {
           final error = GetLastError();
           if (error == ERROR_NO_DATA) {
             if (noDataRetry.recordNoData() == NoDataRetryResult.retry) {
-              await Future<void>.delayed(const Duration(milliseconds: 1));
+              await Future<void>.delayed(idleBackoff.nextDelay());
               continue;
             }
             if (!_incomingController.isClosed) {
@@ -462,12 +474,15 @@ class _NamedPipeStream {
 
         if (peekAvail.value == 0) {
           // No data available yet. Yield to the event loop so HTTP/2
-          // writes and other async work can proceed. Use 1ms delay
-          // instead of Duration.zero to yield to the full event queue
-          // (not just microtasks).
-          await Future.delayed(const Duration(milliseconds: 1));
+          // writes and other async work can proceed. Uses exponential
+          // backoff (1ms → 2ms → ... → 50ms cap) to reduce CPU wakeups
+          // on idle connections while still reacting quickly when data
+          // starts flowing.
+          await Future.delayed(idleBackoff.nextDelay());
           continue;
         }
+        // Data available — reset backoff to minimum for responsive reads.
+        idleBackoff.reset();
 
         // Data confirmed available — ReadFile will return immediately.
         bytesRead.value = 0;
@@ -477,7 +492,7 @@ class _NamedPipeStream {
           final error = GetLastError();
           if (error == ERROR_NO_DATA) {
             if (noDataRetry.recordNoData() == NoDataRetryResult.retry) {
-              await Future<void>.delayed(const Duration(milliseconds: 1));
+              await Future<void>.delayed(idleBackoff.nextDelay());
               continue;
             }
           } else if (error == ERROR_BROKEN_PIPE) {
@@ -489,6 +504,7 @@ class _NamedPipeStream {
           break;
         }
         noDataRetry.reset();
+        idleBackoff.reset();
 
         final count = bytesRead.value;
         if (count > 0) {
@@ -513,22 +529,83 @@ class _NamedPipeStream {
 
   /// Writes data to the pipe, handling partial writes.
   ///
+  /// Enqueues [data] for asynchronous writing to the pipe.
+  ///
+  /// Data is written by [_drainWriteQueue] which yields to the event loop
+  /// between chunks. This prevents a deadlock where a blocking [WriteFile]
+  /// on a full pipe buffer starves the read loop running on the same
+  /// isolate.
+  void _writeData(List<int> data) {
+    if (_writesClosed) return;
+    if (data.isEmpty) return;
+    _enqueueWriteChunks(data);
+    if (!_draining) {
+      _draining = true;
+      Future.microtask(_drainWriteQueue);
+    }
+  }
+
+  /// Enqueues [data] as bounded write chunks.
+  ///
+  /// A single large [WriteFile] request (for example, 100KB) can block the
+  /// isolate thread until the peer reads enough bytes. Splitting payloads
+  /// into bounded chunks allows [_drainWriteQueue] to yield between chunks,
+  /// so read polling can continue making progress in both directions.
+  void _enqueueWriteChunks(List<int> data) {
+    if (data.length <= kNamedPipeWriteChunkSize) {
+      _writeQueue.add(data);
+      return;
+    }
+
+    var offset = 0;
+    while (offset < data.length) {
+      final end = (offset + kNamedPipeWriteChunkSize < data.length) ? offset + kNamedPipeWriteChunkSize : data.length;
+      _writeQueue.add(data.sublist(offset, end));
+      offset = end;
+    }
+  }
+
+  /// Asynchronously drains [_writeQueue], yielding to the event loop
+  /// between writes so the read loop can progress.
+  Future<void> _drainWriteQueue() async {
+    try {
+      while (_writeQueue.isNotEmpty) {
+        if (_writesClosed) break;
+
+        final data = _writeQueue.removeAt(0);
+        if (!_writeChunk(data)) break;
+
+        // Yield to the event loop so the read loop (and other async
+        // work) can run between write operations.
+        await Future<void>.delayed(Duration.zero);
+      }
+    } finally {
+      _draining = false;
+      // If more data was enqueued while we yielded, restart the drain.
+      if (_writeQueue.isNotEmpty && !_writesClosed) {
+        _draining = true;
+        Future.microtask(_drainWriteQueue);
+      } else {
+        _finalizeCloseIfReady();
+      }
+    }
+  }
+
+  /// Writes a single chunk to the pipe. Returns `false` on error.
+  ///
   /// [WriteFile] can succeed but write fewer bytes than requested when the
   /// pipe's internal buffer is nearly full. A partial write silently drops
   /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
   /// until all bytes are written or an error occurs.
-  void _writeData(List<int> data) {
-    if (_writesClosed) return;
-
+  bool _writeChunk(List<int> data) {
     // Guard against zero-length writes: calloc<Uint8>(0) is undefined
     // behavior (may return nullptr on some platforms).
-    if (data.isEmpty) return;
+    if (data.isEmpty) return true;
 
     final buffer = calloc<Uint8>(data.length);
     final bytesWritten = calloc<DWORD>();
 
     try {
-      // Copy data to native buffer
       copyToNativeBuffer(buffer, data);
 
       var offset = 0;
@@ -543,7 +620,7 @@ class _NamedPipeStream {
             _incomingController.addError(NamedPipeException('Write failed: Win32 error $error', error));
           }
           close(force: true);
-          return;
+          return false;
         }
 
         if (bytesWritten.value == 0) {
@@ -551,11 +628,12 @@ class _NamedPipeStream {
             _incomingController.addError(NamedPipeException('Write stalled: 0 bytes written', 0));
           }
           close(force: true);
-          return;
+          return false;
         }
 
         offset += bytesWritten.value;
       }
+      return true;
     } finally {
       calloc.free(buffer);
       calloc.free(bytesWritten);
@@ -566,7 +644,8 @@ class _NamedPipeStream {
   void _onOutgoingDone() {
     _cancelDeferredCloseTimer();
     _outgoingSubscription = null;
-    _finalizeClose();
+    _outgoingStreamDone = true;
+    _finalizeCloseIfReady();
   }
 
   void _cancelDeferredCloseTimer() {
@@ -614,14 +693,30 @@ class _NamedPipeStream {
               if (!_outgoingController.isClosed) {
                 try {
                   _outgoingController.close();
-                } catch (_) {}
+                } catch (error, _) {
+                  logGrpcEvent(
+                    '[gRPC] Failed to close outgoing named-pipe controller: $error',
+                    component: 'NamedPipeTransport',
+                    event: 'close_outgoing_controller_failed',
+                    context: '_cancelOutgoingAndCloseController.whenComplete',
+                    error: error,
+                  );
+                }
               }
             }),
       );
     } else if (!_outgoingController.isClosed) {
       try {
         _outgoingController.close();
-      } catch (_) {}
+      } catch (error, _) {
+        logGrpcEvent(
+          '[gRPC] Failed to close outgoing named-pipe controller: $error',
+          component: 'NamedPipeTransport',
+          event: 'close_outgoing_controller_failed',
+          context: '_cancelOutgoingAndCloseController',
+          error: error,
+        );
+      }
     }
   }
 
@@ -643,8 +738,22 @@ class _NamedPipeStream {
     });
   }
 
+  void _finalizeCloseIfReady({bool allowWithoutOutgoingDone = false}) {
+    if (_writesClosed || _draining || _writeQueue.isNotEmpty) {
+      return;
+    }
+    if (!_outgoingStreamDone && !allowWithoutOutgoingDone) {
+      return;
+    }
+    _finalizeClose();
+  }
+
   void _finalizeClose() {
+    if (_writesClosed) {
+      return;
+    }
     _writesClosed = true;
+    _writeQueue.clear();
     if (!_incomingController.isClosed) {
       _incomingController.close();
     }
@@ -679,6 +788,7 @@ class _NamedPipeStream {
       if (force) {
         _cancelDeferredCloseTimer();
         _writesClosed = true;
+        _writeQueue.clear();
         // Chain controller close AFTER subscription cancel completes.
         // Closing the controller while addStream() is active throws
         // StateError ("Cannot close while a stream is being added").
@@ -699,6 +809,7 @@ class _NamedPipeStream {
     if (force) {
       _cancelDeferredCloseTimer();
       _writesClosed = true;
+      _writeQueue.clear();
       // Chain controller close AFTER subscription cancel completes.
       // See _cancelOutgoingAndCloseController doc for why this is critical.
       _cancelOutgoingAndCloseController();
@@ -712,7 +823,7 @@ class _NamedPipeStream {
     }
 
     if (_outgoingSubscription == null) {
-      _finalizeClose();
+      _finalizeCloseIfReady(allowWithoutOutgoingDone: true);
     } else {
       _armDeferredCloseTimer();
     }

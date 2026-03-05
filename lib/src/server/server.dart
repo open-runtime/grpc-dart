@@ -90,6 +90,7 @@ class ConnectionServer {
   final List<Interceptor> _interceptors;
   final List<ServerInterceptor> _serverInterceptors;
   final CodecRegistry? _codecRegistry;
+  final int? _maxInboundMessageSize;
   final GrpcErrorHandler? _errorHandler;
   final ServerKeepAliveOptions _keepAliveOptions;
 
@@ -124,6 +125,18 @@ class ConnectionServer {
   /// controller's stream listener permanently pending.
   final _keepAliveControllers = <ServerTransportConnection, StreamController<void>>{};
 
+  /// Maps connections to their [ServerKeepAlive] instances.
+  ///
+  /// [ServerKeepAlive.handle] creates subscriptions on the http2
+  /// connection's `onPingReceived` stream, which is backed by a
+  /// `StreamController<int>` that the http2 package never closes
+  /// during `connection.terminate()`. For TCP, `socket.destroy()`
+  /// kills all lingering IO. For named pipes there is no equivalent,
+  /// so the orphaned subscription keeps the Dart VM alive indefinitely
+  /// (root cause of 44-minute Windows CI hangs). Disposing the
+  /// instance cancels both subscriptions explicitly.
+  final _keepAliveInstances = <ServerTransportConnection, ServerKeepAlive>{};
+
   /// Create a server for the given [services].
   ConnectionServer(
     List<Service> services, [
@@ -132,7 +145,9 @@ class ConnectionServer {
     CodecRegistry? codecRegistry,
     GrpcErrorHandler? errorHandler,
     this._keepAliveOptions = const ServerKeepAliveOptions(),
+    int? maxInboundMessageSize,
   ]) : _codecRegistry = codecRegistry,
+       _maxInboundMessageSize = maxInboundMessageSize,
        _interceptors = interceptors,
        _serverInterceptors = serverInterceptors,
        _errorHandler = errorHandler {
@@ -159,6 +174,7 @@ class ConnectionServer {
     handlers.remove(connection);
     _incomingSubscriptions.remove(connection);
     _connectionSockets.remove(connection);
+    _keepAliveInstances.remove(connection)?.dispose();
     _keepAliveControllers.remove(connection);
     if (!onDataReceivedController.isClosed) {
       await onDataReceivedController.close();
@@ -176,12 +192,14 @@ class ConnectionServer {
     // timeout.
     final onDataReceivedController = StreamController<void>();
     _keepAliveControllers[connection] = onDataReceivedController;
-    ServerKeepAlive(
+    final keepAlive = ServerKeepAlive(
       options: _keepAliveOptions,
       tooManyBadPings: () async => await connection.terminate(ErrorCode.ENHANCE_YOUR_CALM),
       pingNotifier: connection.onPingReceived,
       dataNotifier: onDataReceivedController.stream,
-    ).handle();
+    );
+    _keepAliveInstances[connection] = keepAlive;
+    keepAlive.handle();
     final incomingSub = connection.incomingStreams.listen(
       (stream) {
         // Guard: onError may have already cleaned up this connection.
@@ -311,12 +329,17 @@ class ConnectionServer {
       );
     }
 
-    // Step 1.5: Close keepalive data-received controllers.
-    // Cancelling a subscription (Step 1) does NOT fire onDone/onError,
-    // so the StreamController from serveConnection() is never closed.
-    // An unclosed controller keeps the Dart VM alive indefinitely —
-    // this was the root cause of 30-minute process hangs on Windows CI.
+    // Step 1.5: Dispose keepalive instances and close data-received
+    // controllers. The http2 package never closes `_pingReceived`
+    // during connection.terminate(), so ServerKeepAlive's ping
+    // subscription persists indefinitely. For TCP, socket.destroy()
+    // kills all IO. For named pipes there is no equivalent — the
+    // orphaned subscription keeps the VM alive (44-min Windows hang).
+    // Disposing the instance cancels both subscriptions explicitly.
+    // Closing the data-received controller is still needed as a belt-
+    // and-suspenders cleanup for the controller itself.
     for (final connection in activeConnections) {
+      _keepAliveInstances.remove(connection)?.dispose();
       _keepAliveControllers.remove(connection)?.close();
     }
 
@@ -500,6 +523,7 @@ class ConnectionServer {
       interceptors: _interceptors,
       serverInterceptors: _serverInterceptors,
       codecRegistry: _codecRegistry,
+      maxInboundMessageSize: _maxInboundMessageSize,
       // ignore: unnecessary_cast
       clientCertificate: clientCertificate as io_bits.X509Certificate?,
       // ignore: unnecessary_cast
@@ -525,6 +549,7 @@ class Server extends ConnectionServer {
     CodecRegistry? codecRegistry,
     GrpcErrorHandler? errorHandler,
     ServerKeepAliveOptions keepAlive = const ServerKeepAliveOptions(),
+    int? maxInboundMessageSize,
   ]) : super(
          services,
          interceptors,
@@ -532,6 +557,7 @@ class Server extends ConnectionServer {
          codecRegistry,
          errorHandler,
          keepAlive,
+         maxInboundMessageSize,
        );
 
   /// Create a server for the given [services].
@@ -542,7 +568,16 @@ class Server extends ConnectionServer {
     List<ServerInterceptor> serverInterceptors = const <ServerInterceptor>[],
     CodecRegistry? codecRegistry,
     GrpcErrorHandler? errorHandler,
-  }) : super(services, interceptors, serverInterceptors, codecRegistry, errorHandler, keepAliveOptions);
+    int? maxInboundMessageSize,
+  }) : super(
+         services,
+         interceptors,
+         serverInterceptors,
+         codecRegistry,
+         errorHandler,
+         keepAliveOptions,
+         maxInboundMessageSize,
+       );
 
   /// The port that the server is listening on, or `null` if the server is not
   /// active.
@@ -672,6 +707,7 @@ class Server extends ConnectionServer {
       interceptors: _interceptors,
       serverInterceptors: _serverInterceptors,
       codecRegistry: _codecRegistry,
+      maxInboundMessageSize: _maxInboundMessageSize,
       // ignore: unnecessary_cast
       clientCertificate: clientCertificate as io_bits.X509Certificate?,
       // ignore: unnecessary_cast
