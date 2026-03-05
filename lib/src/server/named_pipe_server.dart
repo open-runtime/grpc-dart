@@ -723,7 +723,13 @@ class _ServerPipeStream {
       calloc.free(buffer);
       calloc.free(bytesRead);
       calloc.free(peekAvail);
-      close();
+      // Force-close: the read loop exiting means the pipe is dead (broken pipe,
+      // error, or _isClosed). Deferring cleanup to a 5-second timer is dangerous
+      // — if the event loop can't process timers (Windows timer starvation),
+      // _incomingController never closes, and the entire connection teardown
+      // chain stalls indefinitely. Force-close runs synchronously within this
+      // event turn, closing controllers and handle immediately.
+      close(force: true);
     }
   }
 
