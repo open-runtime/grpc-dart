@@ -157,49 +157,6 @@ void main() {
 
     testTcpAndUds('rapid terminate during bidiStreamBytes'
         ' with 32KB chunks', (address) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
-
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
-
-      final client = EchoClient(channel);
-
-      // 32 KB chunks fed via pacedStream.
-      final chunk = Uint8List(32768);
-      final chunks = List.generate(10, (_) => chunk);
-
-      final controllers = <StreamController<List<int>>>[];
-      final futures = <Future<Object?>>[];
-      for (var i = 0; i < 10; i++) {
-        final ctrl = StreamController<List<int>>();
-        controllers.add(ctrl);
-        futures.add(
-          settleRpc(
-            client
-                .bidiStreamBytes(ctrl.stream)
-                .toList()
-                .then<Object?>((v) => v),
-          ),
-        );
-      }
-
-      // Feed each controller with paced chunks.
-      final feedFutures = <Future<void>>[];
-      for (final ctrl in controllers) {
-        feedFutures.add(() async {
-          await for (final c in pacedStream(chunks, yieldEvery: 1)) {
-            if (ctrl.isClosed) break;
-            ctrl.add(c);
-          }
-        }());
-      }
-
-      // Wait for first response on all 10 streams
-      // by giving them a brief window.
-      await Future.delayed(const Duration(milliseconds: 50));
-
       // Known upstream issue: when server.shutdown() calls
       // connection.terminate(), the http2 package's internal
       // ConnectionMessageQueueOut._trySendMessages may fire on a
@@ -211,27 +168,53 @@ void main() {
       // async exception because it originates in a http2-internal
       // microtask, not in any of our try/catch boundaries.
       //
-      // We capture these known http2-internal errors here and verify
-      // them — we're testing that OUR transport guards work, not that
-      // the http2 package's queue drain is race-free.
-      // Known upstream issue: when server.shutdown() calls
-      // connection.terminate(), the http2 package's internal
-      // ConnectionMessageQueueOut._trySendMessages may fire on a
-      // microtask that was already scheduled before the socket's
-      // StreamController was closed. This throws
-      // "Bad state: Cannot add event after closing" inside the
-      // http2 package (FrameWriter._writeData → BufferedBytesWriter.add
-      // → _StreamController.add). The error escapes as an unhandled
-      // async exception because it originates in a http2-internal
-      // microtask, not in any of our try/catch boundaries.
-      //
-      // We capture these known http2-internal errors and verify them —
-      // we're testing that OUR transport guards work, not that the
-      // http2 package's queue drain is race-free.
+      // IMPORTANT: The entire test body — including server, channel, and
+      // RPC creation — must run inside runZonedGuarded. If the HTTP/2
+      // connection is created outside the guarded zone, microtasks from
+      // that connection run in the outer (test) zone and escape the guard.
       final http2InternalErrors = <Object>[];
       final done = Completer<void>();
       runZonedGuarded(() async {
         try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
+
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
+
+          // 32 KB chunks fed via pacedStream.
+          final chunk = Uint8List(32768);
+          final chunks = List.generate(10, (_) => chunk);
+
+          final controllers = <StreamController<List<int>>>[];
+          final futures = <Future<Object?>>[];
+          for (var i = 0; i < 10; i++) {
+            final ctrl = StreamController<List<int>>();
+            controllers.add(ctrl);
+            futures.add(
+              settleRpc(
+                client
+                    .bidiStreamBytes(ctrl.stream)
+                    .toList()
+                    .then<Object?>((v) => v),
+              ),
+            );
+          }
+
+          // Feed each controller with paced chunks.
+          final feedFutures = <Future<void>>[];
+          for (final ctrl in controllers) {
+            feedFutures.add(() async {
+              await for (final c in pacedStream(chunks, yieldEvery: 1)) {
+                if (ctrl.isClosed) break;
+                ctrl.add(c);
+              }
+            }());
+          }
+
+          // Wait for first response on all 10 streams.
+          await Future.delayed(const Duration(milliseconds: 50));
+
           // Shut down while 32 KB chunks are in flight.
           await server.shutdown();
 
@@ -278,6 +261,8 @@ void main() {
                   'success or known error type',
             );
           }
+
+          await channel.terminate();
           done.complete();
         } catch (e, st) {
           done.completeError(e, st);

@@ -593,13 +593,30 @@ class _NamedPipeStream {
     _outgoingSubscription = null;
     if (sub != null) {
       unawaited(
-        sub.cancel().whenComplete(() {
-          if (!_outgoingController.isClosed) {
-            try {
-              _outgoingController.close();
-            } catch (_) {}
-          }
-        }),
+        sub
+            .cancel()
+            .timeout(
+              const Duration(seconds: 2),
+              onTimeout: () {
+                // sub.cancel() hung — the HTTP/2 transport's addStream() is
+                // likely stuck on a closed pipe handle. Proceed to close the
+                // controller so the VM event loop can drain.
+                logGrpcEvent(
+                  '[gRPC] Outgoing subscription cancel timed out after 2s; '
+                  'forcing controller close',
+                  component: 'NamedPipeTransport',
+                  event: 'cancel_timeout',
+                  context: 'NamedPipeTransportConnector._cancelOutgoingAndCloseController',
+                );
+              },
+            )
+            .whenComplete(() {
+              if (!_outgoingController.isClosed) {
+                try {
+                  _outgoingController.close();
+                } catch (_) {}
+              }
+            }),
       );
     } else if (!_outgoingController.isClosed) {
       try {
