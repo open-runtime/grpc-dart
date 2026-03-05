@@ -85,33 +85,39 @@ Future<void> _assertTransportNotUsableForRpc(
   final channel = TestClientChannel(connection);
   final client = EchoClient(channel);
 
-  for (var i = 0; i < rpcAttempts; i++) {
-    try {
-      final value = await client
-          .echo(100 + i)
-          .timeout(
-            timeout,
-            onTimeout: () => throw TimeoutException('RPC hung'),
-          );
-      // If we reach here without throwing, the RPC completed — fail.
-      fail(
-        'Post-shutdown transport must not be usable; '
-        'echo(${100 + i}) returned $value (attempt ${i + 1}/$rpcAttempts)',
-      );
-    } on GrpcError {
-      // Expected: transport correctly reports failure.
-    } on TimeoutException {
-      // Also acceptable: transport may hang rather than fail cleanly.
+  // CRITICAL: terminate() MUST run even if fail() throws TestFailure.
+  // Without try/finally, a successful RPC triggers fail() which skips
+  // terminate(), leaking reconnect Timers that keep the Dart VM alive
+  // (observed as 44-minute CI hangs on Windows x64 between test files).
+  try {
+    for (var i = 0; i < rpcAttempts; i++) {
+      try {
+        final value = await client
+            .echo(100 + i)
+            .timeout(
+              timeout,
+              onTimeout: () => throw TimeoutException('RPC hung'),
+            );
+        // If we reach here without throwing, the RPC completed — fail.
+        fail(
+          'Post-shutdown transport must not be usable; '
+          'echo(${100 + i}) returned $value (attempt ${i + 1}/$rpcAttempts)',
+        );
+      } on GrpcError {
+        // Expected: transport correctly reports failure.
+      } on TimeoutException {
+        // Also acceptable: transport may hang rather than fail cleanly.
+      }
     }
+  } finally {
+    // CRITICAL: terminate the channel to break any reconnect loop.
+    // Without this, orphaned ClientCalls (whose .timeout() fired but whose
+    // underlying call was never cancelled) stay in _pendingCalls, causing
+    // _abandonConnection() → reconnect Timer → infinite loop with exponential
+    // backoff. Those Timers keep the Dart VM event loop alive, preventing
+    // `dart test` from exiting.
+    await channel.terminate();
   }
-
-  // CRITICAL: terminate the channel to break any reconnect loop.
-  // Without this, orphaned ClientCalls (whose .timeout() fired but whose
-  // underlying call was never cancelled) stay in _pendingCalls, causing
-  // _abandonConnection() → reconnect Timer → infinite loop with exponential
-  // backoff. Those Timers keep the Dart VM event loop alive, preventing
-  // `dart test` from exiting (observed as 29-minute CI hangs on Windows).
-  await channel.terminate();
 }
 
 // =============================================================================
@@ -345,6 +351,17 @@ void main() {
             options: const NamedPipeChannelOptions(),
           ),
         );
+        // Safety net: terminate all channels even if the finally block below
+        // throws mid-cleanup (e.g., a single channel's terminate times out and
+        // fail() aborts the loop before reaching the remaining channels).
+        addTearDown(() async {
+          for (final ch in channels) {
+            await ch.terminate().timeout(
+              const Duration(seconds: 2),
+              onTimeout: () async {},
+            );
+          }
+        });
         final clients = channels.map(EchoClient.new).toList();
         log('Clients created.');
 
