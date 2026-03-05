@@ -78,11 +78,10 @@ Generate the complete API_REFERENCE.md content.
 
 String _runSync(String command) {
   try {
-    final result = Process.runSync(
-      'sh',
-      ['-c', command],
-      workingDirectory: Directory.current.path,
-    );
+    final result = Process.runSync('sh', [
+      '-c',
+      command,
+    ], workingDirectory: Directory.current.path);
     if (result.exitCode == 0) return (result.stdout as String).trim();
     return '';
   } catch (_) {

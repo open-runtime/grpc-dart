@@ -17,6 +17,7 @@ import 'dart:async';
 import 'dart:developer';
 
 import '../shared/codec.dart';
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/message.dart';
 import '../shared/profiler.dart';
 import '../shared/status.dart';
@@ -234,14 +235,29 @@ class ClientCall<Q, R> implements Response {
     } else {
       final metadata = Map<String, String>.of(options.metadata);
       Future.forEach(
-        options.metadataProviders,
-        (MetadataProvider provider) =>
-            provider(metadata, '${connection.scheme}://${connection.authority}${audiencePath(_method)}'),
-      ).then((_) => _sendRequest(connection, _sanitizeMetadata(metadata))).catchError(_terminateWithError);
+            options.metadataProviders,
+            (MetadataProvider provider) =>
+                provider(metadata, '${connection.scheme}://${connection.authority}${audiencePath(_method)}'),
+          )
+          .then((_) {
+            if (isCancelled) return;
+            _sendRequest(connection, _sanitizeMetadata(metadata));
+          })
+          .catchError((Object e) {
+            _terminateWithError(e);
+            return null;
+          });
     }
   }
 
   void _sendRequest(ClientConnection connection, Map<String, String> metadata) {
+    // Guard against race: cancel() / _terminate() may have been called
+    // while async metadata providers were resolving. At that point _stream
+    // was still null, so _terminate() could not clean up transport
+    // resources. Proceeding here would leak an HTTP/2 stream and
+    // subscriptions that nothing will ever terminate.
+    if (isCancelled) return;
+
     late final GrpcTransportStream stream;
     try {
       stream = connection.makeRequest(_method.path, options.timeout, metadata, _onRequestError, callOptions: options);
@@ -250,6 +266,7 @@ class ClientCall<Q, R> implements Response {
       return;
     }
     _requestTimeline?.instant('Request sent', arguments: {'metadata': metadata});
+    final outSink = stream.outgoingMessages;
     _requestSubscription = _requests
         .map((data) {
           _requestTimeline?.instant('Data sent', arguments: {'data': data.toString()});
@@ -258,9 +275,51 @@ class ClientCall<Q, R> implements Response {
         })
         .handleError(_onRequestError)
         .listen(
-          stream.outgoingMessages.add,
-          onError: stream.outgoingMessages.addError,
-          onDone: stream.outgoingMessages.close,
+          // Guard against "Cannot add event after closing": the
+          // transport stream may be terminated (RST_STREAM, connection
+          // teardown) while serialized request data is still queued.
+          (data) {
+            try {
+              outSink.add(data);
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Outgoing request data dropped'
+                ' (transport sink closed): $e',
+                component: 'ClientCall',
+                event: 'outgoing_data_dropped',
+                context: '_sendRequest.onData',
+                error: e,
+              );
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            try {
+              outSink.addError(error, stackTrace);
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Failed to forward error to'
+                ' transport sink: $e',
+                component: 'ClientCall',
+                event: 'outgoing_error_dropped',
+                context: '_sendRequest.onError',
+                error: e,
+              );
+            }
+          },
+          onDone: () {
+            try {
+              outSink.close();
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Failed to close outgoing'
+                ' transport sink: $e',
+                component: 'ClientCall',
+                event: 'outgoing_close_failed',
+                context: '_sendRequest.onDone',
+                error: e,
+              );
+            }
+          },
           cancelOnError: true,
         );
     _stream = stream;
@@ -466,7 +525,16 @@ class ClientCall<Q, R> implements Response {
   Future<void> _safeTerminate() async {
     try {
       await _terminate();
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      logGrpcEvent(
+        '[gRPC] ClientCall termination threw unexpectedly:'
+        ' $error\n$stackTrace',
+        component: 'ClientCall',
+        event: 'terminate_error',
+        context: '_safeTerminate',
+        error: error,
+      );
+    }
   }
 }
 

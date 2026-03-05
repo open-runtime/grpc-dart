@@ -42,7 +42,12 @@ class GrpcHttpDecoder extends Converter<StreamMessage, GrpcMessage> {
   /// [true] if this decoder is used for decoding responses.
   final bool forResponse;
 
-  GrpcHttpDecoder({this.forResponse = false});
+  /// Maximum allowed inbound message size in bytes.
+  ///
+  /// `null` preserves the historical unlimited behavior.
+  final int? maxInboundMessageSize;
+
+  GrpcHttpDecoder({this.forResponse = false, this.maxInboundMessageSize});
 
   @override
   GrpcMessage convert(StreamMessage input) {
@@ -55,13 +60,14 @@ class GrpcHttpDecoder extends Converter<StreamMessage, GrpcMessage> {
 
   @override
   Sink<StreamMessage> startChunkedConversion(Sink<GrpcMessage> sink) {
-    return _GrpcMessageConversionSink(sink, forResponse);
+    return _GrpcMessageConversionSink(sink, forResponse, maxInboundMessageSize);
   }
 }
 
 class _GrpcMessageConversionSink implements ChunkedConversionSink<StreamMessage> {
   final Sink<GrpcMessage> _out;
   final bool _forResponse;
+  final int? _maxInboundMessageSize;
 
   final _dataHeader = Uint8List(5);
   Uint8List? _data;
@@ -69,7 +75,7 @@ class _GrpcMessageConversionSink implements ChunkedConversionSink<StreamMessage>
 
   bool _headersReceived = false;
 
-  _GrpcMessageConversionSink(this._out, this._forResponse);
+  _GrpcMessageConversionSink(this._out, this._forResponse, [this._maxInboundMessageSize]);
 
   void _addData(DataStreamMessage chunk) {
     final chunkData = chunk.bytes;
@@ -87,7 +93,12 @@ class _GrpcMessageConversionSink implements ChunkedConversionSink<StreamMessage>
         chunkReadOffset += toCopy;
         if (_dataOffset == _dataHeader.lengthInBytes) {
           final dataLength = _dataHeader.buffer.asByteData().getUint32(1);
-          // TODO(jakobr): Sanity check dataLength. Max size?
+          final maxInboundMessageSize = _maxInboundMessageSize;
+          if (maxInboundMessageSize != null && dataLength > maxInboundMessageSize) {
+            throw GrpcError.resourceExhausted(
+              'Received message larger than max ($dataLength vs. $maxInboundMessageSize)',
+            );
+          }
           _data = Uint8List(dataLength);
           _dataOffset = 0;
         }

@@ -24,3 +24,5 @@ doc/api/
 
 # Override files
 pubspec_overrides.yaml
+# Claude AI session data
+.claude/

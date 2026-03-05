@@ -20,11 +20,12 @@ import 'transport/xhr_transport.dart';
 /// A channel to a grpc-web endpoint.
 class GrpcWebClientChannel extends ClientChannelBase {
   final Uri uri;
+  final int? maxInboundMessageSize;
 
-  GrpcWebClientChannel.xhr(this.uri, {super.channelShutdownHandler});
+  GrpcWebClientChannel.xhr(this.uri, {this.maxInboundMessageSize, super.channelShutdownHandler});
 
   @override
   ClientConnection createConnection() {
-    return XhrClientConnection(uri);
+    return XhrClientConnection(uri, maxInboundMessageSize: maxInboundMessageSize);
   }
 }

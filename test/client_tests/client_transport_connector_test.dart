@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:grpc/grpc.dart';
 import 'package:grpc/src/client/http2_connection.dart';
 import 'package:http2/transport.dart';
+import 'package:mockito/mockito.dart';
 import 'package:test/test.dart';
 
 import '../src/client_utils.dart';
@@ -427,6 +428,64 @@ void main() {
     expect(lastBackoff, const Duration(minutes: 2));
     expect(defaultBackoffStrategy(lastBackoff), const Duration(minutes: 2));
   });
+
+  // M4: Exercises _abandonConnection during pending-dispatch yield window.
+  // Fires one RPC so it queues as pending; on first dispatch, schedules
+  // connector.done to complete during the yield, triggering _abandonConnection.
+  test(
+    '_abandonConnection during pending-dispatch yield (connector.done)',
+    () async {
+      final connector = harness.connector as FakeClientTransportConnector;
+      when(
+        harness.transport.makeRequest(any, endStream: anyNamed('endStream')),
+      ).thenAnswer((_) {
+        Timer(Duration.zero, () => connector.completer.complete());
+        return harness.stream;
+      });
+
+      void handleRequest(StreamMessage message) {
+        validateDataMessage(message);
+        harness
+          ..sendResponseHeader()
+          ..sendResponseValue(19)
+          ..sendResponseTrailer();
+      }
+
+      await harness.runTest(
+        clientCall: harness.client.unary(dummyValue),
+        expectedResult: 19,
+        expectedPath: '/Test/Unary',
+        serverHandlers: [handleRequest],
+      );
+    },
+  );
+
+  // M5: Exercises !isOpen path in _refreshConnectionIfUnhealthy.
+  test(
+    '_refreshConnectionIfUnhealthy abandons when transport !isOpen',
+    () async {
+      var isOpenCallCount = 0;
+      when(harness.transport.isOpen).thenAnswer((_) {
+        isOpenCallCount++;
+        return isOpenCallCount == 1 ? false : true;
+      });
+
+      void handleRequest(StreamMessage message) {
+        validateDataMessage(message);
+        harness
+          ..sendResponseHeader()
+          ..sendResponseValue(19)
+          ..sendResponseTrailer();
+      }
+
+      await harness.runTest(
+        clientCall: harness.client.unary(dummyValue),
+        expectedResult: 19,
+        expectedPath: '/Test/Unary',
+        serverHandlers: [handleRequest],
+      );
+    },
+  );
 
   test('authority is computed correctly', () {
     final emptyOptions = ChannelOptions();

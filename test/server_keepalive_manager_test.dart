@@ -50,25 +50,23 @@ void main() {
     dataStream.close();
   });
 
-  final timeAfterPing = Duration(milliseconds: 10);
-
   test('Sending too many pings without data kills connection', () async {
     FakeAsync().run((async) {
       initServer();
-      // Send good ping
+      // Send first ping (starts timer).
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
 
-      // Send [maxBadPings] bad pings, that's still ok
+      // Send [maxBadPings] rapid pings (elapsed ≈ 0 < 5ms → bad).
       for (var i = 0; i < maxBadPings; i++) {
         pingStream.sink.add(null);
       }
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, false);
 
-      // Send another bad ping; that's one too many!
+      // Send another rapid bad ping; that's one too many!
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, true);
     });
   });
@@ -82,15 +80,15 @@ void main() {
             minIntervalBetweenPingsWithoutData: Duration(milliseconds: 5),
           ),
         );
-        // Send good ping
+        // Send first ping.
         pingStream.sink.add(null);
-        async.elapse(timeAfterPing);
+        async.flushMicrotasks();
 
-        // Send a lot of bad pings, that's still ok.
+        // Send a lot of rapid pings, that's still ok.
         for (var i = 0; i < 50; i++) {
           pingStream.sink.add(null);
         }
-        async.elapse(timeAfterPing);
+        async.flushMicrotasks();
         expect(goAway, false);
       });
     },
@@ -100,36 +98,114 @@ void main() {
     FakeAsync().run((async) {
       initServer();
 
-      // Send good ping
+      // Send first ping (starts timer).
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
 
-      // Send [maxBadPings] bad pings, that's still ok
+      // Send [maxBadPings] rapid bad pings.
       for (var i = 0; i < maxBadPings; i++) {
         pingStream.sink.add(null);
       }
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, false);
 
-      // Sending data resets the bad ping count
+      // Sending data resets the bad ping count.
       dataStream.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
 
-      // Send good ping
+      // Send first ping after data reset (starts new timer).
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
 
-      // Send [maxBadPings] bad pings, that's still ok
+      // Send [maxBadPings] rapid bad pings.
       for (var i = 0; i < maxBadPings; i++) {
         pingStream.sink.add(null);
       }
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, false);
 
-      // Send another bad ping; that's one too many!
+      // Send another rapid bad ping; that's one too many!
       pingStream.sink.add(null);
-      async.elapse(timeAfterPing);
+      async.flushMicrotasks();
       expect(goAway, true);
+    });
+  });
+
+  test('tooManyBadPings callback is not spammed under ping flood', () async {
+    FakeAsync().run((async) {
+      var tooManyBadPingsCalls = 0;
+      ServerKeepAlive(
+        options: const ServerKeepAliveOptions(
+          maxBadPings: 1,
+          minIntervalBetweenPingsWithoutData: Duration(milliseconds: 5),
+        ),
+        pingNotifier: pingStream.stream,
+        dataNotifier: dataStream.stream,
+        tooManyBadPings: () async {
+          tooManyBadPingsCalls++;
+        },
+      ).handle();
+
+      pingStream.add(null); // baseline timestamp ping
+      async.flushMicrotasks();
+
+      // First over-limit transition invokes callback once.
+      pingStream.add(null);
+      pingStream.add(null);
+      async.flushMicrotasks();
+
+      // Additional bad pings for the same no-data period must not re-invoke.
+      for (var i = 0; i < 10; i++) {
+        pingStream.add(null);
+      }
+      async.flushMicrotasks();
+
+      expect(tooManyBadPingsCalls, equals(1));
+    });
+  });
+
+  test('tooManyBadPings callback can be retried after data reset', () async {
+    FakeAsync().run((async) {
+      var tooManyBadPingsCalls = 0;
+      ServerKeepAlive(
+        options: const ServerKeepAliveOptions(
+          maxBadPings: 1,
+          minIntervalBetweenPingsWithoutData: Duration(milliseconds: 5),
+        ),
+        pingNotifier: pingStream.stream,
+        dataNotifier: dataStream.stream,
+        tooManyBadPings: () async {
+          tooManyBadPingsCalls++;
+          if (tooManyBadPingsCalls == 1) {
+            throw StateError('transient callback failure');
+          }
+        },
+      ).handle();
+
+      // First no-data bad-ping streak: callback fires once and fails.
+      pingStream.add(null);
+      pingStream.add(null);
+      pingStream.add(null);
+      async.flushMicrotasks();
+      expect(tooManyBadPingsCalls, equals(1));
+
+      // Continuous bad pings in same streak still must not spam callback.
+      for (var i = 0; i < 10; i++) {
+        pingStream.add(null);
+      }
+      async.flushMicrotasks();
+      expect(tooManyBadPingsCalls, equals(1));
+
+      // Data starts a new streak and should re-arm callback invocation.
+      dataStream.add(null);
+      async.flushMicrotasks();
+
+      pingStream.add(null);
+      pingStream.add(null);
+      pingStream.add(null);
+      async.flushMicrotasks();
+
+      expect(tooManyBadPingsCalls, equals(2));
     });
   });
 }

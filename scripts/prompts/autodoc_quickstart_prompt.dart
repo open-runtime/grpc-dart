@@ -22,8 +22,12 @@ void main(List<String> args) {
   final sourceTree = _runSync(
     'tree $sourceDir -L 3 --dirsfirst 2>/dev/null || find $sourceDir -name "*.dart" | head -30',
   );
-  final dartFiles = _runSync('find $sourceDir -name "*.dart" -type f 2>/dev/null');
-  final dartCount = _runSync('find $sourceDir -name "*.dart" -type f 2>/dev/null | wc -l');
+  final dartFiles = _runSync(
+    'find $sourceDir -name "*.dart" -type f 2>/dev/null',
+  );
+  final dartCount = _runSync(
+    'find $sourceDir -name "*.dart" -type f 2>/dev/null | wc -l',
+  );
 
   final firstDart = _runSync(
     'find $sourceDir -name "*.dart" -not -name "*.g.dart" -not -name "*.pb.dart" -not -name "*.pbenum.dart" -not -name "*.pbjson.dart" -not -name "*.pbgrpc.dart" -type f 2>/dev/null | head -1',
@@ -40,7 +44,9 @@ void main(List<String> args) {
   );
 
   var libTree = '(same as source)';
-  if (libDir.isNotEmpty && libDir != sourceDir && Directory(libDir).existsSync()) {
+  if (libDir.isNotEmpty &&
+      libDir != sourceDir &&
+      Directory(libDir).existsSync()) {
     libTree = _runSync(
       'tree $libDir -L 2 --dirsfirst -I "*.g.dart" 2>/dev/null || echo "(no tree)"',
     );
@@ -120,11 +126,10 @@ Generate the complete QUICKSTART.md content.
 
 String _runSync(String command) {
   try {
-    final result = Process.runSync(
-      'sh',
-      ['-c', command],
-      workingDirectory: Directory.current.path,
-    );
+    final result = Process.runSync('sh', [
+      '-c',
+      command,
+    ], workingDirectory: Directory.current.path);
     if (result.exitCode == 0) return (result.stdout as String).trim();
     return '(command failed)';
   } catch (_) {

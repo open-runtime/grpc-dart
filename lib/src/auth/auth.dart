@@ -20,6 +20,7 @@ import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:http/http.dart' as http;
 
 import '../client/call.dart';
+import '../shared/logging/logging.dart' show logGrpcEvent;
 import 'rsa.dart';
 
 const _tokenExpirationThreshold = Duration(seconds: 30);
@@ -41,7 +42,15 @@ abstract class BaseAuthenticator {
 
     if (_tokenExpiresSoon) {
       // Token is about to expire. Extend it prematurely.
-      obtainAccessCredentials(_lastUri).catchError((_) {});
+      obtainAccessCredentials(_lastUri).catchError((e) {
+        logGrpcEvent(
+          '[gRPC] Token refresh failed: $e',
+          component: 'BaseAuthenticator',
+          event: 'token_refresh',
+          context: 'authenticate',
+          error: e,
+        );
+      });
     }
   }
 

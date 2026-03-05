@@ -62,6 +62,11 @@ class ChannelOptions {
   final ClientKeepAliveOptions keepAlive;
   final Proxy? proxy;
 
+  /// Maximum allowed inbound message size in bytes.
+  ///
+  /// `null` preserves the historical unlimited behavior.
+  final int? maxInboundMessageSize;
+
   const ChannelOptions({
     this.credentials = const ChannelCredentials.secure(),
     this.idleTimeout = defaultIdleTimeout,
@@ -72,5 +77,6 @@ class ChannelOptions {
     this.codecRegistry,
     this.keepAlive = const ClientKeepAliveOptions(),
     this.proxy,
+    this.maxInboundMessageSize,
   });
 }
