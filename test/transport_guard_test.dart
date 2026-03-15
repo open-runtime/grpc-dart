@@ -108,49 +108,86 @@ void main() {
     testTcpAndUds('server shutdown during large payload transfer', (
       address,
     ) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
+      // Known upstream issue: when server.shutdown() terminates the
+      // connection, the http2 package's ConnectionMessageQueueOut may
+      // fire _trySendMessages via Timer.run on a microtask scheduled
+      // before the socket's StreamController was closed. This throws
+      // "Bad state: Cannot add event after closing" from FrameWriter.
+      //
+      // IMPORTANT: The entire test body — including server, channel,
+      // and RPC creation — must run inside runZonedGuarded so ALL
+      // timers scheduled by the http2 Connection inherit the guarded
+      // zone, ensuring the StateError is always captured.
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
 
-      final client = EchoClient(channel);
+          // 64 KB payloads exceed the HTTP/2 default flow
+          // control window (65535 bytes) so they will be
+          // queued in the outgoing pipeline.
+          final payload = Uint8List(65536);
+          final futures = <Future<Object?>>[];
+          for (var i = 0; i < 5; i++) {
+            futures.add(
+              settleRpc(client.echoBytes(payload).then<Object?>((v) => v)),
+            );
+          }
 
-      // 64 KB payloads exceed the HTTP/2 default flow
-      // control window (65535 bytes) so they will be
-      // queued in the outgoing pipeline.
-      final payload = Uint8List(65536);
-      final futures = <Future<Object?>>[];
-      for (var i = 0; i < 5; i++) {
-        futures.add(
-          settleRpc(client.echoBytes(payload).then<Object?>((v) => v)),
-        );
-      }
+          // Give the RPCs a moment to start transmitting.
+          await Future.delayed(const Duration(milliseconds: 20));
 
-      // Give the RPCs a moment to start transmitting.
-      await Future.delayed(const Duration(milliseconds: 20));
+          // Shut down the server while large payloads
+          // are in the outgoing buffer.
+          await server.shutdown();
 
-      // Shut down the server while large payloads
-      // are in the outgoing buffer.
-      await server.shutdown();
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out waiting for RPCs'),
+          );
 
-      final results = await Future.wait(futures).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out waiting for RPCs'),
-      );
+          expect(
+            results.length,
+            equals(5),
+            reason: 'All 5 echoBytes RPCs must settle',
+          );
+          for (final r in results) {
+            expectHardcoreRpcSettlement(
+              r,
+              reason:
+                  'Each RPC must settle as '
+                  'success or known error type',
+            );
+          }
 
-      expect(
-        results.length,
-        equals(5),
-        reason: 'All 5 echoBytes RPCs must settle',
-      );
-      for (final r in results) {
-        expectHardcoreRpcSettlement(
-          r,
+          await channel.terminate();
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
+        }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
+
+      // Verify any captured errors are the known http2-internal race.
+      for (final error in http2InternalErrors) {
+        expect(
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
+          ),
           reason:
-              'Each RPC must settle as '
-              'success or known error type',
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during large payload shutdown. '
+              'Got: $error',
         );
       }
     });
