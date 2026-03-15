@@ -43,6 +43,13 @@ import 'service.dart';
 ///
 /// Stale UDS socket files are cleaned up automatically during [serve]
 /// and [shutdown]. Named pipes are cleaned up by the OS on process exit.
+///
+/// **Security**: This server uses plaintext (no TLS) because the transport
+/// never leaves the machine. The UDS socket directory is created with
+/// owner-only permissions (0700). On Windows, named pipes use
+/// `PIPE_REJECT_REMOTE_CLIENTS`. Any process running as the same OS user
+/// can connect — use a [ServerInterceptor] with a shared token if you
+/// need per-process authentication.
 class LocalGrpcServer {
   /// The service name used for address resolution.
   final String serviceName;

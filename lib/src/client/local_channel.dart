@@ -76,6 +76,10 @@ class LocalChannelOptions {
 /// ```
 ///
 /// The [serviceName] must match the name used by `LocalGrpcServer`.
+///
+/// **Security**: Uses plaintext credentials (no TLS). This is safe for
+/// same-machine IPC where the OS kernel is the trust boundary. Do not
+/// use this channel for communication over a network.
 class LocalGrpcChannel implements ClientChannel {
   /// The service name used for address resolution.
   final String serviceName;
