@@ -945,9 +945,14 @@ void main() {
   group('Hardcore Stress + Compression', () {
     bool isExpectedKeepaliveTransportError(Object? error) {
       if (error == null) return false;
-      // Prefer type-based check: TransportConnectionException with keepalive-related codes
+      // Prefer type-based check: TransportConnectionException with known codes.
+      // NO_ERROR (0) occurs when the connection is forcefully terminated during
+      // rapid restart cycles — the HTTP/2 transport sends GOAWAY with errorCode 0
+      // ("graceful" from the protocol's perspective) before tearing down the socket.
       if (error is TransportConnectionException) {
-        return error.errorCode == ErrorCode.ENHANCE_YOUR_CALM || error.errorCode == ErrorCode.CONNECT_ERROR;
+        return error.errorCode == ErrorCode.ENHANCE_YOUR_CALM ||
+            error.errorCode == ErrorCode.CONNECT_ERROR ||
+            error.errorCode == ErrorCode.NO_ERROR;
       }
       // Fallback for wrapped/zoned errors: only match known keepalive indicators
       final message = error.toString();
