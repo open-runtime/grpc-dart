@@ -272,6 +272,119 @@ void main() {
       }
     });
 
+    test('client gets UNAVAILABLE when server is not running', () async {
+      final channel = LocalGrpcChannel('local-ipc-test-no-server');
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      try {
+        await client.echo(1);
+        fail('Expected GrpcError when server is not running');
+      } on GrpcError catch (e) {
+        expect(e.code, equals(StatusCode.unavailable));
+      }
+    });
+
+    test('shutdown during active streaming RPC', () async {
+      final server = LocalGrpcServer('local-ipc-test-shutdown-rpc', services: [EchoService()]);
+      await server.serve();
+
+      final channel = LocalGrpcChannel('local-ipc-test-shutdown-rpc');
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+
+      // Start a server-streaming RPC (255 items with delays)
+      final stream = client.serverStream(255);
+      final received = <int>[];
+      final sub = stream.listen(received.add, onError: (_) {});
+
+      // Let a few items arrive
+      await Future.delayed(Duration(milliseconds: 50));
+
+      // Shutdown server while stream is active
+      await server.shutdown();
+      await sub.cancel();
+
+      // We should have received some items before shutdown killed the stream
+      expect(received, isNotEmpty);
+    });
+
+    test('client reconnects after server restart', () async {
+      var server = LocalGrpcServer('local-ipc-test-reconnect', services: [EchoService()]);
+      await server.serve();
+
+      final channel = LocalGrpcChannel(
+        'local-ipc-test-reconnect',
+        options: LocalChannelOptions(
+          backoffStrategy: (_) => Duration(milliseconds: 100),
+        ),
+      );
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+
+      // First RPC succeeds
+      expect(await client.echo(1), equals(1));
+
+      // Kill the server
+      await server.shutdown();
+
+      // Restart on the same name
+      server = LocalGrpcServer('local-ipc-test-reconnect', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      // Client should reconnect and succeed (may take a few retries)
+      int? result;
+      for (var attempt = 0; attempt < 10; attempt++) {
+        try {
+          result = await client.echo(2).timeout(Duration(seconds: 2));
+          break;
+        } on GrpcError {
+          await Future.delayed(Duration(milliseconds: 200));
+        } on TimeoutException {
+          await Future.delayed(Duration(milliseconds: 200));
+        }
+      }
+      expect(result, equals(2), reason: 'Client should reconnect after server restart');
+    });
+
+    test('connection state changes are observable', () async {
+      final server = LocalGrpcServer('local-ipc-test-states', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      final channel = LocalGrpcChannel('local-ipc-test-states');
+      addTearDown(() => channel.terminate());
+
+      final states = <ConnectionState>[];
+      final sub = channel.onConnectionStateChanged.listen(states.add);
+      addTearDown(() => sub.cancel());
+
+      // Trigger connection via RPC
+      final client = EchoClient(channel);
+      await client.echo(1);
+
+      // Should have transitioned through connecting -> ready
+      expect(states, contains(ConnectionState.ready));
+    });
+
+    test('double shutdown is idempotent', () async {
+      final server = LocalGrpcServer('local-ipc-test-double-shutdown', services: [EchoService()]);
+      await server.serve();
+
+      // Both should complete without error
+      await server.shutdown();
+      await server.shutdown();
+    });
+
+    test('invalid service name in channel throws', () {
+      expect(() => LocalGrpcChannel(''), throwsArgumentError);
+      expect(() => LocalGrpcChannel('has spaces'), throwsArgumentError);
+      expect(() => LocalGrpcChannel('has/slash'), throwsArgumentError);
+    });
+
     test('server interceptors are called', () async {
       var intercepted = false;
 
