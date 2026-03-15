@@ -1,0 +1,7 @@
+.git/
+.vs/
+.vscode/
+.cursor/
+build/
+node_modules/
+.dart_tool/
