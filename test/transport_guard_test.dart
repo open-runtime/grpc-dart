@@ -42,65 +42,91 @@ void main() {
   group('Transport sink guard under server shutdown', () {
     testTcpAndUds('server shutdown during active bidi data flow'
         ' does not crash', (address) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
 
-      final client = EchoClient(channel);
-
-      // Start 10 bidi streams, each fed by a
-      // controller so we can pump data freely.
-      final controllers = List.generate(10, (_) => StreamController<int>());
-      final futures = <Future<Object?>>[];
-      for (final ctrl in controllers) {
-        futures.add(
-          settleRpc(
-            client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
-          ),
-        );
-      }
-
-      // Pump ~20 items per stream with minimal delay
-      // so data is in-flight when we shut down.
-      for (var i = 0; i < 20; i++) {
-        for (final ctrl in controllers) {
-          if (!ctrl.isClosed) {
-            ctrl.add(i % 128);
+          // Start 10 bidi streams, each fed by a
+          // controller so we can pump data freely.
+          final controllers = List.generate(10, (_) => StreamController<int>());
+          final futures = <Future<Object?>>[];
+          for (final ctrl in controllers) {
+            futures.add(
+              settleRpc(
+                client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
+              ),
+            );
           }
+
+          // Pump ~20 items per stream with minimal delay
+          // so data is in-flight when we shut down.
+          for (var i = 0; i < 20; i++) {
+            for (final ctrl in controllers) {
+              if (!ctrl.isClosed) {
+                ctrl.add(i % 128);
+              }
+            }
+            await Future.delayed(const Duration(milliseconds: 1));
+          }
+
+          // Shut down the server while data is queued.
+          await server.shutdown();
+
+          // Close all controllers — do NOT await (see comment in
+          // "client sends data after server has initiated shutdown").
+          for (final ctrl in controllers) {
+            if (!ctrl.isClosed) {
+              ctrl.close();
+            }
+          }
+
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out waiting for streams'),
+          );
+
+          expect(
+            results.length,
+            equals(10),
+            reason: 'All 10 bidi streams must settle',
+          );
+          for (final r in results) {
+            expectHardcoreRpcSettlement(
+              r,
+              reason:
+                  'Each RPC must settle as '
+                  'success or known error type',
+            );
+          }
+
+          await channel.terminate();
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
         }
-        await Future.delayed(const Duration(milliseconds: 1));
-      }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
 
-      // Shut down the server while data is queued.
-      await server.shutdown();
-
-      // Close all controllers — do NOT await (see comment in
-      // "client sends data after server has initiated shutdown").
-      for (final ctrl in controllers) {
-        if (!ctrl.isClosed) {
-          ctrl.close();
-        }
-      }
-
-      final results = await Future.wait(futures).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out waiting for streams'),
-      );
-
-      expect(
-        results.length,
-        equals(10),
-        reason: 'All 10 bidi streams must settle',
-      );
-      for (final r in results) {
-        expectHardcoreRpcSettlement(
-          r,
+      for (final error in http2InternalErrors) {
+        expect(
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
+          ),
           reason:
-              'Each RPC must settle as '
-              'success or known error type',
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during bidi shutdown. '
+              'Got: $error',
         );
       }
     });
@@ -328,79 +354,100 @@ void main() {
 
     testTcpAndUds('client sends data after server has initiated'
         ' shutdown', (address) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
 
-      final client = EchoClient(channel);
-
-      // Start 5 bidi streams via StreamControllers.
-      final controllers = List.generate(5, (_) => StreamController<int>());
-      final futures = <Future<Object?>>[];
-      for (final ctrl in controllers) {
-        futures.add(
-          settleRpc(
-            client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
-          ),
-        );
-      }
-
-      // Send 1 item per stream and wait for it to
-      // be processed.
-      for (final ctrl in controllers) {
-        ctrl.add(1);
-      }
-      await Future.delayed(const Duration(milliseconds: 50));
-
-      // Initiate server shutdown.
-      final shutdownFuture = server.shutdown();
-
-      // Immediately pump 10 more items into each
-      // controller — data arriving at a transport
-      // that is already shutting down.
-      for (var i = 0; i < 10; i++) {
-        for (final ctrl in controllers) {
-          if (!ctrl.isClosed) {
-            ctrl.add((i + 2) % 128);
+          // Start 5 bidi streams via StreamControllers.
+          final controllers = List.generate(5, (_) => StreamController<int>());
+          final futures = <Future<Object?>>[];
+          for (final ctrl in controllers) {
+            futures.add(
+              settleRpc(
+                client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
+              ),
+            );
           }
+
+          // Send 1 item per stream and wait for it to
+          // be processed.
+          for (final ctrl in controllers) {
+            ctrl.add(1);
+          }
+          await Future.delayed(const Duration(milliseconds: 50));
+
+          // Initiate server shutdown.
+          final shutdownFuture = server.shutdown();
+
+          // Immediately pump 10 more items into each
+          // controller — data arriving at a transport
+          // that is already shutting down.
+          for (var i = 0; i < 10; i++) {
+            for (final ctrl in controllers) {
+              if (!ctrl.isClosed) {
+                ctrl.add((i + 2) % 128);
+              }
+            }
+          }
+
+          await shutdownFuture;
+
+          // Close controllers — do NOT await.
+          for (final ctrl in controllers) {
+            if (!ctrl.isClosed) {
+              ctrl.close();
+            }
+          }
+
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out waiting for streams'),
+          );
+
+          expect(
+            results.length,
+            equals(5),
+            reason:
+                'All 5 bidi streams must settle '
+                'without crash',
+          );
+          for (final r in results) {
+            expectHardcoreRpcSettlement(
+              r,
+              reason:
+                  'Each RPC must settle as '
+                  'success or known error type',
+            );
+          }
+
+          await channel.terminate();
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
         }
-      }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
 
-      await shutdownFuture;
-
-      // Close controllers — do NOT await. StreamController.close()
-      // returns a Future that completes when the done event is
-      // delivered to the subscriber. After server.shutdown(), the
-      // bidi stream subscriber may be dead/stuck, causing
-      // `await ctrl.close()` to hang indefinitely (root cause of
-      // 2-minute timeout on macOS x64).
-      for (final ctrl in controllers) {
-        if (!ctrl.isClosed) {
-          ctrl.close();
-        }
-      }
-
-      final results = await Future.wait(futures).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out waiting for streams'),
-      );
-
-      expect(
-        results.length,
-        equals(5),
-        reason:
-            'All 5 bidi streams must settle '
-            'without crash',
-      );
-      for (final r in results) {
-        expectHardcoreRpcSettlement(
-          r,
+      for (final error in http2InternalErrors) {
+        expect(
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
+          ),
           reason:
-              'Each RPC must settle as '
-              'success or known error type',
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during post-shutdown data. '
+              'Got: $error',
         );
       }
     });
@@ -413,161 +460,241 @@ void main() {
   group('Concurrent terminate races', () {
     testTcpAndUds('20 concurrent streams with interleaved server'
         ' and channel shutdown', (address) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
 
-      final client = EchoClient(channel);
+          // Start 20 server-streaming RPCs.
+          final futures = <Future<Object?>>[];
+          for (var i = 0; i < 20; i++) {
+            futures.add(
+              settleRpc(
+                client.serverStream(100).toList().then<Object?>((v) => v),
+              ),
+            );
+          }
 
-      // Start 20 server-streaming RPCs.
-      final futures = <Future<Object?>>[];
-      for (var i = 0; i < 20; i++) {
-        futures.add(
-          settleRpc(client.serverStream(100).toList().then<Object?>((v) => v)),
-        );
-      }
+          // Wait for first items on all 20.
+          await Future.delayed(const Duration(milliseconds: 100));
 
-      // Wait for first items on all 20.
-      await Future.delayed(const Duration(milliseconds: 100));
+          // Fire server.shutdown() AND channel.shutdown()
+          // simultaneously — maximum terminate pressure.
+          await Future.wait([server.shutdown(), channel.terminate()]).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out during dual shutdown'),
+          );
 
-      // Fire server.shutdown() AND channel.shutdown()
-      // simultaneously — maximum terminate pressure.
-      await Future.wait([server.shutdown(), channel.shutdown()]).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out during dual shutdown'),
-      );
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out waiting for streams'),
+          );
 
-      final results = await Future.wait(futures).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out waiting for streams'),
-      );
+          expect(
+            results.length,
+            equals(20),
+            reason:
+                'All 20 server-streaming RPCs must '
+                'settle without crashes',
+          );
+          for (final r in results) {
+            expectHardcoreRpcSettlement(
+              r,
+              reason:
+                  'Each RPC must settle as '
+                  'success or known error type',
+            );
+          }
 
-      expect(
-        results.length,
-        equals(20),
-        reason:
-            'All 20 server-streaming RPCs must '
-            'settle without crashes',
-      );
-      for (final r in results) {
-        expectHardcoreRpcSettlement(
-          r,
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
+        }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
+
+      for (final error in http2InternalErrors) {
+        expect(
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
+          ),
           reason:
-              'Each RPC must settle as '
-              'success or known error type',
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during dual shutdown. '
+              'Got: $error',
         );
       }
     });
 
     testTcpAndUds('channel.shutdown() while server is streaming'
         ' large payloads', (address) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
 
-      final client = EchoClient(channel);
+          // Each serverStreamBytes yields 50 chunks of 8 KB.
+          // Request: 8-byte big-endian [chunkCount, chunkSize].
+          final request = encodeStreamBytesRequest(50, 8192);
+          final futures = <Future<Object?>>[];
+          for (var i = 0; i < 10; i++) {
+            futures.add(
+              settleRpc(
+                client
+                    .serverStreamBytes(request)
+                    .toList()
+                    .then<Object?>((v) => v),
+              ),
+            );
+          }
 
-      // Each serverStreamBytes yields 50 chunks of 8 KB.
-      // Request: 8-byte big-endian [chunkCount, chunkSize].
-      final request = encodeStreamBytesRequest(50, 8192);
-      final futures = <Future<Object?>>[];
-      for (var i = 0; i < 10; i++) {
-        futures.add(
-          settleRpc(
-            client.serverStreamBytes(request).toList().then<Object?>((v) => v),
+          // Wait for first chunk on all 10.
+          await Future.delayed(const Duration(milliseconds: 50));
+
+          // Client-initiated teardown while the server
+          // is still yielding data into the outgoing sink.
+          await channel.terminate().timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out during channel terminate'),
+          );
+
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out waiting for streams'),
+          );
+
+          expect(
+            results.length,
+            equals(10),
+            reason:
+                'All 10 serverStreamBytes RPCs must '
+                'settle without StateError',
+          );
+          for (final r in results) {
+            expectHardcoreRpcSettlement(
+              r,
+              reason:
+                  'Each RPC must settle as '
+                  'success or known error type',
+            );
+          }
+
+          await server.shutdown();
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
+        }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
+
+      for (final error in http2InternalErrors) {
+        expect(
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
           ),
-        );
-      }
-
-      // Wait for first chunk on all 10.
-      await Future.delayed(const Duration(milliseconds: 50));
-
-      // Client-initiated teardown while the server
-      // is still yielding data into the outgoing sink.
-      await channel.shutdown().timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out during channel shutdown'),
-      );
-
-      final results = await Future.wait(futures).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out waiting for streams'),
-      );
-
-      expect(
-        results.length,
-        equals(10),
-        reason:
-            'All 10 serverStreamBytes RPCs must '
-            'settle without StateError',
-      );
-      for (final r in results) {
-        expectHardcoreRpcSettlement(
-          r,
           reason:
-              'Each RPC must settle as '
-              'success or known error type',
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during large payload shutdown. '
+              'Got: $error',
         );
       }
-
-      await server.shutdown();
     });
 
     testTcpAndUds('10 concurrent echoBytes with immediate channel'
         ' teardown', (address) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
 
-      final client = EchoClient(channel);
+          // Fire 10 echoBytes RPCs with 32 KB payloads.
+          // Do NOT await — immediately tear down.
+          final futures = <Future<Object?>>[];
+          for (var i = 0; i < 10; i++) {
+            futures.add(
+              settleRpc(
+                client.echoBytes(Uint8List(32768)).then<Object?>((v) => v),
+              ),
+            );
+          }
 
-      // Fire 10 echoBytes RPCs with 32 KB payloads.
-      // Do NOT await — immediately tear down.
-      final futures = <Future<Object?>>[];
-      for (var i = 0; i < 10; i++) {
-        futures.add(
-          settleRpc(client.echoBytes(Uint8List(32768)).then<Object?>((v) => v)),
-        );
-      }
+          // Immediately terminate the channel — RPCs may
+          // not even complete the HTTP/2 handshake.
+          await channel.terminate().timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out during channel terminate'),
+          );
 
-      // Immediately shut down the channel — RPCs may
-      // not even complete the HTTP/2 handshake.
-      await channel.shutdown().timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out during channel shutdown'),
-      );
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out waiting for RPCs'),
+          );
 
-      final results = await Future.wait(futures).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out waiting for RPCs'),
-      );
+          expect(
+            results.length,
+            equals(10),
+            reason:
+                'All 10 echoBytes RPCs must settle '
+                '(success or error), no crashes',
+          );
+          for (final r in results) {
+            expectHardcoreRpcSettlement(
+              r,
+              reason:
+                  'Each RPC must settle as '
+                  'success or known error type',
+            );
+          }
 
-      expect(
-        results.length,
-        equals(10),
-        reason:
-            'All 10 echoBytes RPCs must settle '
-            '(success or error), no crashes',
-      );
-      for (final r in results) {
-        expectHardcoreRpcSettlement(
-          r,
+          await server.shutdown();
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
+        }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
+
+      for (final error in http2InternalErrors) {
+        expect(
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
+          ),
           reason:
-              'Each RPC must settle as '
-              'success or known error type',
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during immediate teardown. '
+              'Got: $error',
         );
       }
-
-      await server.shutdown();
     });
   });
 
@@ -579,200 +706,282 @@ void main() {
     testTcpAndUds('RPC errors do not crash when sink is closing', (
       address,
     ) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
 
-      final client = EchoClient(channel);
+          // Start 10 bidi streams.
+          final controllers = List.generate(10, (_) => StreamController<int>());
+          final futures = <Future<Object?>>[];
+          for (final ctrl in controllers) {
+            futures.add(
+              settleRpc(
+                client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
+              ),
+            );
+          }
 
-      // Start 10 bidi streams.
-      final controllers = List.generate(10, (_) => StreamController<int>());
-      final futures = <Future<Object?>>[];
-      for (final ctrl in controllers) {
-        futures.add(
-          settleRpc(
-            client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
-          ),
-        );
-      }
+          // Send some data.
+          for (final ctrl in controllers) {
+            ctrl.add(1);
+            ctrl.add(2);
+          }
+          await Future.delayed(const Duration(milliseconds: 30));
 
-      // Send some data.
-      for (final ctrl in controllers) {
-        ctrl.add(1);
-        ctrl.add(2);
-      }
-      await Future.delayed(const Duration(milliseconds: 30));
+          // Push an error into each controller AND
+          // simultaneously shut down the server.
+          final shutdownFuture = server.shutdown();
+          for (final ctrl in controllers) {
+            if (!ctrl.isClosed) {
+              ctrl.addError(Exception('deliberate client error'));
+              ctrl.close().ignore();
+            }
+          }
 
-      // Push an error into each controller AND
-      // simultaneously shut down the server.
-      final shutdownFuture = server.shutdown();
-      for (final ctrl in controllers) {
-        if (!ctrl.isClosed) {
-          ctrl.addError(Exception('deliberate client error'));
-          ctrl.close().ignore();
+          await shutdownFuture;
+
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => fail('Timed out waiting for streams'),
+          );
+
+          expect(
+            results.length,
+            equals(10),
+            reason:
+                'All 10 streams must settle without '
+                'unhandled exceptions',
+          );
+          for (final r in results) {
+            expectHardcoreRpcSettlement(
+              r,
+              reason:
+                  'Each RPC must settle as '
+                  'success or known error type',
+            );
+          }
+
+          await channel.terminate();
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
         }
-      }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
 
-      await shutdownFuture;
-
-      final results = await Future.wait(futures).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Timed out waiting for streams'),
-      );
-
-      expect(
-        results.length,
-        equals(10),
-        reason:
-            'All 10 streams must settle without '
-            'unhandled exceptions',
-      );
-      for (final r in results) {
-        expectHardcoreRpcSettlement(
-          r,
+      for (final error in http2InternalErrors) {
+        expect(
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
+          ),
           reason:
-              'Each RPC must settle as '
-              'success or known error type',
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during error+shutdown. '
+              'Got: $error',
         );
       }
     });
 
     testTcpAndUds('sustained throughput then abrupt terminate'
         ' (50 streams x 50 items)', (address) async {
-      final server = Server.create(services: [EchoService()]);
-      await server.serve(address: address, port: 0);
-      addTearDown(() => server.shutdown());
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          final server = Server.create(services: [EchoService()]);
+          await server.serve(address: address, port: 0);
 
-      final channel = createTestChannel(address, server.port!);
-      addTearDown(() => channel.shutdown());
+          final channel = createTestChannel(address, server.port!);
+          final client = EchoClient(channel);
 
-      final client = EchoClient(channel);
+          // 50 bidi streams, each fed with a pacedStream
+          // of 50 items (values 0-127).
+          final items = List.generate(50, (i) => i % 128);
+          final futures = <Future<Object?>>[];
+          final firstResponses = List.generate(50, (_) => Completer<void>());
+          for (var i = 0; i < 50; i++) {
+            final idx = i;
+            final stream = pacedStream(items, yieldEvery: 1);
+            futures.add(
+              settleRpc(
+                client
+                    .bidiStream(stream)
+                    .map((value) {
+                      if (!firstResponses[idx].isCompleted) {
+                        firstResponses[idx].complete();
+                      }
+                      return value;
+                    })
+                    .toList()
+                    .then<Object?>((v) => v),
+              ),
+            );
+          }
 
-      // 50 bidi streams, each fed with a pacedStream
-      // of 50 items (values 0-127).
-      final items = List.generate(50, (i) => i % 128);
-      final futures = <Future<Object?>>[];
-      final firstResponses = List.generate(50, (_) => Completer<void>());
-      for (var i = 0; i < 50; i++) {
-        final idx = i;
-        final stream = pacedStream(items, yieldEvery: 1);
-        futures.add(
-          settleRpc(
-            client
-                .bidiStream(stream)
-                .map((value) {
-                  if (!firstResponses[idx].isCompleted) {
-                    firstResponses[idx].complete();
-                  }
-                  return value;
-                })
-                .toList()
-                .then<Object?>((v) => v),
+          await Future.wait(firstResponses.map((c) => c.future)).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => fail(
+              'All sustained-throughput streams must emit a first response '
+              'before shutdown',
+            ),
+          );
+
+          // Abrupt terminate while sustained throughput
+          // is in progress.
+          await server.shutdown();
+
+          final results = await Future.wait(futures).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => fail('Timed out waiting for streams'),
+          );
+
+          expect(
+            results.length,
+            equals(50),
+            reason: 'All 50 bidi streams must settle',
+          );
+          for (final r in results) {
+            expectHardcoreRpcSettlement(
+              r,
+              reason:
+                  'Each RPC must settle as '
+                  'success or known error type',
+            );
+          }
+
+          await channel.terminate();
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
+        }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
+
+      for (final error in http2InternalErrors) {
+        expect(
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
           ),
-        );
-      }
-
-      await Future.wait(firstResponses.map((c) => c.future)).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => fail(
-          'All sustained-throughput streams must emit a first response '
-          'before shutdown',
-        ),
-      );
-
-      // Abrupt terminate while sustained throughput
-      // is in progress.
-      await server.shutdown();
-
-      final results = await Future.wait(futures).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => fail('Timed out waiting for streams'),
-      );
-
-      expect(
-        results.length,
-        equals(50),
-        reason: 'All 50 bidi streams must settle',
-      );
-      for (final r in results) {
-        expectHardcoreRpcSettlement(
-          r,
           reason:
-              'Each RPC must settle as '
-              'success or known error type',
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during sustained throughput. '
+              'Got: $error',
         );
       }
     });
 
     testTcpAndUds('repeated connect-transfer-terminate cycles'
         ' (10 cycles)', (address) async {
-      for (var cycle = 0; cycle < 10; cycle++) {
-        final server = Server.create(services: [EchoService()]);
-        await server.serve(address: address, port: 0);
+      final http2InternalErrors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        try {
+          for (var cycle = 0; cycle < 10; cycle++) {
+            final server = Server.create(services: [EchoService()]);
+            await server.serve(address: address, port: 0);
 
-        final channel = createTestChannel(address, server.port!);
+            final channel = createTestChannel(address, server.port!);
+            final client = EchoClient(channel);
 
-        final client = EchoClient(channel);
-
-        // Start 5 bidi streams and pump 20 items
-        // into each.
-        final controllers = List.generate(5, (_) => StreamController<int>());
-        final futures = <Future<Object?>>[];
-        for (final ctrl in controllers) {
-          futures.add(
-            settleRpc(
-              client.bidiStream(ctrl.stream).toList().then<Object?>((v) => v),
-            ),
-          );
-        }
-
-        // Pump 20 items per stream.
-        for (var i = 0; i < 20; i++) {
-          for (final ctrl in controllers) {
-            if (!ctrl.isClosed) {
-              ctrl.add(i % 128);
+            // Start 5 bidi streams and pump 20 items
+            // into each.
+            final controllers =
+                List.generate(5, (_) => StreamController<int>());
+            final futures = <Future<Object?>>[];
+            for (final ctrl in controllers) {
+              futures.add(
+                settleRpc(
+                  client
+                      .bidiStream(ctrl.stream)
+                      .toList()
+                      .then<Object?>((v) => v),
+                ),
+              );
             }
+
+            // Pump 20 items per stream.
+            for (var i = 0; i < 20; i++) {
+              for (final ctrl in controllers) {
+                if (!ctrl.isClosed) {
+                  ctrl.add(i % 128);
+                }
+              }
+              if (i % 5 == 0) {
+                await Future.delayed(const Duration(milliseconds: 1));
+              }
+            }
+
+            // Shut down server while data is flowing.
+            await server.shutdown();
+
+            // Close controllers — do NOT await.
+            for (final ctrl in controllers) {
+              if (!ctrl.isClosed) {
+                ctrl.close();
+              }
+            }
+
+            final results = await Future.wait(futures).timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => fail('Timed out on cycle $cycle'),
+            );
+
+            expect(
+              results.length,
+              equals(5),
+              reason: 'Cycle $cycle: all 5 streams must settle',
+            );
+            for (final r in results) {
+              expectHardcoreRpcSettlement(
+                r,
+                reason:
+                    'Each RPC must settle as '
+                    'success or known error type',
+              );
+            }
+
+            // Clean terminate of the channel.
+            await channel.terminate();
           }
-          if (i % 5 == 0) {
-            await Future.delayed(const Duration(milliseconds: 1));
-          }
+
+          done.complete();
+        } catch (e, st) {
+          done.completeError(e, st);
         }
+      }, (error, stack) {
+        http2InternalErrors.add(error);
+      });
+      await done.future;
 
-        // Shut down server while data is flowing.
-        await server.shutdown();
-
-        // Close controllers — do NOT await (see comment in
-        // "client sends data after server has initiated shutdown").
-        for (final ctrl in controllers) {
-          if (!ctrl.isClosed) {
-            ctrl.close();
-          }
-        }
-
-        final results = await Future.wait(futures).timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => fail('Timed out on cycle $cycle'),
-        );
-
+      for (final error in http2InternalErrors) {
         expect(
-          results.length,
-          equals(5),
-          reason: 'Cycle $cycle: all 5 streams must settle',
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
+          ),
+          reason:
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during cycle teardown. '
+              'Got: $error',
         );
-        for (final r in results) {
-          expectHardcoreRpcSettlement(
-            r,
-            reason:
-                'Each RPC must settle as '
-                'success or known error type',
-          );
-        }
-
-        // Clean shutdown of the channel.
-        await channel.shutdown();
       }
     });
   });
