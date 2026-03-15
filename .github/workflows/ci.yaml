@@ -164,7 +164,50 @@ jobs:
 # --- END USER: pre-test ---
 
       - name: Test
+        if: matrix.os_family != 'windows'
         run: dart run runtime_ci_tooling:manage_cicd test
+
+      - name: Test (Windows — timeout-tolerant)
+        if: matrix.os_family == 'windows'
+        shell: bash
+        run: |
+          set +e
+          # Run tests with human-readable github reporter + JSON file reporter
+          # for machine verification. 10-minute timeout: all tests finish well
+          # within this, but the Dart VM hangs after completion due to a leaked
+          # resource in the upstream http2 package (pre-existing on main branch,
+          # not a regression from this fork's changes).
+          timeout 600 dart test --exclude-tags gcp,integration \
+            --file-reporter json:test_output.jsonl
+          EXIT_CODE=$?
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "Tests passed."
+            exit 0
+          fi
+
+          # Exit code 124 = timeout sent SIGTERM (GNU coreutils timeout on GHA bash)
+          # Exit code 137 = process killed by SIGKILL
+          if [ $EXIT_CODE -eq 124 ] || [ $EXIT_CODE -eq 137 ]; then
+            echo "::notice::Dart test process timed out (exit $EXIT_CODE). Checking if all tests passed before hang..."
+            # The JSON file reporter writes a "done" event as the last line
+            DONE_LINE=$(grep '"type":"done"' test_output.jsonl | tail -1)
+            if [ -z "$DONE_LINE" ]; then
+              echo "::error::Timed out and no done event found — tests may not have completed."
+              exit 1
+            fi
+            if echo "$DONE_LINE" | grep -q '"success":true'; then
+              echo "All tests passed. VM hung after completion (known upstream http2 issue). Treating as success."
+              exit 0
+            else
+              echo "::error::Tests completed with failures before timeout."
+              exit 1
+            fi
+          fi
+
+          # Any other exit code is a real test failure
+          echo "::error::Tests failed with exit code $EXIT_CODE."
+          exit $EXIT_CODE
 
 # --- BEGIN USER: post-test ---
 # --- END USER: post-test ---
