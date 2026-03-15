@@ -126,18 +126,18 @@ void main() {
       // RST_STREAM flush yield fix, shutdown propagation is
       // reliable. On fast machines all 50 are truncated; on
       // slower CI runners (especially Windows arm64) the server
-      // may deliver many items before shutdown propagates —
-      // arm64 CI showed as few as 2/50 truncated on very fast
-      // hardware where the server yields most items before
-      // shutdown takes effect. ANY truncation proves the
-      // mechanism works; a floor of 1 validates this without
-      // being brittle on fast hardware.
+      // may deliver many items before shutdown propagates.
+      // A floor of >=3 is used because socket-close timing alone
+      // (without RST_STREAM) can coincidentally produce 0-2
+      // truncated streams on fast hardware. >=3 is impossible
+      // from pure socket-close timing, so it actually proves
+      // RST_STREAM propagation worked.
       final truncatedCount = itemCounts.where((count) => count < 255).length;
       expect(
         truncatedCount,
-        greaterThanOrEqualTo(1),
+        greaterThanOrEqualTo(3),
         reason:
-            'At least 1 of 50 streams should be truncated by '
+            'At least 3 of 50 streams should be truncated by '
             'shutdown (got $truncatedCount truncated). '
             'Item counts: $itemCounts',
       );
@@ -329,13 +329,16 @@ void main() {
           if (handlerCount >= 20) break;
           await Future<void>.delayed(const Duration(milliseconds: 1));
         }
-        // At least 1 streaming handler must have registered for the
-        // test to exercise RST_STREAM propagation at all.
+        // At least 10 streaming handlers must have registered for
+        // the test to meaningfully exercise RST_STREAM propagation.
+        // CI data (Windows arm64) showed 10/20 handlers in 45s,
+        // so 10 in 120s is reliably achievable. With only 1 handler,
+        // the test barely exercises RST_STREAM at all.
         expect(
           handlerCount,
-          greaterThanOrEqualTo(1),
+          greaterThanOrEqualTo(10),
           reason:
-              'At least 1 streaming handler must register '
+              'At least 10 streaming handlers must register '
               'for the RST_STREAM shutdown test to be meaningful '
               '(got $handlerCount)',
         );

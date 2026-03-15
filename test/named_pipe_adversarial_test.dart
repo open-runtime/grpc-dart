@@ -707,13 +707,15 @@ void main() {
               onTimeout: () => fail('Warm-up echoes did not settle in 15s'),
             );
             // At least one channel must have connected for the test to be meaningful.
+            // If zero channels connect after server.serve() completed, that is a
+            // real bug — the server should be ready. A silent return hides failures
+            // in CI.
             final warmUpSuccesses = warmUpResults.whereType<int>().length;
             if (warmUpSuccesses == 0) {
-              // All 3 warm-ups failed — pipe server not reachable. Skip gracefully
-              // rather than producing a false negative. This is a CI-only edge case
-              // where the named pipe listener isolate hasn't spun up fast enough.
-              if (!testDone.isCompleted) testDone.complete();
-              return;
+              fail(
+                'All 3 warm-up channels failed to connect — server may not '
+                'be ready. Warm-up results: $warmUpResults',
+              );
             }
 
             // Fire 100 RPCs spread across all 3 clients, without awaiting.
