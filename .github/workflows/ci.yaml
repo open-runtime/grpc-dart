@@ -178,6 +178,7 @@ jobs:
           # resource in the upstream http2 package (pre-existing on main branch,
           # not a regression from this fork's changes).
           timeout 600 dart test --exclude-tags gcp,integration \
+            --concurrency=4 \
             --file-reporter json:test_output.jsonl
           EXIT_CODE=$?
 

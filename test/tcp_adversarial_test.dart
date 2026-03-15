@@ -1675,6 +1675,18 @@ void main() {
                 (_) => createTestChannel(address, server.port!, options: aggressiveOptions),
               );
               final clients = channels.map(EchoClient.new).toList();
+
+              // Pre-warm: establish HTTP/2 connections before the adversarial race.
+              // Without this, all 30 RPCs can fail because connections are lazy
+              // and setup under contention can exceed the keepalive timeout.
+              for (final client in clients) {
+                try {
+                  await client.echo(0);
+                } catch (_) {
+                  // Connection failure during restart warmup is expected.
+                }
+              }
+
               try {
                 const perRpcTimeout = Duration(seconds: 6);
                 final rpcFutures = <Future<Object?>>[];

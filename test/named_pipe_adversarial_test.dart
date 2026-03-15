@@ -666,95 +666,139 @@ void main() {
     testNamedPipe('server shutdown racing 100 concurrent RPCs from 3 clients', (
       pipeName,
     ) async {
-      final server = NamedPipeServer.create(services: [EchoService()]);
-      await server.serve(pipeName: pipeName);
-      addTearDown(() => server.shutdown());
+      // Wrap in runZonedGuarded to catch http2 FrameWriter StateErrors
+      // that escape via Timer.run() when server.shutdown() closes the
+      // transport while the http2 Connection still has queued DATA frames.
+      final http2InternalErrors = <Object>[];
+      final testDone = Completer<void>();
 
-      // Spin up 3 independent channels.
-      final channels = List.generate(
-        3,
-        (_) => NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        ),
-      );
-      addTearDown(() async {
-        for (final ch in channels) {
-          await ch.terminate();
-        }
-      });
-      final clients = channels.map(EchoClient.new).toList();
+      runZonedGuarded(
+        () async {
+          try {
+            final server = NamedPipeServer.create(services: [EchoService()]);
+            await server.serve(pipeName: pipeName);
+            addTearDown(() => server.shutdown());
 
-      // Warm up: ensure all 3 channels are connected.
-      // On Windows arm64 CI, pipe connection setup can be slow —
-      // wrap in settleRpc so a transient UNAVAILABLE during startup
-      // doesn't abort the test before the actual shutdown race.
-      final warmUpResults = await Future.wait([
-        settleRpc(clients[0].echo(0).then<Object?>((v) => v)),
-        settleRpc(clients[1].echo(0).then<Object?>((v) => v)),
-        settleRpc(clients[2].echo(0).then<Object?>((v) => v)),
-      ]).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => fail('Warm-up echoes did not settle in 15s'),
-      );
-      // At least one channel must have connected for the test to be meaningful.
-      final warmUpSuccesses = warmUpResults.whereType<int>().length;
-      if (warmUpSuccesses == 0) {
-        // All 3 warm-ups failed — pipe server not reachable. Skip gracefully
-        // rather than producing a false negative. This is a CI-only edge case
-        // where the named pipe listener isolate hasn't spun up fast enough.
-        return;
-      }
+            // Spin up 3 independent channels.
+            final channels = List.generate(
+              3,
+              (_) => NamedPipeClientChannel(
+                pipeName,
+                options: const NamedPipeChannelOptions(),
+              ),
+            );
+            addTearDown(() async {
+              for (final ch in channels) {
+                await ch.terminate();
+              }
+            });
+            final clients = channels.map(EchoClient.new).toList();
 
-      // Fire 100 RPCs spread across all 3 clients, without awaiting.
-      // Values are i & 0xFF to stay within single-byte echo encoding.
-      final rpcFutures = <Future<Object?>>[];
-      for (var i = 0; i < 100; i++) {
-        final client = clients[i % 3];
-        rpcFutures.add(settleRpc(client.echo(i & 0xFF)));
-      }
+            // Warm up: ensure all 3 channels are connected.
+            // On Windows arm64 CI, pipe connection setup can be slow —
+            // wrap in settleRpc so a transient UNAVAILABLE during startup
+            // doesn't abort the test before the actual shutdown race.
+            final warmUpResults = await Future.wait([
+              settleRpc(clients[0].echo(0).then<Object?>((v) => v)),
+              settleRpc(clients[1].echo(0).then<Object?>((v) => v)),
+              settleRpc(clients[2].echo(0).then<Object?>((v) => v)),
+            ]).timeout(
+              const Duration(seconds: 15),
+              onTimeout: () => fail('Warm-up echoes did not settle in 15s'),
+            );
+            // At least one channel must have connected for the test to be meaningful.
+            final warmUpSuccesses = warmUpResults.whereType<int>().length;
+            if (warmUpSuccesses == 0) {
+              // All 3 warm-ups failed — pipe server not reachable. Skip gracefully
+              // rather than producing a false negative. This is a CI-only edge case
+              // where the named pipe listener isolate hasn't spun up fast enough.
+              if (!testDone.isCompleted) testDone.complete();
+              return;
+            }
 
-      // After a tiny delay (to let some RPCs be mid-processing), shut down.
-      await Future.delayed(const Duration(milliseconds: 10));
-      await server.shutdown();
+            // Fire 100 RPCs spread across all 3 clients, without awaiting.
+            // Values are i & 0xFF to stay within single-byte echo encoding.
+            final rpcFutures = <Future<Object?>>[];
+            for (var i = 0; i < 100; i++) {
+              final client = clients[i % 3];
+              rpcFutures.add(settleRpc(client.echo(i & 0xFF)));
+            }
 
-      // All RPCs must settle — no hangs, no unhandled exceptions.
-      final settled = await Future.wait(rpcFutures).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          fail('RPCs hung after server.shutdown()');
+            // After a tiny delay (to let some RPCs be mid-processing), shut down.
+            await Future.delayed(const Duration(milliseconds: 10));
+            await server.shutdown();
+
+            // All RPCs must settle — no hangs, no unhandled exceptions.
+            final settled = await Future.wait(rpcFutures).timeout(
+              const Duration(seconds: 15),
+              onTimeout: () {
+                fail('RPCs hung after server.shutdown()');
+              },
+            );
+            // During a shutdown race, RPCs may succeed (int), fail with a gRPC
+            // transport error (UNAVAILABLE, CANCELLED), fail with a pipe-level
+            // error, or time out. All are valid outcomes. The test verifies that
+            // NO unexpected error types appear (no crashes, no unhandled
+            // exceptions, no hangs).
+            for (final result in settled) {
+              expect(
+                result,
+                anyOf(
+                  isA<int>(),
+                  isA<GrpcError>(),
+                  isA<NamedPipeException>(),
+                  isA<TimeoutException>(),
+                  isA<StateError>(),
+                ),
+                reason:
+                    'Unexpected named-pipe concurrent-shutdown settlement: $result',
+              );
+            }
+
+            for (final ch in channels) {
+              await ch.shutdown().timeout(
+                const Duration(seconds: 3),
+                onTimeout: () async {
+                  await ch.terminate().timeout(
+                    const Duration(seconds: 2),
+                    onTimeout: () =>
+                        fail('Channel terminate timed out after shutdown timeout'),
+                  );
+                },
+              );
+            }
+
+            if (!testDone.isCompleted) testDone.complete();
+          } catch (e, s) {
+            if (!testDone.isCompleted) {
+              testDone.completeError(e, s);
+            }
+          }
+        },
+        (error, stack) {
+          // Collect zone-escaping errors (http2 FrameWriter StateError).
+          http2InternalErrors.add(error);
         },
       );
-      // During a shutdown race, RPCs may succeed (int), fail with a gRPC
-      // transport error (UNAVAILABLE, CANCELLED), fail with a pipe-level
-      // error, or time out. All are valid outcomes. The test verifies that
-      // NO unexpected error types appear (no crashes, no unhandled
-      // exceptions, no hangs).
-      for (final result in settled) {
+
+      await testDone.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => fail('test timed out in guarded zone'),
+      );
+
+      // Verify any zone-escaping errors are the known http2 FrameWriter race.
+      for (final error in http2InternalErrors) {
         expect(
-          result,
-          anyOf(
-            isA<int>(),
-            isA<GrpcError>(),
-            isA<NamedPipeException>(),
-            isA<TimeoutException>(),
-            isA<StateError>(),
+          error,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot add event after closing'),
           ),
           reason:
-              'Unexpected named-pipe concurrent-shutdown settlement: $result',
-        );
-      }
-
-      for (final ch in channels) {
-        await ch.shutdown().timeout(
-          const Duration(seconds: 3),
-          onTimeout: () async {
-            await ch.terminate().timeout(
-              const Duration(seconds: 2),
-              onTimeout: () =>
-                  fail('Channel terminate timed out after shutdown timeout'),
-            );
-          },
+              'Only the known http2 FrameWriter race is expected '
+              'as an unhandled async error during concurrent shutdown. '
+              'Got: $error',
         );
       }
     });
