@@ -1,0 +1,312 @@
+// Copyright (c) 2025, Tsavo Knott, Mesh Intelligent Technologies, Inc. dba.,
+// Pieces.app. All rights reserved.
+@TestOn('vm')
+library;
+
+import 'dart:async';
+import 'dart:io';
+
+import 'package:grpc/grpc.dart';
+import 'package:test/test.dart';
+
+import 'src/echo_service.dart';
+
+void main() {
+  group('validateServiceName', () {
+    test('accepts valid names', () {
+      expect(() => validateServiceName('my-service'), returnsNormally);
+      expect(() => validateServiceName('my_service'), returnsNormally);
+      expect(() => validateServiceName('my.service'), returnsNormally);
+      expect(() => validateServiceName('MyService123'), returnsNormally);
+      expect(() => validateServiceName('a'), returnsNormally);
+      expect(() => validateServiceName('a' * 64), returnsNormally);
+    });
+
+    test('rejects empty name', () {
+      expect(() => validateServiceName(''), throwsArgumentError);
+    });
+
+    test('rejects names longer than 64 chars', () {
+      expect(() => validateServiceName('a' * 65), throwsArgumentError);
+    });
+
+    test('rejects names with invalid characters', () {
+      expect(() => validateServiceName('my/service'), throwsArgumentError);
+      expect(() => validateServiceName('my service'), throwsArgumentError);
+      expect(() => validateServiceName('my:service'), throwsArgumentError);
+      expect(() => validateServiceName(r'my\service'), throwsArgumentError);
+      expect(() => validateServiceName('my@service'), throwsArgumentError);
+    });
+  });
+
+  group('udsSocketPath', () {
+    test('produces deterministic paths', () {
+      final path1 = udsSocketPath('my-service');
+      final path2 = udsSocketPath('my-service');
+      expect(path1, equals(path2));
+    });
+
+    test('different names produce different paths', () {
+      expect(udsSocketPath('service-a'), isNot(equals(udsSocketPath('service-b'))));
+    });
+
+    test('path ends with .sock', () {
+      expect(udsSocketPath('my-service'), endsWith('.sock'));
+    });
+
+    test('path contains service name', () {
+      expect(udsSocketPath('my-service'), contains('my-service'));
+    });
+  });
+
+  group('defaultUdsDirectory', () {
+    test('returns a non-empty path', () {
+      expect(defaultUdsDirectory(), isNotEmpty);
+    });
+
+    test('path contains grpc-local', () {
+      expect(defaultUdsDirectory(), contains('grpc-local'));
+    });
+  });
+
+  group('LocalGrpcServer + LocalGrpcChannel end-to-end', () {
+    test('unary RPC round-trip', () async {
+      final server = LocalGrpcServer('local-ipc-test-unary', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      expect(server.isServing, isTrue);
+      expect(server.address, isNotNull);
+
+      final channel = LocalGrpcChannel('local-ipc-test-unary');
+      addTearDown(() => channel.shutdown());
+
+      final client = EchoClient(channel);
+      final response = await client.echo(42);
+      expect(response, equals(42));
+    });
+
+    test('server-streaming RPC', () async {
+      final server = LocalGrpcServer('local-ipc-test-stream', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      final channel = LocalGrpcChannel('local-ipc-test-stream');
+      addTearDown(() => channel.shutdown());
+
+      final client = EchoClient(channel);
+      final items = await client.serverStream(10).toList();
+      expect(items, hasLength(10));
+    });
+
+    test('bidirectional streaming RPC', () async {
+      final server = LocalGrpcServer('local-ipc-test-bidi', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      final channel = LocalGrpcChannel('local-ipc-test-bidi');
+      addTearDown(() => channel.shutdown());
+
+      final client = EchoClient(channel);
+      final controller = StreamController<int>();
+      final responseFuture = client.bidiStream(controller.stream).toList();
+
+      controller.add(1);
+      controller.add(2);
+      controller.add(3);
+      await controller.close();
+
+      final responses = await responseFuture;
+      // EchoService._bidiStream doubles each value
+      expect(responses, equals([2, 4, 6]));
+    });
+
+    test('multiple clients share one server', () async {
+      final server = LocalGrpcServer('local-ipc-test-multi', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      final channels = List.generate(5, (_) => LocalGrpcChannel('local-ipc-test-multi'));
+      addTearDown(() => Future.wait(channels.map((c) => c.shutdown())));
+
+      final clients = channels.map(EchoClient.new).toList();
+      final results = await Future.wait(clients.map((c) => c.echo(99)));
+      expect(results, everyElement(equals(99)));
+    });
+
+    test('stale socket file is cleaned up automatically', () async {
+      if (Platform.isWindows) return; // UDS only
+
+      final socketPath = udsSocketPath('local-ipc-test-stale');
+      final dir = Directory(defaultUdsDirectory());
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+
+      // Create a stale file
+      File(socketPath).writeAsStringSync('stale');
+      expect(File(socketPath).existsSync(), isTrue);
+
+      final server = LocalGrpcServer('local-ipc-test-stale', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      // Server should have replaced the stale file
+      final channel = LocalGrpcChannel('local-ipc-test-stale');
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+      expect(await client.echo(7), equals(7));
+    });
+
+    test('shutdown cleans up socket file', () async {
+      if (Platform.isWindows) return; // UDS only
+
+      final server = LocalGrpcServer('local-ipc-test-cleanup', services: [EchoService()]);
+      await server.serve();
+
+      final socketPath = server.address!;
+      expect(File(socketPath).existsSync(), isTrue);
+
+      await server.shutdown();
+      expect(File(socketPath).existsSync(), isFalse);
+    });
+
+    test('isServing reflects state', () async {
+      final server = LocalGrpcServer('local-ipc-test-state', services: [EchoService()]);
+      expect(server.isServing, isFalse);
+
+      await server.serve();
+      expect(server.isServing, isTrue);
+
+      await server.shutdown();
+      expect(server.isServing, isFalse);
+    });
+
+    test('connectionServer exposes underlying server', () async {
+      final server = LocalGrpcServer('local-ipc-test-cs', services: [EchoService()]);
+
+      expect(() => server.connectionServer, throwsStateError);
+
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      expect(server.connectionServer, isA<ConnectionServer>());
+    });
+
+    test('double serve throws', () async {
+      final server = LocalGrpcServer('local-ipc-test-double', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      expect(() => server.serve(), throwsStateError);
+    });
+
+    test('address property matches expected format', () async {
+      final server = LocalGrpcServer('local-ipc-test-addr', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      if (Platform.isWindows) {
+        expect(server.address, contains(r'\\.\pipe\'));
+      } else {
+        expect(server.address, endsWith('.sock'));
+        expect(server.address, contains('local-ipc-test-addr'));
+      }
+    });
+
+    test('channel address matches server address convention', () {
+      final channel = LocalGrpcChannel('local-ipc-test-addr-match');
+      addTearDown(() => channel.shutdown());
+
+      if (Platform.isWindows) {
+        expect(channel.address, contains(r'\\.\pipe\'));
+      } else {
+        expect(channel.address, endsWith('.sock'));
+        expect(channel.address, contains('local-ipc-test-addr-match'));
+      }
+    });
+
+    test('concurrent RPCs from multiple clients', () async {
+      final server = LocalGrpcServer('local-ipc-test-concurrent', services: [EchoService()]);
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      final channels = List.generate(3, (_) => LocalGrpcChannel('local-ipc-test-concurrent'));
+      addTearDown(() => Future.wait(channels.map((c) => c.shutdown())));
+
+      final clients = channels.map(EchoClient.new).toList();
+
+      // 30 concurrent RPCs across 3 clients
+      final futures = <Future<int>>[];
+      for (var i = 0; i < 30; i++) {
+        futures.add(clients[i % 3].echo(i));
+      }
+      final results = await Future.wait(futures);
+      for (var i = 0; i < 30; i++) {
+        expect(results[i], equals(i));
+      }
+    });
+
+    test('maxInboundMessageSize rejects oversized requests', () async {
+      final server = LocalGrpcServer(
+        'local-ipc-test-size',
+        services: [EchoService()],
+        maxInboundMessageSize: 64, // Very small
+      );
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      final channel = LocalGrpcChannel('local-ipc-test-size');
+      addTearDown(() => channel.shutdown());
+
+      final client = EchoClient(channel);
+
+      // Small message should work
+      expect(await client.echo(1), equals(1));
+
+      // 1KB payload exceeds 64-byte server limit → RESOURCE_EXHAUSTED
+      final bigPayload = List<int>.filled(1024, 0xAB);
+      try {
+        await client.echoBytes(bigPayload);
+        fail('Expected GrpcError for oversized message');
+      } on GrpcError catch (e) {
+        expect(e.code, equals(StatusCode.resourceExhausted));
+      }
+    });
+
+    test('server interceptors are called', () async {
+      var intercepted = false;
+
+      final interceptor = _TrackingInterceptor(() => intercepted = true);
+      final server = LocalGrpcServer(
+        'local-ipc-test-intercept',
+        services: [EchoService()],
+        serverInterceptors: [interceptor],
+      );
+      await server.serve();
+      addTearDown(() => server.shutdown());
+
+      final channel = LocalGrpcChannel('local-ipc-test-intercept');
+      addTearDown(() => channel.shutdown());
+
+      final client = EchoClient(channel);
+      await client.echo(1);
+
+      expect(intercepted, isTrue);
+    });
+  });
+}
+
+class _TrackingInterceptor extends ServerInterceptor {
+  final void Function() onIntercept;
+  _TrackingInterceptor(this.onIntercept);
+
+  @override
+  Stream<R> intercept<Q, R>(
+    ServiceCall call,
+    ServiceMethod<Q, R> method,
+    Stream<Q> requests,
+    ServerStreamingInvoker<Q, R> invoker,
+  ) {
+    onIntercept();
+    return invoker(call, method, requests);
+  }
+}

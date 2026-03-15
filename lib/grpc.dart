@@ -23,6 +23,7 @@ export 'src/client/client_transport_connector.dart' show ClientTransportConnecto
 export 'src/client/connection.dart' show ConnectionState;
 export 'src/client/http2_channel.dart' show ClientChannel, ClientTransportConnectorChannel;
 export 'src/client/interceptor.dart' show ClientInterceptor, ClientUnaryInvoker, ClientStreamingInvoker;
+export 'src/client/local_channel.dart' show LocalGrpcChannel, LocalChannelOptions;
 export 'src/client/method.dart' show ClientMethod;
 // Windows named pipe support — conditional to avoid pulling dart:ffi on web.
 export 'src/client/named_pipe_channel_stub.dart'
@@ -38,6 +39,7 @@ export 'src/client/transport/http2_credentials.dart'
 export 'src/generated/google/rpc/error_details.pb.dart';
 export 'src/server/call.dart' show ServiceCall;
 export 'src/server/interceptor.dart' show Interceptor, ServerInterceptor, ServerStreamingInvoker;
+export 'src/server/local_server.dart' show LocalGrpcServer;
 export 'src/server/named_pipe_server_stub.dart'
     if (dart.library.ffi) 'src/server/named_pipe_server.dart'
     show NamedPipeServer;
@@ -48,6 +50,7 @@ export 'src/server/service.dart' show ServiceMethod, Service;
 export 'src/shared/api.dart';
 export 'src/shared/codec.dart' show Codec, IdentityCodec, GzipCodec;
 export 'src/shared/codec_registry.dart';
+export 'src/shared/local_ipc.dart' show validateServiceName, udsSocketPath, defaultUdsDirectory;
 export 'src/shared/logging/logging.dart'
     show logGrpcError, grpcErrorLogger, GrpcErrorLogger, logGrpcEvent, grpcEventLogger, GrpcEventLogger, GrpcLogEvent;
 export 'src/shared/message.dart' show GrpcMessage, GrpcMetadata, GrpcData, grpcDecompressor;
