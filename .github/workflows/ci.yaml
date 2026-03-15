@@ -200,13 +200,17 @@ jobs:
             fi
             FAIL_COUNT=$(grep -c '"result":"failure"\|"result":"error"' test_output.jsonl || true)
             PASS_COUNT=$(grep -c '"result":"success"' test_output.jsonl || true)
-            echo "Test results from JSON: $PASS_COUNT passed, $FAIL_COUNT failed"
+            TOTAL=$((PASS_COUNT + FAIL_COUNT))
+            echo "Test results from JSON: $PASS_COUNT passed, $FAIL_COUNT failed, $TOTAL total"
             if [ "$FAIL_COUNT" -gt 0 ]; then
               echo "::error::$FAIL_COUNT test(s) failed before timeout."
               exit 1
             fi
-            if [ "$PASS_COUNT" -eq 0 ]; then
-              echo "::error::Timed out with no test results — tests may not have started."
+            # Completeness check: ensure a reasonable number of tests ran.
+            # The suite has 500+ tests; if fewer than 400 completed, the run
+            # was likely interrupted mid-suite, not a post-completion VM hang.
+            if [ "$PASS_COUNT" -lt 400 ]; then
+              echo "::error::Only $PASS_COUNT tests completed (expected 500+). Run may have been interrupted, not just a VM hang."
               exit 1
             fi
             echo "All $PASS_COUNT tests passed. VM hung after completion (known upstream http2 issue). Treating as success."
