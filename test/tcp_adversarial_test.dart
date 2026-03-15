@@ -1682,8 +1682,15 @@ void main() {
               for (final client in clients) {
                 try {
                   await client.echo(0);
-                } catch (_) {
-                  // Connection failure during restart warmup is expected.
+                } catch (e) {
+                  if (e is GrpcError ||
+                      e is SocketException ||
+                      e is TimeoutException ||
+                      e is StateError ||
+                      e is TransportConnectionException) {
+                    continue;
+                  }
+                  rethrow;
                 }
               }
 
