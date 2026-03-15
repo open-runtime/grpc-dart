@@ -99,6 +99,7 @@ class NamedPipeChannelOptions extends ChannelOptions {
     super.connectionTimeout,
     super.codecRegistry,
     super.keepAlive,
+    super.maxInboundMessageSize,
   }) : super(
          // Named pipes are local-only, so no TLS needed
          credentials: const ChannelCredentials.insecure(),

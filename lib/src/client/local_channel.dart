@@ -107,6 +107,7 @@ class LocalGrpcChannel implements ClientChannel {
           backoffStrategy: options.backoffStrategy,
           keepAlive: options.keepAlive,
           codecRegistry: options.codecRegistry,
+          maxInboundMessageSize: options.maxInboundMessageSize,
         ),
         channelShutdownHandler: channelShutdownHandler,
       );

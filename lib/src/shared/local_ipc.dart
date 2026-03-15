@@ -53,13 +53,15 @@ String udsSocketPath(String serviceName) => '${defaultUdsDirectory()}/$serviceNa
 /// Service names must:
 /// - Be non-empty
 /// - Contain only alphanumeric characters, hyphens, underscores, and dots
-/// - Be 64 characters or fewer (UDS path length limit)
+/// - Be 32 characters or fewer (ensures the full UDS socket path fits
+///   within the 104-byte `sun_path` limit on macOS, where `$TMPDIR` can
+///   be ~49 characters long)
 void validateServiceName(String serviceName) {
   if (serviceName.isEmpty) {
     throw ArgumentError.value(serviceName, 'serviceName', 'must not be empty');
   }
-  if (serviceName.length > 64) {
-    throw ArgumentError.value(serviceName, 'serviceName', 'must be 64 characters or fewer');
+  if (serviceName.length > 32) {
+    throw ArgumentError.value(serviceName, 'serviceName', 'must be 32 characters or fewer');
   }
   if (!RegExp(r'^[a-zA-Z0-9._-]+$').hasMatch(serviceName)) {
     throw ArgumentError.value(

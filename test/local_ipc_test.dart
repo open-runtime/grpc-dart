@@ -19,15 +19,15 @@ void main() {
       expect(() => validateServiceName('my.service'), returnsNormally);
       expect(() => validateServiceName('MyService123'), returnsNormally);
       expect(() => validateServiceName('a'), returnsNormally);
-      expect(() => validateServiceName('a' * 64), returnsNormally);
+      expect(() => validateServiceName('a' * 32), returnsNormally);
     });
 
     test('rejects empty name', () {
       expect(() => validateServiceName(''), throwsArgumentError);
     });
 
-    test('rejects names longer than 64 chars', () {
-      expect(() => validateServiceName('a' * 65), throwsArgumentError);
+    test('rejects names longer than 32 chars', () {
+      expect(() => validateServiceName('a' * 33), throwsArgumentError);
     });
 
     test('rejects names with invalid characters', () {
