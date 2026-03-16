@@ -477,7 +477,7 @@ void main() {
   // ==============================================================
 
   group('Concurrent terminate races', () {
-    testTcpAndUds('20 concurrent streams with interleaved server'
+    testTcpAndUds('20 concurrent bidi streams with interleaved server'
         ' and channel shutdown', (address) async {
       final http2InternalErrors = <Object>[];
       final done = Completer<void>();
@@ -489,27 +489,45 @@ void main() {
           final channel = createTestChannel(address, server.port!);
           final client = EchoClient(channel);
 
-          // Start 20 server-streaming RPCs.
+          // Pre-warm: establish HTTP/2 connection so RPCs dispatch
+          // immediately instead of racing against connection setup.
+          await client.echo(0);
+
+          // Open 20 bidi streams with held-open request controllers.
+          // bidiStream handlers block on `await for` — they structurally
+          // CANNOT complete until the client closes the controller or
+          // shutdown kills them. No timing dependency.
+          final controllers = <StreamController<int>>[];
+          final firstEchoCompleters = <Completer<void>>[];
           final futures = <Future<Object?>>[];
           for (var i = 0; i < 20; i++) {
-            futures.add(
-              settleRpc(
-                client.serverStream(100).toList().then<Object?>((v) => v),
-              ),
-            );
+            final controller = StreamController<int>();
+            controllers.add(controller);
+            final firstEcho = Completer<void>();
+            firstEchoCompleters.add(firstEcho);
+            final stream = client.bidiStream(controller.stream);
+            futures.add(settleRpc(
+              stream.map((item) {
+                if (!firstEcho.isCompleted) firstEcho.complete();
+                return item;
+              }).toList().then<Object?>((v) => v),
+            ));
+            controller.add(i); // Send one item to trigger echo.
           }
 
-          // Wait for all 20 server-streaming handlers to be
-          // registered, proving RPCs are actively streaming.
-          await waitForHandlers(
-            server,
-            minCount: 20,
-            timeout: const Duration(seconds: 10),
-            reason: 'Expected 20 server-streaming handlers before dual shutdown',
+          // Prove ALL 20 handlers are alive: each echoed back one item.
+          // This is a structural guarantee, not a timing guess.
+          await Future.wait(firstEchoCompleters.map((c) => c.future)).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => fail(
+              'Not all 20 bidi streams echoed within 10s — '
+              'some RPCs may not have reached the server',
+            ),
           );
 
-          // Fire server.shutdown() AND channel.shutdown()
-          // simultaneously — maximum terminate pressure.
+          // All 20 handlers are structurally held open (blocked on
+          // request streams). Fire dual shutdown — maximum terminate
+          // pressure on 20 simultaneously-active handlers.
           await Future.wait([server.shutdown(), channel.terminate()]).timeout(
             const Duration(seconds: 15),
             onTimeout: () => fail('Timed out during dual shutdown'),
@@ -523,16 +541,12 @@ void main() {
           expect(
             results.length,
             equals(20),
-            reason:
-                'All 20 server-streaming RPCs must '
-                'settle without crashes',
+            reason: 'All 20 bidi RPCs must settle without crashes',
           );
           for (final r in results) {
             expectHardcoreRpcSettlement(
               r,
-              reason:
-                  'Each RPC must settle as '
-                  'success or known error type',
+              reason: 'Each RPC must settle as success or known error type',
             );
           }
 
