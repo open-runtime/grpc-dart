@@ -47,7 +47,11 @@ class GrpcHttpDecoder extends Converter<StreamMessage, GrpcMessage> {
   /// `null` preserves the historical unlimited behavior.
   final int? maxInboundMessageSize;
 
-  GrpcHttpDecoder({this.forResponse = false, this.maxInboundMessageSize});
+  GrpcHttpDecoder({this.forResponse = false, this.maxInboundMessageSize})
+    : assert(
+        maxInboundMessageSize == null || maxInboundMessageSize > 0,
+        'maxInboundMessageSize must be positive or null',
+      );
 
   @override
   GrpcMessage convert(StreamMessage input) {

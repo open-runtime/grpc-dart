@@ -392,9 +392,9 @@ void main() {
         rpcFutures.add(settleRpc(client.echo(i % 256)));
       }
 
-      // After a tiny delay (to let some RPCs be mid-processing on
-      // the server), shut down.
-      await Future.delayed(const Duration(milliseconds: 10));
+      // Shutdown immediately — the race between RPC dispatch and server
+      // shutdown IS the point of this test. Unary echo RPCs complete in
+      // microseconds so they won't appear as persistent handlers.
       await server.shutdown();
 
       // All RPCs must settle.
@@ -808,8 +808,10 @@ void main() {
       }
       await bidiController.close();
 
-      // Give RPCs a moment to make progress, then kill the server.
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // Shutdown immediately — the race between RPC dispatch and
+      // server shutdown IS the point of this test. Unary and
+      // closed-bidi RPCs complete in microseconds so they won't
+      // appear as persistent handlers; we cannot use waitForHandlers.
       await server.shutdown();
 
       // Each RPC should either complete successfully or fail with an expected

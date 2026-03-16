@@ -154,6 +154,10 @@ void main() {
           final channel = createTestChannel(address, server.port!);
           final client = EchoClient(channel);
 
+          // Pre-warm: establish the HTTP/2 connection so
+          // subsequent RPCs are dispatched immediately.
+          await client.echo(0);
+
           // 64 KB payloads exceed the HTTP/2 default flow
           // control window (65535 bytes) so they will be
           // queued in the outgoing pipeline.
@@ -165,8 +169,12 @@ void main() {
             );
           }
 
-          // Give the RPCs a moment to start transmitting.
-          await Future.delayed(const Duration(milliseconds: 20));
+          // Yield to the event loop so the queued RPC
+          // request frames are sent over the pre-warmed
+          // connection. echoBytes handlers complete instantly
+          // (unary RPC) so waitForHandlers cannot observe them;
+          // the pre-warm + yield guarantees data is in-flight.
+          await Future.delayed(Duration.zero);
 
           // Shut down the server while large payloads
           // are in the outgoing buffer.
@@ -275,8 +283,14 @@ void main() {
             }());
           }
 
-          // Wait for first response on all 10 streams.
-          await Future.delayed(const Duration(milliseconds: 50));
+          // Wait for all 10 bidiStreamBytes handlers to be
+          // registered, proving streams have started processing.
+          await waitForHandlers(
+            server,
+            minCount: 10,
+            timeout: const Duration(seconds: 10),
+            reason: 'Expected 10 bidiStreamBytes handlers before shutdown',
+          );
 
           // Shut down while 32 KB chunks are in flight.
           await server.shutdown();
@@ -375,12 +389,17 @@ void main() {
             );
           }
 
-          // Send 1 item per stream and wait for it to
-          // be processed.
+          // Send 1 item per stream and wait for handlers
+          // to be registered (proves data has been received).
           for (final ctrl in controllers) {
             ctrl.add(1);
           }
-          await Future.delayed(const Duration(milliseconds: 50));
+          await waitForHandlers(
+            server,
+            minCount: 5,
+            timeout: const Duration(seconds: 10),
+            reason: 'Expected 5 bidi handlers before shutdown',
+          );
 
           // Initiate server shutdown.
           final shutdownFuture = server.shutdown();
@@ -480,8 +499,14 @@ void main() {
             );
           }
 
-          // Wait for first items on all 20.
-          await Future.delayed(const Duration(milliseconds: 100));
+          // Wait for all 20 server-streaming handlers to be
+          // registered, proving RPCs are actively streaming.
+          await waitForHandlers(
+            server,
+            minCount: 20,
+            timeout: const Duration(seconds: 10),
+            reason: 'Expected 20 server-streaming handlers before dual shutdown',
+          );
 
           // Fire server.shutdown() AND channel.shutdown()
           // simultaneously — maximum terminate pressure.
@@ -548,6 +573,10 @@ void main() {
           final channel = createTestChannel(address, server.port!);
           final client = EchoClient(channel);
 
+          // Pre-warm: establish the HTTP/2 connection so
+          // subsequent RPCs are dispatched immediately.
+          await client.echo(0);
+
           // Each serverStreamBytes yields 50 chunks of 8 KB.
           // Request: 8-byte big-endian [chunkCount, chunkSize].
           final request = encodeStreamBytesRequest(50, 8192);
@@ -563,8 +592,12 @@ void main() {
             );
           }
 
-          // Wait for first chunk on all 10.
-          await Future.delayed(const Duration(milliseconds: 50));
+          // Yield to the event loop so the queued RPC requests
+          // are sent over the pre-warmed connection. The handler
+          // yields all 50 chunks synchronously (yieldEvery=200),
+          // but 400KB of response data is buffered in the HTTP/2
+          // transport pipeline behind flow control windows.
+          await Future.delayed(Duration.zero);
 
           // Client-initiated teardown while the server
           // is still yielding data into the outgoing sink.
@@ -727,12 +760,18 @@ void main() {
             );
           }
 
-          // Send some data.
+          // Send some data and wait for handlers to confirm
+          // the server is processing each stream.
           for (final ctrl in controllers) {
             ctrl.add(1);
             ctrl.add(2);
           }
-          await Future.delayed(const Duration(milliseconds: 30));
+          await waitForHandlers(
+            server,
+            minCount: 10,
+            timeout: const Duration(seconds: 10),
+            reason: 'Expected 10 bidi handlers before error+shutdown',
+          );
 
           // Push an error into each controller AND
           // simultaneously shut down the server.

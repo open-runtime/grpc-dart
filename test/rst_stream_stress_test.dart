@@ -407,14 +407,23 @@ void main() {
         }
       });
 
+      final firstItemCompleters = List.generate(10, (_) => Completer<void>());
+
       for (var i = 0; i < 10; i++) {
         final idx = i;
         final stream = client.bidiStream(controllers[idx].stream);
         stream.listen(
-          (_) {},
+          (_) {
+            if (!firstItemCompleters[idx].isCompleted) {
+              firstItemCompleters[idx].complete();
+            }
+          },
           onError: (Object e) {
             if (e is! GrpcError) {
               errors.add(e);
+            }
+            if (!firstItemCompleters[idx].isCompleted) {
+              firstItemCompleters[idx].complete();
             }
             if (!doneCompleters[idx].isCompleted) {
               doneCompleters[idx].complete();
@@ -439,21 +448,28 @@ void main() {
         );
       }
 
-      // Let data flow for 100ms, then begin shutdown.
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      // Wait for first response on all 10 streams — proves data
+      // is flowing bidirectionally before we begin shutdown.
+      await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail(
+          'Timed out waiting for first items on all '
+          '10 sustained-flow bidi streams',
+        ),
+      );
 
-      // Start shutdown while pumps are active, keep pressure briefly during
-      // teardown, then stop pumps to avoid self-sustaining event-loop load.
+      // Start shutdown while pumps are active. Cancel timers after
+      // shutdown completes to maintain data pressure during teardown.
       final shutdownFuture = server.shutdown();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      for (final t in timers) {
-        t.cancel();
-      }
       await shutdownFuture.timeout(
         const Duration(seconds: 10),
         onTimeout: () =>
             fail('server.shutdown() did not complete within 10 seconds'),
       );
+      // Stop pumps now that shutdown has completed.
+      for (final t in timers) {
+        t.cancel();
+      }
 
       // All 10 streams must settle within 10s.
       await Future.wait(doneCompleters.map((c) => c.future)).timeout(

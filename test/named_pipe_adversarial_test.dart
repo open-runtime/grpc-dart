@@ -358,7 +358,16 @@ void main() {
           for (final ch in channels) {
             await ch.terminate().timeout(
               const Duration(seconds: 2),
-              onTimeout: () async {},
+              onTimeout: () async {
+                // Channel terminate hung for 2s — safety-net teardown
+                // cannot block indefinitely. The channel will be GC'd.
+                // Log for CI visibility (Rule 4: never treat timeout as
+                // success).
+                print(
+                  'WARNING: channel.terminate() timed out during '
+                  'addTearDown — channel will be GC\'d',
+                );
+              },
             );
           }
         });
@@ -834,10 +843,33 @@ void main() {
         // Request 255 items (~255ms of streaming). 255 is the maximum
         // valid single-byte value — the EchoClient serializer encodes
         // int as `[value]`, so values >255 are truncated via & 0xFF.
-        final streamFuture = settleRpc(client1.serverStream(255).toList());
+        //
+        // Use a first-item Completer as a concrete readiness barrier
+        // instead of an arbitrary delay (Rule 1: never use arbitrary
+        // Future.delayed as synchronization).
+        final firstItemReceived = Completer<void>();
+        final responseStream = client1.serverStream(255);
+        final streamFuture = settleRpc(
+          responseStream
+              .map((item) {
+                if (!firstItemReceived.isCompleted) {
+                  firstItemReceived.complete();
+                }
+                return item;
+              })
+              .toList(),
+        );
 
-        // Let some items flow.
-        await Future.delayed(const Duration(milliseconds: 50));
+        // Wait for the server to actually start streaming (first item
+        // arrives), proving the server is actively yielding. Timeout
+        // guards against a connect failure that prevents any data.
+        await firstItemReceived.future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => fail(
+            'Server stream did not emit first item within 5s — '
+            'connection may have failed before streaming started',
+          ),
+        );
 
         // Kill the client channel while the server is actively streaming.
         await channel1.shutdown();
@@ -904,12 +936,24 @@ void main() {
         for (final ch in channels) {
           try {
             await ch.terminate();
-          } catch (_) {}
+          } on GrpcError {
+            // Channel already dead — expected during teardown.
+          } on StateError {
+            // Channel already shut down — expected during teardown.
+          } on NamedPipeException {
+            // Pipe handle already closed — expected during teardown.
+          }
         }
         for (final s in servers) {
           try {
             await s.shutdown();
-          } catch (_) {}
+          } on GrpcError {
+            // Server already dead — expected during teardown.
+          } on StateError {
+            // Server already shut down — expected during teardown.
+          } on NamedPipeException {
+            // Pipe handle already closed — expected during teardown.
+          }
         }
       });
 
@@ -1777,7 +1821,13 @@ void main() {
           for (final ch in cycleChannels) {
             try {
               await ch.terminate();
-            } catch (_) {}
+            } on GrpcError {
+              // Channel already dead — expected during teardown.
+            } on StateError {
+              // Channel already shut down — expected during teardown.
+            } on NamedPipeException {
+              // Pipe handle already closed — expected during teardown.
+            }
           }
         });
         for (var cycle = 0; cycle < 12; cycle++) {
@@ -1885,7 +1935,13 @@ void main() {
           for (final ch in channels) {
             try {
               await ch.terminate();
-            } catch (_) {}
+            } on GrpcError {
+              // Channel already dead — expected during teardown.
+            } on StateError {
+              // Channel already shut down — expected during teardown.
+            } on NamedPipeException {
+              // Pipe handle already closed — expected during teardown.
+            }
           }
         });
         for (var i = 0; i < 5; i++) {
