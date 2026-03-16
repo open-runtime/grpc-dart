@@ -96,8 +96,15 @@ class ServerHandler extends ServiceCall {
   }
 
   set isCanceled(bool value) {
-    if (!isCanceled) {
-      _isCanceledCompleter.complete();
+    if (value) {
+      if (!_isCanceledCompleter.isCompleted) {
+        _isCanceledCompleter.complete();
+        _markTerminated();
+      }
+    } else {
+      // Non-cancellation error (e.g. RESOURCE_EXHAUSTED): the handler
+      // lifecycle is over but this is NOT a client cancellation. Only
+      // mark terminated so ConnectionServer can clean up the handler.
       _markTerminated();
     }
   }

@@ -106,11 +106,18 @@ class Http2ClientConnection implements connection.ClientConnection {
           _abandonConnection();
         }
       },
-      onError: (_) {
+      onError: (e) {
         // socket.done can complete with an error (e.g. broken pipe,
         // connection reset). Without this handler the error is unhandled
         // and the connection becomes a zombie — never abandoned, never
         // reconnected. Treat error-completion the same as normal closure.
+        logGrpcEvent(
+          '[gRPC] socket.done completed with error: $e',
+          component: 'Http2ClientConnection',
+          event: 'socket_done_error',
+          context: 'connectTransport',
+          error: e,
+        );
         if (generation == _connectionGeneration) {
           _abandonConnection();
         }
@@ -375,9 +382,16 @@ class Http2ClientConnection implements connection.ClientConnection {
     _setShutdownState();
     try {
       await _transportConnection?.finish().timeout(const Duration(seconds: 5));
-    } catch (_) {
+    } catch (e) {
       // finish() hung or failed — _disconnect() will terminate the orphaned
       // HTTP/2 Connection to release its internal resources.
+      logGrpcEvent(
+        '[gRPC] finish() failed during shutdown: $e',
+        component: 'Http2ClientConnection',
+        event: 'finish_transport',
+        context: 'shutdown',
+        error: e,
+      );
     }
     _disconnect();
     // Release the underlying OS resource (e.g. Win32 pipe handle, socket).
@@ -392,9 +406,16 @@ class Http2ClientConnection implements connection.ClientConnection {
     _setShutdownState();
     try {
       await _transportConnection?.terminate().timeout(const Duration(seconds: 5));
-    } catch (_) {
+    } catch (e) {
       // terminate() hung or failed — _disconnect() will try again to release
       // the HTTP/2 Connection's internal resources.
+      logGrpcEvent(
+        '[gRPC] terminate() failed during terminate: $e',
+        component: 'Http2ClientConnection',
+        event: 'terminate_transport',
+        context: 'terminate',
+        error: e,
+      );
     }
     _disconnect();
     // Release the underlying OS resource (e.g. Win32 pipe handle, socket).
@@ -494,10 +515,27 @@ class Http2ClientConnection implements connection.ClientConnection {
     // the channel is eventually terminated.
     if (_state == ConnectionState.shutdown && conn != null) {
       try {
-        unawaited(conn.terminate().catchError((_) {}));
-      } catch (_) {
+        unawaited(
+          conn.terminate().catchError((e) {
+            logGrpcEvent(
+              '[gRPC] Orphaned connection terminate failed: $e',
+              component: 'Http2ClientConnection',
+              event: 'terminate_transport',
+              context: '_disconnect',
+              error: e,
+            );
+          }),
+        );
+      } catch (e) {
         // Connection.terminate() may throw synchronously if the internal frame
         // writer is already closed (e.g. "Cannot add event after closing").
+        logGrpcEvent(
+          '[gRPC] Orphaned connection terminate threw synchronously: $e',
+          component: 'Http2ClientConnection',
+          event: 'terminate_transport_sync',
+          context: '_disconnect',
+          error: e,
+        );
       }
     }
     _frameReceivedSubscription?.cancel();

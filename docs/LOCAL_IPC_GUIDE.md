@@ -161,6 +161,10 @@ final pipeName = 'myapp-plugin-${pid}';
 final socketPath = '/tmp/myapp-plugin-${pid}.sock';
 ```
 
+**Service name limit**: Service names must be 32 characters or fewer
+(alphanumeric, hyphens, underscores, dots). This limit ensures the full UDS
+socket path fits within the macOS 104-byte `sun_path` limit.
+
 ---
 
 ## Channel Options for Local IPC

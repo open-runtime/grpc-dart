@@ -317,9 +317,15 @@ class ConnectionServer {
       await Future.wait(cancelSubFutures).timeout(
         _incomingSubscriptionCancelTimeout,
         onTimeout: () {
+          // Rule 4 exception (Rule 10): Shutdown MUST proceed even on
+          // timeout — hanging here would block the entire server shutdown
+          // sequence. The timeout is logged loudly to stderr so operators
+          // can investigate the underlying cause (e.g. event loop
+          // saturation, blocked subscription cancel callback).
           logGrpcEvent(
-            '[gRPC] incoming subscription cancel timeout after '
-            '${_incomingSubscriptionCancelTimeout.inSeconds}s',
+            '[gRPC] WARNING: incoming subscription cancel timeout after '
+            '${_incomingSubscriptionCancelTimeout.inSeconds}s — '
+            'proceeding with shutdown despite incomplete cancellation',
             component: 'ConnectionServer',
             event: 'subscription_cancel_timeout',
             context: 'shutdownActiveConnections',
@@ -362,10 +368,17 @@ class ConnectionServer {
     await Future.wait(cancelFutures).timeout(
       _responseCancelTimeout,
       onTimeout: () {
+        // Rule 4 exception (Rule 10): Shutdown MUST proceed even on
+        // timeout — hanging here would prevent connection.finish() from
+        // ever running, leaving sockets open indefinitely. The timeout
+        // is logged loudly to stderr so operators can investigate the
+        // underlying cause (e.g. async* generator stuck yielding,
+        // event loop saturation preventing cancel propagation).
         logGrpcEvent(
-          '[gRPC] handler.onResponseCancelDone timeout after '
+          '[gRPC] WARNING: handler.onResponseCancelDone timeout after '
           '${_responseCancelTimeout.inSeconds}s '
-          '(event loop saturated?)',
+          '(event loop saturated?) — '
+          'proceeding with shutdown despite incomplete cancellation',
           component: 'ConnectionServer',
           event: 'response_cancel_timeout',
           context: 'shutdownActiveConnections',

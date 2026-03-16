@@ -51,20 +51,14 @@ void main() {
       permitWithoutCalls: true,
     );
 
-    server = Server.create(
-      services: [FakeEchoService()],
-      keepAliveOptions: serverOptions,
-    );
+    server = Server.create(services: [FakeEchoService()], keepAliveOptions: serverOptions);
     await server.serve(address: 'localhost', port: 0);
     addTearDown(() => server.shutdown());
 
     fakeChannel = FakeClientChannel(
       'localhost',
       port: server.port!,
-      options: ChannelOptions(
-        credentials: ChannelCredentials.insecure(),
-        keepAlive: clientOptions,
-      ),
+      options: ChannelOptions(credentials: ChannelCredentials.insecure(), keepAlive: clientOptions),
     );
     addTearDown(() => fakeChannel.shutdown());
     fakeClient = EchoServiceClient(fakeChannel);
@@ -72,83 +66,81 @@ void main() {
     unresponsiveChannel = UnresponsiveClientChannel(
       'localhost',
       port: server.port!,
-      options: ChannelOptions(
-        credentials: ChannelCredentials.insecure(),
-        keepAlive: clientOptions,
-      ),
+      options: ChannelOptions(credentials: ChannelCredentials.insecure(), keepAlive: clientOptions),
     );
     addTearDown(() => unresponsiveChannel.shutdown());
     unresponsiveClient = EchoServiceClient(unresponsiveChannel);
   });
 
-  test(
-    'Server terminates connection after too many pings without data',
-    () async {
+  test('Server terminates connection after too many pings without data', () async {
+    await fakeClient.echo(EchoRequest());
+
+    // Wait for the server to kill connection 1 via GOAWAY
+    // (ENHANCE_YOUR_CALM). The client pings every 10ms, the server's
+    // minInterval is 500ms, so every ping is "bad". After >5 bad pings
+    // the server closes the connection, which triggers
+    // _abandonConnection() → state transitions to idle (no pending
+    // calls). Use the channel's onConnectionStateChanged stream as the
+    // readiness signal instead of an arbitrary sleep.
+    await fakeChannel.onConnectionStateChanged
+        .firstWhere((state) => state == ConnectionState.idle)
+        .timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            fail(
+              'Timed out waiting for server to kill connection via GOAWAY. '
+              'newConnectionCounter=${fakeChannel.newConnectionCounter}',
+            );
+          },
+        );
+
+    // Connection 1 is dead. The next RPC triggers connectTransport()
+    // which increments newConnectionCounter to 2.
+    // GOAWAY may still be mid-propagation; only GrpcError.unavailable
+    // is expected during the transition.
+    try {
       await fakeClient.echo(EchoRequest());
-      // Config-derived wait: client pings every 10ms, server needs >5 bad
-      // pings to close (10ms < 500ms minInterval ⇒ every ping is bad).
-      // Ideal: 6 pings × 10ms = 60ms + GOAWAY propagation ≈ 100ms.
-      // Under CI contention (concurrency=4), Dart timer resolution
-      // degrades 2–4×. Use 1000ms for comfortable headroom.
-      await Future.delayed(const Duration(milliseconds: 1000));
-      // The GOAWAY (ENHANCE_YOUR_CALM) may still be mid-propagation on
-      // slow runners. If the echo hits the dying connection, catch the
-      // transport error and retry on the freshly opened connection.
-      try {
-        await fakeClient.echo(EchoRequest());
-      } catch (_) {
-        // GOAWAY is being processed — wait for the channel to detect
-        // the dead connection and reconnect on the next attempt.
-        await Future.delayed(const Duration(milliseconds: 500));
-        await fakeClient.echo(EchoRequest());
-      }
-      // Soft: server closed connection 1 via GOAWAY, forcing a
-      // reconnect. 2 is the structural minimum (original +
-      // reconnect); GOAWAY propagation timing may cause an
-      // extra reconnect on slow CI.
-      expect(fakeChannel.newConnectionCounter, greaterThanOrEqualTo(2));
-    },
-  );
+    } on GrpcError catch (e) {
+      if (e.code != StatusCode.unavailable) rethrow;
+      // Channel detected the dead connection — retry on the new one.
+      await fakeClient.echo(EchoRequest());
+    }
 
-  test(
-    'Server doesnt terminate connection after pings, as data is sent',
-    () async {
-      for (var i = 0; i < 10; i++) {
-        await fakeClient.echo(EchoRequest());
-        await Future.delayed(timeout * 0.2);
-      }
+    // The client pings aggressively (10ms) on every connection, so the
+    // server will also kill subsequent connections. The structural
+    // minimum is 2 (original + first reconnect), but additional
+    // reconnects are expected behavior, not flakiness.
+    expect(fakeChannel.newConnectionCounter, greaterThanOrEqualTo(2));
+  });
 
-      // Check that the server never closed the connection
-      expect(fakeChannel.newConnectionCounter, 1);
-    },
-  );
+  test('Server doesnt terminate connection after pings, as data is sent', () async {
+    for (var i = 0; i < 10; i++) {
+      await fakeClient.echo(EchoRequest());
+      await Future.delayed(timeout * 0.2);
+    }
 
-  test(
-    'Server doesnt ack the ping, making the client shutdown the transport',
-    () async {
-      //Send a first request, get a connection
-      await unresponsiveClient.echo(EchoRequest());
-      expect(unresponsiveChannel.newConnectionCounter, 1);
+    // Check that the server never closed the connection
+    expect(fakeChannel.newConnectionCounter, 1);
+  });
 
-      // Config-derived wait: client ping timeout fires after ~timeout.
-      await Future.delayed(timeout * 2);
+  test('Server doesnt ack the ping, making the client shutdown the transport', () async {
+    //Send a first request, get a connection
+    await unresponsiveClient.echo(EchoRequest());
+    expect(unresponsiveChannel.newConnectionCounter, 1);
 
-      //A second request gets a new connection
-      await unresponsiveClient.echo(EchoRequest());
-      expect(unresponsiveChannel.newConnectionCounter, 2);
-    },
-  );
+    // Config-derived wait: client ping timeout fires after ~timeout.
+    await Future.delayed(timeout * 2);
+
+    //A second request gets a new connection
+    await unresponsiveClient.echo(EchoRequest());
+    expect(unresponsiveChannel.newConnectionCounter, 2);
+  });
 }
 
 /// A wrapper around a [FakeHttp2ClientConnection]
 class FakeClientChannel extends ClientChannel {
   FakeHttp2ClientConnection? fakeHttp2ClientConnection;
-  FakeClientChannel(
-    super.host, {
-    super.port,
-    super.options = const ChannelOptions(),
-    super.channelShutdownHandler,
-  });
+  FakeClientChannel(super.host, {super.port, super.options = const ChannelOptions(), super.channelShutdownHandler});
 
   @override
   ClientConnection createConnection() {
@@ -156,8 +148,7 @@ class FakeClientChannel extends ClientChannel {
     return fakeHttp2ClientConnection!;
   }
 
-  int get newConnectionCounter =>
-      fakeHttp2ClientConnection?.newConnectionCounter ?? 0;
+  int get newConnectionCounter => fakeHttp2ClientConnection?.newConnectionCounter ?? 0;
 }
 
 /// A [Http2ClientConnection] exposing a counter for new connections
@@ -184,11 +175,7 @@ class UnresponsiveClientChannel extends FakeClientChannel {
 
   @override
   ClientConnection createConnection() {
-    fakeHttp2ClientConnection = UnresponsiveHttp2ClientConnection(
-      host,
-      port,
-      options,
-    );
+    fakeHttp2ClientConnection = UnresponsiveHttp2ClientConnection(host, port, options);
     return fakeHttp2ClientConnection!;
   }
 }
@@ -209,11 +196,7 @@ class UnresponsiveHttp2ClientConnection extends FakeHttp2ClientConnection {
 }
 
 class FakeClientKeepAlive extends ClientKeepAlive {
-  FakeClientKeepAlive({
-    required super.options,
-    required super.ping,
-    required super.onPingTimeout,
-  });
+  FakeClientKeepAlive({required super.options, required super.ping, required super.onPingTimeout});
 
   @override
   void onFrameReceived() {
@@ -223,12 +206,9 @@ class FakeClientKeepAlive extends ClientKeepAlive {
 
 class FakeEchoService extends EchoServiceBase {
   @override
-  Future<EchoResponse> echo(ServiceCall call, EchoRequest request) async =>
-      EchoResponse(message: 'Echo messsage');
+  Future<EchoResponse> echo(ServiceCall call, EchoRequest request) async => EchoResponse(message: 'Echo messsage');
 
   @override
-  Stream<ServerStreamingEchoResponse> serverStreamingEcho(
-    ServiceCall call,
-    ServerStreamingEchoRequest request,
-  ) => throw UnsupportedError('Not used in this test');
+  Stream<ServerStreamingEchoResponse> serverStreamingEcho(ServiceCall call, ServerStreamingEchoRequest request) =>
+      throw UnsupportedError('Not used in this test');
 }

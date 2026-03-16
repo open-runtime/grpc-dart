@@ -68,7 +68,7 @@ class LocalGrpcServer {
   /// Creates a local gRPC server.
   ///
   /// [serviceName] must contain only `[a-zA-Z0-9._-]` and be at most
-  /// 64 characters.
+  /// 32 characters.
   LocalGrpcServer(
     this.serviceName, {
     required List<Service> services,
