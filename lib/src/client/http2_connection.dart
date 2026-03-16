@@ -18,7 +18,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:http2/transport.dart';
+import '../http2/transport.dart';
 
 import '../shared/codec.dart';
 import '../shared/logging/logging.dart' show logGrpcEvent;

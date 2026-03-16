@@ -16,7 +16,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:http2/transport.dart';
+import '../http2/transport.dart';
 
 import '../shared/codec.dart';
 import '../shared/codec_registry.dart';

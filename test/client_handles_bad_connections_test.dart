@@ -22,7 +22,7 @@ import 'package:grpc/grpc.dart' as grpc;
 import 'package:grpc/src/client/channel.dart';
 import 'package:grpc/src/client/connection.dart';
 import 'package:grpc/src/client/http2_connection.dart';
-import 'package:http2/http2.dart';
+import 'package:grpc/src/http2/http2.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';

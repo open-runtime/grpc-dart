@@ -17,7 +17,7 @@
 // The real implementation is in named_pipe_transport.dart.
 import 'dart:async';
 
-import 'package:http2/transport.dart';
+import '../http2/transport.dart';
 
 import 'client_transport_connector.dart';
 

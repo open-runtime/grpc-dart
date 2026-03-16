@@ -34,7 +34,7 @@ import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
 import 'package:grpc/src/client/channel.dart' show ClientChannelBase;
-import 'package:http2/transport.dart' show ErrorCode, TransportConnectionException;
+import 'package:grpc/src/http2/transport.dart' show ErrorCode, TransportConnectionException;
 import 'package:test/test.dart';
 
 import 'common.dart';

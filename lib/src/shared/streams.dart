@@ -17,7 +17,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:http2/transport.dart';
+import '../http2/transport.dart';
 
 import 'message.dart';
 import 'status.dart';

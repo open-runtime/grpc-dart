@@ -16,7 +16,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:http2/transport.dart';
+import 'package:grpc/src/http2/transport.dart';
 
 void main() async {
   final server = await ServerSocket.bind(InternetAddress.anyIPv4, 5678);

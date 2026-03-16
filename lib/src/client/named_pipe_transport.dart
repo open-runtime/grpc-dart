@@ -18,7 +18,7 @@ import 'dart:ffi';
 import 'dart:io' show Platform;
 
 import 'package:ffi/ffi.dart';
-import 'package:http2/transport.dart';
+import '../http2/transport.dart';
 import 'package:win32/win32.dart';
 
 import '../shared/logging/logging.dart' show logGrpcEvent;

@@ -57,3 +57,6 @@ export 'src/shared/message.dart' show GrpcMessage, GrpcMetadata, GrpcData, grpcD
 export 'src/shared/security.dart' show supportedAlpnProtocols, createSecurityContext;
 export 'src/shared/streams.dart' show GrpcHttpEncoder, GrpcHttpDecoder;
 export 'src/shared/timeout.dart' show toTimeoutString, fromTimeoutString;
+
+// Vendored http2 transport types (previously from package:http2)
+export 'src/http2/transport.dart';

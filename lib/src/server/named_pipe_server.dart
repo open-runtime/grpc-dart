@@ -19,7 +19,7 @@ import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
-import 'package:http2/transport.dart';
+import '../http2/transport.dart';
 import 'package:meta/meta.dart';
 import 'package:win32/win32.dart';
 

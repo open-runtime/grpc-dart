@@ -29,7 +29,7 @@ library;
 import 'dart:async';
 
 import 'package:grpc/grpc.dart';
-import 'package:http2/transport.dart';
+import 'package:grpc/src/http2/transport.dart';
 import 'package:mockito/mockito.dart';
 import 'package:test/test.dart';
 

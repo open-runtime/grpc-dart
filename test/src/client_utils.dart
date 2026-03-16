@@ -20,7 +20,7 @@ import 'package:grpc/grpc.dart';
 import 'package:grpc/src/client/channel.dart' as base;
 import 'package:grpc/src/client/http2_connection.dart';
 import 'package:grpc/src/shared/message.dart';
-import 'package:http2/transport.dart';
+import 'package:grpc/src/http2/transport.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:test/test.dart';
