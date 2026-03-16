@@ -26,6 +26,7 @@
 //   exit 1: unexpected error
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:grpc/grpc.dart';
@@ -106,7 +107,7 @@ Future<void> main(List<String> args) async {
         stdout.writeln('RESULT:$first');
         stdout.writeln('HOLDING');
         // Wait for CLOSE command on stdin
-        await for (final line in stdin.transform(const SystemEncoding().decoder)) {
+        await for (final line in stdin.transform(const SystemEncoding().decoder).transform(const LineSplitter())) {
           if (line.trim() == 'CLOSE') {
             await controller.close();
             break;
@@ -120,7 +121,7 @@ Future<void> main(List<String> args) async {
         stdout.writeln('RESULT:$result1');
         stdout.writeln('CONNECTED');
         // Wait for RESTART signal
-        await for (final line in stdin.transform(const SystemEncoding().decoder)) {
+        await for (final line in stdin.transform(const SystemEncoding().decoder).transform(const LineSplitter())) {
           if (line.trim() == 'RESTART') break;
         }
         // Retry echo with backoff (server just restarted)

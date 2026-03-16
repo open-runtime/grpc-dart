@@ -171,7 +171,7 @@ void testMultiprocess(String name, Future<void> Function(String transport, Strin
       addTearDown(() {
         try {
           File(path).deleteSync();
-        } catch (_) {}
+        } on FileSystemException { /* Socket file may already be gone */ }
       });
       await body('uds', () => path);
     },
@@ -239,7 +239,7 @@ void main() {
         addTearDown(() {
           try {
             File(path).deleteSync();
-          } catch (_) {}
+          } on FileSystemException { /* Socket file may already be gone */ }
         });
 
         // Start server v1
@@ -315,7 +315,7 @@ void main() {
         addTearDown(() {
           try {
             File(path).deleteSync();
-          } catch (_) {}
+          } on FileSystemException { /* Socket file may already be gone */ }
         });
 
         final server1 = await ServerProcess.start('uds', socketPath: path);

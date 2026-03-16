@@ -17,6 +17,7 @@
 //   exit 1: error
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:grpc/grpc.dart';
@@ -64,8 +65,11 @@ Future<void> main(List<String> args) async {
   // Signal readiness to the test harness
   stdout.writeln('LISTENING:$address');
 
-  // Wait for shutdown command on stdin
-  final sub = stdin.transform(const SystemEncoding().decoder).listen((line) async {
+  // Wait for shutdown command on stdin (with LineSplitter for robust framing)
+  final sub = stdin
+      .transform(const SystemEncoding().decoder)
+      .transform(const LineSplitter())
+      .listen((line) async {
     if (line.trim() == 'SHUTDOWN') {
       await server.shutdown();
       stdout.writeln('SHUTDOWN');
@@ -73,11 +77,13 @@ Future<void> main(List<String> args) async {
     }
   });
 
-  // Also handle SIGTERM for graceful shutdown
-  ProcessSignal.sigterm.watch().listen((_) async {
-    sub.cancel();
-    await server.shutdown();
-    stdout.writeln('SHUTDOWN');
-    exit(0);
-  });
+  // Handle SIGTERM for graceful shutdown (Unix only — crashes on Windows)
+  if (!Platform.isWindows) {
+    ProcessSignal.sigterm.watch().listen((_) async {
+      sub.cancel();
+      await server.shutdown();
+      stdout.writeln('SHUTDOWN');
+      exit(0);
+    });
+  }
 }
