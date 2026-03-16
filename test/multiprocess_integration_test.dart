@@ -280,13 +280,18 @@ void main() {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
       addTearDown(() => server.shutdownGracefully().catchError((_) => -1));
 
-      // Spawn 4 client processes in parallel
-      final clients = await Future.wait([
-        for (var i = 0; i < 4; i++) ClientProcess.start(transport, server.address, 'echo', ['${i * 10}']),
-      ]);
+      // Spawn 4 client processes. On CI (2-core), simultaneous `dart run`
+      // compilations cause extreme contention. Stagger launches slightly
+      // and give generous timeouts for the compilation + connection phase.
+      final clients = <ClientProcess>[];
+      for (var i = 0; i < 4; i++) {
+        clients.add(await ClientProcess.start(transport, server.address, 'echo', ['${i * 10}']));
+      }
 
-      // Wait for all to complete
-      final allLines = await Future.wait([for (final c in clients) c.waitForExit()]);
+      // Wait for all to complete — generous timeout for CI
+      final allLines = await Future.wait([
+        for (final c in clients) c.waitForExit(timeout: const Duration(seconds: 60)),
+      ]);
 
       for (var i = 0; i < 4; i++) {
         expect(
