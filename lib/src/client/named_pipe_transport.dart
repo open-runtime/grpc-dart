@@ -273,9 +273,13 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 
       final error = GetLastError();
 
-      // Only retry on ERROR_PIPE_BUSY — all pipe instances are temporarily
-      // in use. This is a normal transient condition under load.
-      if (error == ERROR_PIPE_BUSY && attempt < _kMaxPipeBusyRetries) {
+      // Retry on ERROR_PIPE_BUSY (231) — all pipe instances are temporarily
+      // in use. Also retry on error 0 — WaitNamedPipe succeeded (pipe exists
+      // in namespace) but CreateFile failed because the server's accept loop
+      // hasn't called ConnectNamedPipe on a fresh instance yet. This race is
+      // common on Windows arm64 under x64 emulation where event loop ticks
+      // are ~15.6ms and the accept loop yields between iterations.
+      if ((error == ERROR_PIPE_BUSY || error == 0) && attempt < _kMaxPipeBusyRetries) {
         final retryDelay = _pipeBusyRetryDelay(attempt);
         final remaining = remainingTimeout();
         if (remaining == null) {
