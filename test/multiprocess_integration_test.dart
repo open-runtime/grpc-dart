@@ -144,7 +144,7 @@ class ClientProcess {
   Future<int> get exitCode => _process.exitCode;
 
   /// Wait for the process to exit and return all stdout lines.
-  Future<List<String>> waitForExit({Duration timeout = const Duration(seconds: 15)}) async {
+  Future<List<String>> waitForExit({Duration timeout = const Duration(seconds: 60)}) async {
     final code = await exitCode.timeout(timeout, onTimeout: () {
       _process.kill(ProcessSignal.sigkill);
       throw TimeoutException(
@@ -165,7 +165,7 @@ class ClientProcess {
 
   /// Wait for a specific exact line in stdout, with timeout.
   /// Uses Completer-based approach — no polling, fires immediately when the line arrives.
-  Future<void> waitForMarker(String marker, {Duration timeout = const Duration(seconds: 10)}) async {
+  Future<void> waitForMarker(String marker, {Duration timeout = const Duration(seconds: 30)}) async {
     // Check if already received
     if (_stdoutLines.contains(marker)) return;
     // Register a waiter

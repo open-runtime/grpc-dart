@@ -149,6 +149,9 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
 
-  await channel.shutdown();
+  // Use terminate() instead of shutdown() — if the server is dead,
+  // shutdown() waits for reconnect backoff timers to expire, which can
+  // exceed the test harness timeout on Windows.
+  await channel.terminate();
   exit(0);
 }
