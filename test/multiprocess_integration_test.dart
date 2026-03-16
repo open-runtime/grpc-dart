@@ -87,9 +87,22 @@ class ClientProcess {
   final StringBuffer _stderrBuf = StringBuffer();
   final Completer<void> _exited = Completer<void>();
 
+  /// Completers keyed by marker string — fired when a matching line arrives.
+  final _markerWaiters = <String, List<Completer<void>>>{};
+
   ClientProcess._(this._process) {
     _process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
-      _stdoutLines.add,
+      (line) {
+        _stdoutLines.add(line);
+        // Fire any waiters whose marker matches this exact line
+        for (final entry in _markerWaiters.entries) {
+          if (line == entry.key) {
+            for (final c in entry.value) {
+              if (!c.isCompleted) c.complete();
+            }
+          }
+        }
+      },
       onDone: () {
         if (!_exited.isCompleted) _exited.complete();
       },
@@ -134,18 +147,40 @@ class ClientProcess {
   Future<List<String>> waitForExit({Duration timeout = const Duration(seconds: 15)}) async {
     final code = await exitCode.timeout(timeout, onTimeout: () {
       _process.kill(ProcessSignal.sigkill);
-      return -1;
+      throw TimeoutException(
+        'Client process (pid=$pid) did not exit within $timeout. '
+        'Force-killed. Stdout so far: $_stdoutLines. Stderr: $stderr',
+      );
     });
-    // Give stdout a moment to flush
-    await _exited.future.timeout(const Duration(seconds: 2), onTimeout: () {});
-    if (code != 0 && code != -1) {
+    // Wait for stdout stream to close (process may have exited but stdout buffer not yet flushed)
+    await _exited.future.timeout(const Duration(seconds: 5), onTimeout: () {
+      // stdout didn't close within 5s — return what we have with a warning
+      _stderrBuf.writeln('WARNING: stdout did not close within 5s after process exit');
+    });
+    if (code != 0) {
       throw StateError('Client process (pid=$pid) exited with code $code. Stderr: $stderr');
     }
     return _stdoutLines;
   }
 
-  /// Check if a specific marker appeared in stdout.
-  bool hasMarker(String marker) => _stdoutLines.any((l) => l.contains(marker));
+  /// Wait for a specific exact line in stdout, with timeout.
+  /// Uses Completer-based approach — no polling, fires immediately when the line arrives.
+  Future<void> waitForMarker(String marker, {Duration timeout = const Duration(seconds: 10)}) async {
+    // Check if already received
+    if (_stdoutLines.contains(marker)) return;
+    // Register a waiter
+    final completer = Completer<void>();
+    _markerWaiters.putIfAbsent(marker, () => []).add(completer);
+    await completer.future.timeout(timeout, onTimeout: () {
+      throw TimeoutException(
+        'Client (pid=$pid) did not produce marker "$marker" within $timeout. '
+        'Stdout so far: $_stdoutLines',
+      );
+    });
+  }
+
+  /// Check if a specific exact line appeared in stdout.
+  bool hasLine(String line) => _stdoutLines.contains(line);
 }
 
 /// Generate a unique UDS socket path for a test.
@@ -190,7 +225,7 @@ void main() {
     // =========================================================================
     testMultiprocess('server and client in separate processes complete unary RPC', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
-      addTearDown(() => server.shutdownGracefully().catchError((_) => -1));
+      addTearDown(() => server.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
 
       final client = await ClientProcess.start(transport, server.address, 'echo', ['42']);
       final lines = await client.waitForExit();
@@ -249,14 +284,14 @@ void main() {
         final client = await ClientProcess.start('uds', path, 'reconnect-after-restart', ['10']);
 
         // Wait for client to connect
-        await _waitForMarker(client, 'CONNECTED', timeout: const Duration(seconds: 10));
+        await client.waitForMarker('CONNECTED');
 
         // Gracefully shut down server v1
         await server1.shutdownGracefully();
 
         // Start server v2 on the SAME path
         final server2 = await ServerProcess.start('uds', socketPath: path);
-        addTearDown(() => server2.shutdownGracefully().catchError((_) => -1));
+        addTearDown(() => server2.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
 
         // Signal client that server has restarted
         client.sendCommand('RESTART');
@@ -278,7 +313,7 @@ void main() {
     // =========================================================================
     testMultiprocess('four client processes connect to one server concurrently', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
-      addTearDown(() => server.shutdownGracefully().catchError((_) => -1));
+      addTearDown(() => server.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
 
       // Spawn 4 client processes. On CI (2-core), simultaneous `dart run`
       // compilations cause extreme contention. Stagger launches slightly
@@ -319,7 +354,7 @@ void main() {
         });
 
         final server1 = await ServerProcess.start('uds', socketPath: path);
-        addTearDown(() => server1.shutdownGracefully().catchError((_) => -1));
+        addTearDown(() => server1.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
 
         // Verify server1 is working
         final warmup = await ClientProcess.start('uds', path, 'echo', ['1']);
@@ -331,7 +366,7 @@ void main() {
         // DESTROYS server1's socket. This is the expected behavior —
         // in production, the second server "takes over" the address.
         final server2 = await ServerProcess.start('uds', socketPath: path);
-        addTearDown(() => server2.shutdownGracefully().catchError((_) => -1));
+        addTearDown(() => server2.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
 
         // Now server2 owns the path. Server1 is still running but
         // unreachable (its socket was deleted). New clients connect to server2.
@@ -350,11 +385,11 @@ void main() {
     // =========================================================================
     testMultiprocess('server survives client process crash during bidi stream', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
-      addTearDown(() => server.shutdownGracefully().catchError((_) => -1));
+      addTearDown(() => server.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
 
       // Start client holding a bidi stream open
       final client = await ClientProcess.start(transport, server.address, 'bidi-hold');
-      await _waitForMarker(client, 'HOLDING', timeout: const Duration(seconds: 10));
+      await client.waitForMarker('HOLDING');
 
       // Kill the client process (simulates crash)
       client.kill();
@@ -373,7 +408,7 @@ void main() {
     // =========================================================================
     testMultiprocess('server-streaming RPC delivers all items across process boundary', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
-      addTearDown(() => server.shutdownGracefully().catchError((_) => -1));
+      addTearDown(() => server.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
 
       final client = await ClientProcess.start(transport, server.address, 'server-stream', ['50']);
       final lines = await client.waitForExit();
@@ -408,13 +443,3 @@ void main() {
   });
 }
 
-/// Wait for a specific marker in a client's stdout, with timeout.
-Future<void> _waitForMarker(ClientProcess client, String marker, {required Duration timeout}) async {
-  final deadline = DateTime.now().add(timeout);
-  while (DateTime.now().isBefore(deadline)) {
-    if (client.hasMarker(marker)) return;
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-  }
-  throw TimeoutException('Client (pid=${client.pid}) did not produce marker "$marker" within $timeout. '
-      'Stdout so far: ${client.stdout}');
-}
