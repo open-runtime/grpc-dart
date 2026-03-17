@@ -13,6 +13,10 @@
 //     "server-stream <count>" — server-streaming RPC, prints item count
 //     "bidi-hold"            — open bidi stream, hold until stdin "CLOSE\n"
 //     "reconnect-after-restart <value>" — echo, wait for restart signal, echo again
+//     "client-stream <count>" — client-streaming RPC, prints aggregated result
+//     "bidi-detect-crash"    — open bidi stream, detect server crash
+//     "server-stream-hold <count>" — server-streaming, prints STREAMING after first item
+//     "echo-bytes <size>"    — send a byte payload of given size, prints result length
 //
 // Protocol:
 //   stdout: "RESULT:<value>" for each RPC result
@@ -20,6 +24,8 @@
 //   stdout: "CONNECTED" when first RPC succeeds
 //   stdout: "RECONNECTED" when post-restart RPC succeeds
 //   stdout: "HOLDING" when bidi stream is open and waiting
+//   stdout: "STREAMING" when server-stream-hold receives first item
+//   stdout: "DONE:<count>" when server-stream-hold finishes
 //   stdin:  "CLOSE\n" to close bidi stream and exit
 //   stdin:  "RESTART\n" to signal server has restarted (for reconnect test)
 //   exit 0: clean exit
@@ -136,6 +142,66 @@ Future<void> main(List<String> args) async {
           } on TimeoutException {
             await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
           }
+        }
+
+      case 'client-stream':
+        final count = int.parse(args[3]);
+        final controller = StreamController<int>();
+        final resultFuture = client.clientStream(controller.stream);
+        for (var i = 0; i < count; i++) {
+          controller.add(i);
+        }
+        await controller.close();
+        final result = await resultFuture;
+        stdout.writeln('RESULT:$result');
+        stdout.writeln('CONNECTED');
+
+      case 'bidi-detect-crash':
+        final controller = StreamController<int>();
+        final responseStream = client.bidiStream(controller.stream);
+        // Send one item to prove connection is alive
+        controller.add(42);
+        try {
+          var gotFirst = false;
+          await for (final value in responseStream) {
+            if (!gotFirst) {
+              stdout.writeln('RESULT:$value');
+              stdout.writeln('CONNECTED');
+              gotFirst = true;
+              // Keep the stream open — server crash will break it
+            }
+          }
+          // Stream ended normally (unexpected in crash scenario)
+          stdout.writeln('DONE:NORMAL');
+        } on GrpcError catch (e) {
+          stdout.writeln('ERROR:${e.code}:${e.message}');
+        }
+        await controller.close();
+
+      case 'server-stream-hold':
+        final count = int.parse(args[3]);
+        var itemCount = 0;
+        try {
+          await for (final _ in client.serverStream(count)) {
+            itemCount++;
+            if (itemCount == 1) {
+              stdout.writeln('STREAMING');
+            }
+          }
+        } on GrpcError catch (e) {
+          stdout.writeln('ERROR:${e.code}:${e.message}');
+        }
+        stdout.writeln('DONE:$itemCount');
+
+      case 'echo-bytes':
+        final size = int.parse(args[3]);
+        final payload = List<int>.filled(size, 0xAB);
+        try {
+          final result = await client.echoBytes(payload);
+          stdout.writeln('RESULT:${result.length}');
+          stdout.writeln('CONNECTED');
+        } on GrpcError catch (e) {
+          stdout.writeln('ERROR:${e.code}:${e.message}');
         }
 
       default:

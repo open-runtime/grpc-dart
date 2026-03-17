@@ -24,34 +24,86 @@ class ServerProcess {
   final Process _process;
   final String transport;
   final String address;
+  final List<String> _stdoutLines = [];
+  final StringBuffer _stderrBuf = StringBuffer();
+
+  /// Completers keyed by prefix — fired when a matching line arrives.
+  final _prefixWaiters = <String, List<Completer<String>>>{};
 
   ServerProcess._(this._process, this.transport, this.address);
 
   int get pid => _process.pid;
+  List<String> get stdoutLines => _stdoutLines;
+
+  void _onStdoutLine(String line) {
+    _stdoutLines.add(line);
+    for (final entry in _prefixWaiters.entries) {
+      if (line.startsWith(entry.key)) {
+        for (final c in entry.value) {
+          if (!c.isCompleted) c.complete(line);
+        }
+      }
+    }
+  }
 
   /// Spawn a server process and wait for it to signal readiness.
-  static Future<ServerProcess> start(String transport, {String? socketPath}) async {
+  static Future<ServerProcess> start(String transport, {String? socketPath, int? maxMessageSize}) async {
     final args = ['run', 'test/multiprocess/server_main.dart', transport];
     if (transport == 'uds' && socketPath != null) args.add(socketPath);
+    if (maxMessageSize != null) args.addAll(['--max-message-size', '$maxMessageSize']);
 
     final process = await Process.start(Platform.resolvedExecutable, args);
 
-    // Capture stderr for diagnostics
+    // process.stdout is a single-subscription stream. We use one subscription
+    // for the entire lifetime: a Completer bridges the initial LISTENING line
+    // back to the caller, and a mutable ServerProcess reference dispatches
+    // subsequent lines to the instance once it exists.
+    final readyCompleter = Completer<String>();
     final stderrBuf = StringBuffer();
+    ServerProcess? serverRef;
+    final earlyLines = <String>[];
+
+    process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+          (line) {
+            if (!readyCompleter.isCompleted && line.startsWith('LISTENING:')) {
+              readyCompleter.complete(line.substring('LISTENING:'.length));
+              return;
+            }
+            // Dispatch to the server instance if available, otherwise buffer
+            if (serverRef != null) {
+              serverRef._onStdoutLine(line);
+            } else {
+              earlyLines.add(line);
+            }
+          },
+          onDone: () {
+            if (!readyCompleter.isCompleted) {
+              readyCompleter.completeError(
+                StateError(
+                  'Server process (pid=${process.pid}) stdout closed without LISTENING marker. Stderr: $stderrBuf',
+                ),
+              );
+            }
+          },
+        );
     process.stderr.transform(utf8.decoder).listen(stderrBuf.write);
 
-    // Wait for LISTENING:<address> on stdout
-    final stdoutLines = process.stdout.transform(utf8.decoder).transform(const LineSplitter());
-    String? address;
-
-    await for (final line in stdoutLines) {
-      if (line.startsWith('LISTENING:')) {
-        address = line.substring('LISTENING:'.length);
-        break;
-      }
-    }
-
-    if (address == null) {
+    // Wait for readiness
+    String address;
+    try {
+      address = await readyCompleter.future.timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {
+          process.kill(ProcessSignal.sigkill);
+          throw TimeoutException(
+            'Server process (pid=${process.pid}) did not signal readiness within 60s. Stderr: $stderrBuf',
+          );
+        },
+      );
+    } on StateError {
       final exitCode = await process.exitCode;
       throw StateError(
         'Server process (pid=${process.pid}) exited without signaling readiness. '
@@ -59,16 +111,51 @@ class ServerProcess {
       );
     }
 
-    return ServerProcess._(process, transport, address);
+    final server = ServerProcess._(process, transport, address);
+    server._stderrBuf.write(stderrBuf);
+    // Replay any lines that arrived between LISTENING and now
+    for (final line in earlyLines) {
+      server._onStdoutLine(line);
+    }
+    // Wire up the mutable reference so future lines go directly to the server
+    serverRef = server;
+    return server;
+  }
+
+  /// Send a command to the server's stdin.
+  void sendCommand(String command) {
+    _process.stdin.writeln(command);
+  }
+
+  /// Wait for a stdout line starting with [prefix] and return the full line.
+  Future<String> waitForPrefix(String prefix, {Duration timeout = const Duration(seconds: 10)}) async {
+    // Check if already received
+    for (final line in _stdoutLines) {
+      if (line.startsWith(prefix)) return line;
+    }
+    final completer = Completer<String>();
+    _prefixWaiters.putIfAbsent(prefix, () => []).add(completer);
+    return completer.future.timeout(
+      timeout,
+      onTimeout: () {
+        throw TimeoutException(
+          'Server (pid=$pid) did not produce line starting with "$prefix" within $timeout. '
+          'Stdout so far: $_stdoutLines',
+        );
+      },
+    );
   }
 
   /// Request graceful shutdown via stdin command.
   Future<int> shutdownGracefully({Duration timeout = const Duration(seconds: 10)}) async {
     _process.stdin.writeln('SHUTDOWN');
-    return _process.exitCode.timeout(timeout, onTimeout: () {
-      _process.kill(ProcessSignal.sigkill);
-      return -1;
-    });
+    return _process.exitCode.timeout(
+      timeout,
+      onTimeout: () {
+        _process.kill(ProcessSignal.sigkill);
+        return -1;
+      },
+    );
   }
 
   /// Kill the process immediately (simulates crash).
@@ -90,23 +177,37 @@ class ClientProcess {
   /// Completers keyed by marker string — fired when a matching line arrives.
   final _markerWaiters = <String, List<Completer<void>>>{};
 
+  /// Completers keyed by prefix — fired when a matching line arrives.
+  final _prefixWaiters = <String, List<Completer<String>>>{};
+
   ClientProcess._(this._process) {
-    _process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(
-      (line) {
-        _stdoutLines.add(line);
-        // Fire any waiters whose marker matches this exact line
-        for (final entry in _markerWaiters.entries) {
-          if (line == entry.key) {
-            for (final c in entry.value) {
-              if (!c.isCompleted) c.complete();
+    _process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+          (line) {
+            _stdoutLines.add(line);
+            // Fire any waiters whose marker matches this exact line
+            for (final entry in _markerWaiters.entries) {
+              if (line == entry.key) {
+                for (final c in entry.value) {
+                  if (!c.isCompleted) c.complete();
+                }
+              }
             }
-          }
-        }
-      },
-      onDone: () {
-        if (!_exited.isCompleted) _exited.complete();
-      },
-    );
+            // Fire any prefix waiters
+            for (final entry in _prefixWaiters.entries) {
+              if (line.startsWith(entry.key)) {
+                for (final c in entry.value) {
+                  if (!c.isCompleted) c.complete(line);
+                }
+              }
+            }
+          },
+          onDone: () {
+            if (!_exited.isCompleted) _exited.complete();
+          },
+        );
     _process.stderr.transform(utf8.decoder).listen(_stderrBuf.write);
   }
 
@@ -120,14 +221,7 @@ class ClientProcess {
     String command, [
     List<String> extraArgs = const [],
   ]) async {
-    final args = [
-      'run',
-      'test/multiprocess/client_main.dart',
-      transport,
-      address,
-      command,
-      ...extraArgs,
-    ];
+    final args = ['run', 'test/multiprocess/client_main.dart', transport, address, command, ...extraArgs];
     final process = await Process.start(Platform.resolvedExecutable, args);
     return ClientProcess._(process);
   }
@@ -145,18 +239,24 @@ class ClientProcess {
 
   /// Wait for the process to exit and return all stdout lines.
   Future<List<String>> waitForExit({Duration timeout = const Duration(seconds: 60)}) async {
-    final code = await exitCode.timeout(timeout, onTimeout: () {
-      _process.kill(ProcessSignal.sigkill);
-      throw TimeoutException(
-        'Client process (pid=$pid) did not exit within $timeout. '
-        'Force-killed. Stdout so far: $_stdoutLines. Stderr: $stderr',
-      );
-    });
+    final code = await exitCode.timeout(
+      timeout,
+      onTimeout: () {
+        _process.kill(ProcessSignal.sigkill);
+        throw TimeoutException(
+          'Client process (pid=$pid) did not exit within $timeout. '
+          'Force-killed. Stdout so far: $_stdoutLines. Stderr: $stderr',
+        );
+      },
+    );
     // Wait for stdout stream to close (process may have exited but stdout buffer not yet flushed)
-    await _exited.future.timeout(const Duration(seconds: 5), onTimeout: () {
-      // stdout didn't close within 5s — return what we have with a warning
-      _stderrBuf.writeln('WARNING: stdout did not close within 5s after process exit');
-    });
+    await _exited.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        // stdout didn't close within 5s — return what we have with a warning
+        _stderrBuf.writeln('WARNING: stdout did not close within 5s after process exit');
+      },
+    );
     if (code != 0) {
       throw StateError('Client process (pid=$pid) exited with code $code. Stderr: $stderr');
     }
@@ -171,12 +271,34 @@ class ClientProcess {
     // Register a waiter
     final completer = Completer<void>();
     _markerWaiters.putIfAbsent(marker, () => []).add(completer);
-    await completer.future.timeout(timeout, onTimeout: () {
-      throw TimeoutException(
-        'Client (pid=$pid) did not produce marker "$marker" within $timeout. '
-        'Stdout so far: $_stdoutLines',
-      );
-    });
+    await completer.future.timeout(
+      timeout,
+      onTimeout: () {
+        throw TimeoutException(
+          'Client (pid=$pid) did not produce marker "$marker" within $timeout. '
+          'Stdout so far: $_stdoutLines',
+        );
+      },
+    );
+  }
+
+  /// Wait for a stdout line starting with [prefix] and return the full line.
+  Future<String> waitForPrefix(String prefix, {Duration timeout = const Duration(seconds: 30)}) async {
+    // Check if already received
+    for (final line in _stdoutLines) {
+      if (line.startsWith(prefix)) return line;
+    }
+    final completer = Completer<String>();
+    _prefixWaiters.putIfAbsent(prefix, () => []).add(completer);
+    return completer.future.timeout(
+      timeout,
+      onTimeout: () {
+        throw TimeoutException(
+          'Client (pid=$pid) did not produce line starting with "$prefix" within $timeout. '
+          'Stdout so far: $_stdoutLines',
+        );
+      },
+    );
   }
 
   /// Check if a specific exact line appeared in stdout.
@@ -199,19 +321,17 @@ void testMultiprocess(String name, Future<void> Function(String transport, Strin
     await body('tcp', () => ''); // TCP uses ephemeral port from server stdout
   });
 
-  test(
-    '$name (UDS)',
-    () async {
-      final path = _uniqueSocketPath(name.replaceAll(' ', '-'));
-      addTearDown(() {
-        try {
-          File(path).deleteSync();
-        } on FileSystemException { /* Socket file may already be gone */ }
-      });
-      await body('uds', () => path);
-    },
-    skip: Platform.isWindows ? 'UDS not supported on Windows' : null,
-  );
+  test('$name (UDS)', () async {
+    final path = _uniqueSocketPath(name.replaceAll(' ', '-'));
+    addTearDown(() {
+      try {
+        File(path).deleteSync();
+      } on FileSystemException {
+        /* Socket file may already be gone */
+      }
+    });
+    await body('uds', () => path);
+  }, skip: Platform.isWindows ? 'UDS not supported on Windows' : null);
 }
 
 // =============================================================================
@@ -225,7 +345,13 @@ void main() {
     // =========================================================================
     testMultiprocess('server and client in separate processes complete unary RPC', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
-      addTearDown(() => server.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
 
       final client = await ClientProcess.start(transport, server.address, 'echo', ['42']);
       final lines = await client.waitForExit();
@@ -238,27 +364,42 @@ void main() {
     });
 
     // =========================================================================
-    // Scenario 2: Server process killed, client detects failure
+    // Scenario 2: Server process killed, client detects failure mid-stream
     // =========================================================================
-    testMultiprocess('client detects server crash and reports error', (transport, allocAddr) async {
+    testMultiprocess('client detects server crash mid-stream and reports error', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
 
-      // First, prove the connection works
-      final warmup = await ClientProcess.start(transport, server.address, 'echo', ['1']);
-      final warmupLines = await warmup.waitForExit();
-      expect(warmupLines, contains('CONNECTED'));
+      // Start client with bidi-detect-crash — it opens a stream and waits
+      final client = await ClientProcess.start(transport, server.address, 'bidi-detect-crash');
+      addTearDown(() {
+        client.kill();
+      });
+
+      // Wait for client to establish the bidi stream
+      await client.waitForMarker('CONNECTED');
 
       // Kill the server process (simulates crash)
       server.kill();
       await server.exitCode;
 
-      // Now try to make RPCs — should get errors
-      final client = await ClientProcess.start(transport, server.address, 'echo-loop', ['5']);
-      final lines = await client.waitForExit();
+      // Client should detect the broken stream and report an error
+      final errorLine = await client.waitForPrefix('ERROR:', timeout: const Duration(seconds: 30));
 
-      // At least some RPCs should fail with UNAVAILABLE
-      final errors = lines.where((l) => l.startsWith('ERROR:')).toList();
-      expect(errors, isNotEmpty, reason: 'Client should receive errors after server crash');
+      // The error should indicate the server is gone (UNAVAILABLE or transport error)
+      expect(
+        errorLine,
+        anyOf(contains('UNAVAILABLE'), contains('2:'), contains('14:')),
+        reason: 'Client should receive UNAVAILABLE or transport error after server crash',
+      );
+
+      // Client should exit on its own after detecting the error
+      await client.exitCode.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          client.kill();
+          throw TimeoutException('Client did not exit after detecting server crash');
+        },
+      );
     });
 
     // =========================================================================
@@ -274,7 +415,9 @@ void main() {
         addTearDown(() {
           try {
             File(path).deleteSync();
-          } on FileSystemException { /* Socket file may already be gone */ }
+          } on FileSystemException {
+            /* Socket file may already be gone */
+          }
         });
 
         // Start server v1
@@ -291,7 +434,13 @@ void main() {
 
         // Start server v2 on the SAME path
         final server2 = await ServerProcess.start('uds', socketPath: path);
-        addTearDown(() => server2.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
+        addTearDown(() async {
+          try {
+            await server2.shutdownGracefully();
+          } on StateError {
+            // Server already dead
+          }
+        });
 
         // Signal client that server has restarted
         client.sendCommand('RESTART');
@@ -313,7 +462,13 @@ void main() {
     // =========================================================================
     testMultiprocess('four client processes connect to one server concurrently', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
-      addTearDown(() => server.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
 
       // Spawn 4 client processes. On CI (2-core), simultaneous `dart run`
       // compilations cause extreme contention. Stagger launches slightly
@@ -329,11 +484,7 @@ void main() {
       ]);
 
       for (var i = 0; i < 4; i++) {
-        expect(
-          allLines[i],
-          contains('RESULT:${i * 10}'),
-          reason: 'Client $i should receive echo result ${i * 10}',
-        );
+        expect(allLines[i], contains('RESULT:${i * 10}'), reason: 'Client $i should receive echo result ${i * 10}');
         expect(allLines[i], contains('CONNECTED'), reason: 'Client $i should report connection');
       }
 
@@ -350,11 +501,19 @@ void main() {
         addTearDown(() {
           try {
             File(path).deleteSync();
-          } on FileSystemException { /* Socket file may already be gone */ }
+          } on FileSystemException {
+            /* Socket file may already be gone */
+          }
         });
 
         final server1 = await ServerProcess.start('uds', socketPath: path);
-        addTearDown(() => server1.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
+        addTearDown(() async {
+          try {
+            await server1.shutdownGracefully();
+          } on StateError {
+            // Server already dead
+          }
+        });
 
         // Verify server1 is working
         final warmup = await ClientProcess.start('uds', path, 'echo', ['1']);
@@ -366,7 +525,13 @@ void main() {
         // DESTROYS server1's socket. This is the expected behavior —
         // in production, the second server "takes over" the address.
         final server2 = await ServerProcess.start('uds', socketPath: path);
-        addTearDown(() => server2.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
+        addTearDown(() async {
+          try {
+            await server2.shutdownGracefully();
+          } on StateError {
+            // Server already dead
+          }
+        });
 
         // Now server2 owns the path. Server1 is still running but
         // unreachable (its socket was deleted). New clients connect to server2.
@@ -381,11 +546,17 @@ void main() {
     );
 
     // =========================================================================
-    // Scenario 6: Client process killed, server cleans up
+    // Scenario 6: Client process killed, server cleans up + connection count
     // =========================================================================
     testMultiprocess('server survives client process crash during bidi stream', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
-      addTearDown(() => server.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
 
       // Start client holding a bidi stream open
       final client = await ClientProcess.start(transport, server.address, 'bidi-hold');
@@ -400,6 +571,16 @@ void main() {
       final lines = await client2.waitForExit();
       expect(lines, contains('RESULT:77'), reason: 'Server should still work after client crash');
 
+      // Verify server cleaned up the old connection (handler cleanup verification)
+      // Give the server a moment to clean up the dead connection's handlers
+      // by sending CONNECTION_COUNT and checking the result.
+      server.sendCommand('CONNECTION_COUNT');
+      final countLine = await server.waitForPrefix('CONNECTIONS:');
+      final count = int.parse(countLine.substring('CONNECTIONS:'.length));
+      // The new client (client2) already exited, so connections should be 0 or 1
+      // (depending on cleanup timing). The crashed client's connection should be gone.
+      expect(count, lessThanOrEqualTo(1), reason: 'Crashed client connection should be cleaned up');
+
       await server.shutdownGracefully();
     });
 
@@ -408,7 +589,13 @@ void main() {
     // =========================================================================
     testMultiprocess('server-streaming RPC delivers all items across process boundary', (transport, allocAddr) async {
       final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
-      addTearDown(() => server.shutdownGracefully().catchError((Object e) { /* Teardown safety net — server may already be dead */ return -1; }));
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
 
       final client = await ClientProcess.start(transport, server.address, 'server-stream', ['50']);
       final lines = await client.waitForExit();
@@ -429,17 +616,187 @@ void main() {
 
         final client = await ClientProcess.start('tcp', server.address, 'echo', ['${cycle * 10}']);
         final lines = await client.waitForExit();
-        expect(
-          lines,
-          contains('RESULT:${cycle * 10}'),
-          reason: 'Cycle $cycle: echo should return ${cycle * 10}',
-        );
+        expect(lines, contains('RESULT:${cycle * 10}'), reason: 'Cycle $cycle: echo should return ${cycle * 10}');
 
         lastPort = server.address;
         await server.shutdownGracefully();
       }
       expect(lastPort, isNotNull, reason: 'All 5 cycles should complete');
     });
+
+    // =========================================================================
+    // Scenario 9: Bidi stream content verification
+    // =========================================================================
+    testMultiprocess('bidi stream returns correct doubled value', (transport, allocAddr) async {
+      final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
+
+      // bidi-hold sends 42, EchoService doubles it to 84
+      final client = await ClientProcess.start(transport, server.address, 'bidi-hold');
+      await client.waitForMarker('HOLDING');
+
+      // The RESULT line should contain 84 (42 * 2)
+      expect(client.stdout, contains('RESULT:84'), reason: 'EchoService bidi should double 42 to 84');
+
+      client.sendCommand('CLOSE');
+      await client.waitForExit();
+
+      await server.shutdownGracefully();
+    });
+
+    // =========================================================================
+    // Scenario 10: Graceful shutdown during active server-streaming
+    // =========================================================================
+    testMultiprocess('graceful shutdown truncates active server stream', (transport, allocAddr) async {
+      final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
+
+      // Start client with a long server stream (10000 items with 1ms delays = ~10s)
+      final client = await ClientProcess.start(transport, server.address, 'server-stream-hold', ['10000']);
+      addTearDown(() {
+        client.kill();
+      });
+
+      // Wait for streaming to begin
+      await client.waitForMarker('STREAMING');
+
+      // Gracefully shut down server while stream is active
+      final serverExit = await server.shutdownGracefully();
+      expect(serverExit, equals(0), reason: 'Server should exit cleanly after graceful shutdown');
+
+      // Client should finish with a truncated stream
+      final doneLine = await client.waitForPrefix('DONE:', timeout: const Duration(seconds: 30));
+      final itemCount = int.parse(doneLine.substring('DONE:'.length));
+
+      // Should have received some items but not all 10000
+      expect(itemCount, greaterThan(0), reason: 'Client should have received some items before shutdown');
+      expect(itemCount, lessThan(10000), reason: 'Stream should be truncated by graceful shutdown');
+
+      // Client should exit
+      await client.exitCode.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          client.kill();
+          return -1;
+        },
+      );
+    });
+
+    // =========================================================================
+    // Scenario 11: Concurrent streaming — 3 clients stream simultaneously
+    // =========================================================================
+    testMultiprocess('three concurrent server-streaming clients all complete', (transport, allocAddr) async {
+      final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
+
+      // Start 3 clients each streaming 100 items
+      final clients = <ClientProcess>[];
+      for (var i = 0; i < 3; i++) {
+        clients.add(await ClientProcess.start(transport, server.address, 'server-stream-hold', ['100']));
+      }
+      addTearDown(() {
+        for (final c in clients) {
+          c.kill();
+        }
+      });
+
+      // Wait for all 3 to start streaming
+      await Future.wait([for (final c in clients) c.waitForMarker('STREAMING')]);
+
+      // Wait for all 3 to complete
+      for (var i = 0; i < 3; i++) {
+        final doneLine = await clients[i].waitForPrefix('DONE:', timeout: const Duration(seconds: 60));
+        final itemCount = int.parse(doneLine.substring('DONE:'.length));
+        expect(itemCount, equals(100), reason: 'Client $i should receive all 100 items');
+      }
+
+      // All clients should exit cleanly
+      await Future.wait([
+        for (final c in clients)
+          c.exitCode.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              c.kill();
+              return -1;
+            },
+          ),
+      ]);
+
+      await server.shutdownGracefully();
+    });
+
+    // =========================================================================
+    // Scenario 12: Client-streaming cross-process test
+    // =========================================================================
+    testMultiprocess('client-streaming RPC aggregates values across process boundary', (transport, allocAddr) async {
+      final server = await ServerProcess.start(transport, socketPath: transport == 'uds' ? allocAddr() : null);
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
+
+      // client-stream 10: sends 0+1+2+...+9 = 45
+      final client = await ClientProcess.start(transport, server.address, 'client-stream', ['10']);
+      final lines = await client.waitForExit();
+
+      expect(lines, contains('RESULT:45'), reason: 'Client stream of 0..9 should sum to 45');
+      expect(lines, contains('CONNECTED'));
+
+      await server.shutdownGracefully();
+    });
+
+    // =========================================================================
+    // Scenario 13: maxInboundMessageSize enforcement across processes
+    // =========================================================================
+    testMultiprocess('server rejects oversized message with RESOURCE_EXHAUSTED', (transport, allocAddr) async {
+      final server = await ServerProcess.start(
+        transport,
+        socketPath: transport == 'uds' ? allocAddr() : null,
+        maxMessageSize: 1024,
+      );
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Server already dead
+        }
+      });
+
+      // Send a 2048-byte payload — should exceed the 1024-byte limit
+      final client = await ClientProcess.start(transport, server.address, 'echo-bytes', ['2048']);
+      final lines = await client.waitForExit();
+
+      // Should get a RESOURCE_EXHAUSTED error
+      final errors = lines.where((l) => l.startsWith('ERROR:')).toList();
+      expect(errors, isNotEmpty, reason: 'Client should receive an error for oversized message');
+      expect(
+        errors.first,
+        contains('8:'), // StatusCode.resourceExhausted = 8
+        reason: 'Error should be RESOURCE_EXHAUSTED (code 8)',
+      );
+
+      await server.shutdownGracefully();
+    });
   });
 }
-
