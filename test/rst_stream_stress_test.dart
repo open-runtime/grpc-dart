@@ -68,7 +68,10 @@ void main() {
 
       for (var i = 0; i < 50; i++) {
         final idx = i;
-        final stream = client.serverStream(255);
+        // 1000 items: ~15.6s on Windows (15.6ms timer), ~1s on macOS/Linux.
+        // Ensures streams are still active when server.shutdown() fires.
+        // With 255 items on fast hardware, most complete before shutdown.
+        final stream = client.serverStream(1000);
         stream.listen(
           (item) {
             itemCounts[idx]++;
@@ -122,20 +125,15 @@ void main() {
         reason: 'No unexpected non-GrpcError errors expected',
       );
 
-      // Most streams must be truncated by shutdown. With the
-      // RST_STREAM flush yield fix, shutdown propagation is
-      // reliable. On fast machines all 50 are truncated; on
-      // slower CI runners (especially Windows arm64) the server
-      // may deliver many items before shutdown propagates.
-      // A floor of >=3 is used because socket-close timing alone
-      // (without RST_STREAM) can coincidentally produce 0-2
-      // truncated streams on fast hardware. >=3 is impossible
-      // from pure socket-close timing, so it actually proves
-      // RST_STREAM propagation worked.
-      final truncatedCount = itemCounts.where((count) => count < 255).length;
+      // With 1000-item streams (~15.6s on Windows, ~1s on macOS),
+      // ALL 50 streams should be truncated by shutdown — none can
+      // complete before server.shutdown() propagates RST_STREAM.
+      // A floor of >=10 gives headroom for edge cases where a few
+      // streams raced to completion during the shutdown cascade.
+      final truncatedCount = itemCounts.where((count) => count < 1000).length;
       expect(
         truncatedCount,
-        greaterThanOrEqualTo(3),
+        greaterThanOrEqualTo(10),
         reason:
             'At least 3 of 50 streams should be truncated by '
             'shutdown (got $truncatedCount truncated). '
