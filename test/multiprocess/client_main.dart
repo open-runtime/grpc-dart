@@ -5,8 +5,8 @@
 // Launched via Process.start() from the test harness.
 //
 // Usage: dart run test/multiprocess/client_main.dart <transport> <address> <command> [args...]
-//   transport: "tcp" | "uds"
-//   address: port number (TCP) or socket path (UDS)
+//   transport: "tcp" | "uds" | "named-pipe"
+//   address: port number (TCP), socket path (UDS), or pipe name (named-pipe)
 //   command:
 //     "echo <value>"         — single unary RPC, prints result
 //     "echo-loop <count>"    — N sequential unary RPCs, prints each result
@@ -35,7 +35,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:grpc/grpc.dart';
+import 'package:grpc/grpc.dart' hide ClientChannel;
+import 'package:grpc/grpc.dart' as grpc show ClientChannel;
+import 'package:grpc/src/client/channel.dart' as base show ClientChannel;
 
 import '../src/echo_service.dart';
 
@@ -49,10 +51,10 @@ Future<void> main(List<String> args) async {
   final address = args[1];
   final command = args[2];
 
-  final ClientChannel channel;
+  final base.ClientChannel channel;
   switch (transport) {
     case 'tcp':
-      channel = ClientChannel(
+      channel = grpc.ClientChannel(
         InternetAddress.loopbackIPv4,
         port: int.parse(address),
         options: ChannelOptions(
@@ -62,11 +64,19 @@ Future<void> main(List<String> args) async {
         ),
       );
     case 'uds':
-      channel = ClientChannel(
+      channel = grpc.ClientChannel(
         InternetAddress(address, type: InternetAddressType.unix),
         port: 0,
         options: ChannelOptions(
           credentials: const ChannelCredentials.insecure(),
+          backoffStrategy: (Duration? last) => last == null ? const Duration(milliseconds: 100) : last * 2,
+          connectTimeout: const Duration(seconds: 5),
+        ),
+      );
+    case 'named-pipe':
+      channel = NamedPipeClientChannel(
+        address, // pipe name (the server prints the full pipe path, but the channel only needs the name)
+        options: NamedPipeChannelOptions(
           backoffStrategy: (Duration? last) => last == null ? const Duration(milliseconds: 100) : last * 2,
           connectTimeout: const Duration(seconds: 5),
         ),

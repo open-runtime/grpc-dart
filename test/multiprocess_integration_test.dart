@@ -47,9 +47,15 @@ class ServerProcess {
   }
 
   /// Spawn a server process and wait for it to signal readiness.
-  static Future<ServerProcess> start(String transport, {String? socketPath, int? maxMessageSize}) async {
+  static Future<ServerProcess> start(
+    String transport, {
+    String? socketPath,
+    String? pipeName,
+    int? maxMessageSize,
+  }) async {
     final args = ['run', 'test/multiprocess/server_main.dart', transport];
     if (transport == 'uds' && socketPath != null) args.add(socketPath);
+    if (transport == 'named-pipe' && pipeName != null) args.add(pipeName);
     if (maxMessageSize != null) args.addAll(['--max-message-size', '$maxMessageSize']);
 
     final process = await Process.start(Platform.resolvedExecutable, args);
@@ -309,6 +315,11 @@ class ClientProcess {
 String _uniqueSocketPath(String testName) {
   final dir = Directory.systemTemp.createTempSync('grpc_multiprocess_');
   return '${dir.path}/$testName.sock';
+}
+
+/// Generate a unique Windows named pipe name for a test.
+String _uniquePipeName(String testId) {
+  return 'grpc-mp-${DateTime.now().microsecondsSinceEpoch}-$testId-$pid';
 }
 
 // =============================================================================
@@ -797,6 +808,276 @@ void main() {
       );
 
       await server.shutdownGracefully();
+    });
+
+    // =========================================================================
+    // Named pipe transport tests (Windows-only)
+    // =========================================================================
+    group('Named pipe transport', () {
+      // =======================================================================
+      // A1: Basic unary RPC over named pipe
+      // =======================================================================
+      test('basic unary RPC over named pipe', () async {
+        final pipeName = _uniquePipeName('a1-basic');
+        final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+        addTearDown(() async {
+          try {
+            await server.shutdownGracefully();
+          } on StateError {
+            // Server already dead
+          }
+        });
+
+        final client = await ClientProcess.start('named-pipe', server.address, 'echo', ['42']);
+        final lines = await client.waitForExit();
+
+        expect(lines, contains('RESULT:42'), reason: 'Unary echo should return the input value');
+        expect(lines, contains('CONNECTED'), reason: 'Client should report successful connection');
+
+        final exitCode = await server.shutdownGracefully();
+        expect(exitCode, equals(0), reason: 'Server should exit cleanly after graceful shutdown');
+      }, skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null);
+
+      // =======================================================================
+      // A2: Server crash -> client detects error over named pipe
+      // =======================================================================
+      test(
+        'client detects server crash mid-stream over named pipe',
+        () async {
+          final pipeName = _uniquePipeName('a2-crash');
+          final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+
+          final client = await ClientProcess.start('named-pipe', server.address, 'bidi-detect-crash');
+          addTearDown(() {
+            client.kill();
+          });
+
+          // Wait for client to establish the bidi stream
+          await client.waitForMarker('CONNECTED');
+
+          // Kill the server process (simulates crash)
+          server.kill();
+          await server.exitCode;
+
+          // Client should detect the broken stream and report an error or normal close
+          final resultLine = await client
+              .waitForPrefix('ERROR:', timeout: const Duration(seconds: 30))
+              .then<String>(
+                (line) => line,
+                onError: (_) async {
+                  // If no ERROR line, the stream may have ended normally (DONE:NORMAL)
+                  // which is also acceptable for named pipes where the broken pipe
+                  // can manifest as a clean stream close.
+                  final doneLine = await client.waitForPrefix('DONE:', timeout: const Duration(seconds: 10));
+                  return doneLine;
+                },
+              );
+
+          // Either an error or a normal close is acceptable — the key is that
+          // the client detected the server disappearance and did not hang.
+          expect(
+            resultLine,
+            anyOf(contains('ERROR:'), contains('DONE:')),
+            reason: 'Client should detect server crash via error or stream close',
+          );
+
+          // Client should exit on its own after detecting the error
+          await client.exitCode.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              client.kill();
+              return -1;
+            },
+          );
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A3: Multiple clients on one named pipe server
+      // =======================================================================
+      test(
+        'four clients connect to one named pipe server concurrently',
+        () async {
+          final pipeName = _uniquePipeName('a3-multi');
+          final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+          addTearDown(() async {
+            try {
+              await server.shutdownGracefully();
+            } on StateError {
+              // Server already dead
+            }
+          });
+
+          // Spawn 4 client processes
+          final clients = <ClientProcess>[];
+          for (var i = 0; i < 4; i++) {
+            clients.add(await ClientProcess.start('named-pipe', server.address, 'echo', ['${i * 10}']));
+          }
+
+          // Wait for all to complete
+          final allLines = await Future.wait([
+            for (final c in clients) c.waitForExit(timeout: const Duration(seconds: 60)),
+          ]);
+
+          for (var i = 0; i < 4; i++) {
+            expect(allLines[i], contains('RESULT:${i * 10}'), reason: 'Client $i should receive echo result ${i * 10}');
+            expect(allLines[i], contains('CONNECTED'), reason: 'Client $i should report connection');
+          }
+
+          await server.shutdownGracefully();
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A4: Two servers on same named pipe name
+      // =======================================================================
+      test(
+        'second server on same pipe name — coexistence or failure',
+        () async {
+          final pipeName = _uniquePipeName('a4-dual');
+          final server1 = await ServerProcess.start('named-pipe', pipeName: pipeName);
+          addTearDown(() async {
+            try {
+              await server1.shutdownGracefully();
+            } on StateError {
+              // Server already dead
+            }
+          });
+
+          // Verify server1 is working
+          final warmup = await ClientProcess.start('named-pipe', server1.address, 'echo', ['1']);
+          final warmupLines = await warmup.waitForExit();
+          expect(warmupLines, contains('RESULT:1'), reason: 'Server1 should be working');
+
+          // Start server2 on the SAME pipe name. Windows named pipes support
+          // multiple instances (PIPE_UNLIMITED_INSTANCES), so both servers
+          // can coexist. The OS load-balances connections across instances.
+          // If the server fails to start, the process will exit with an error.
+          var server2Started = true;
+          late final ServerProcess server2;
+          try {
+            server2 = await ServerProcess.start('named-pipe', pipeName: pipeName);
+            addTearDown(() async {
+              try {
+                await server2.shutdownGracefully();
+              } on StateError {
+                // Server already dead
+              }
+            });
+          } on StateError {
+            // Server2 failed to start — this is acceptable behavior
+            server2Started = false;
+          } on TimeoutException {
+            // Server2 timed out starting — also acceptable
+            server2Started = false;
+          }
+
+          if (server2Started) {
+            // Both servers are running. A new client should connect to one of them.
+            final client = await ClientProcess.start('named-pipe', pipeName, 'echo', ['42']);
+            final lines = await client.waitForExit();
+            expect(lines, contains('RESULT:42'), reason: 'One of the servers should handle the connection');
+
+            await server2.shutdownGracefully();
+          }
+
+          // Server1 should still be functional regardless
+          final verify = await ClientProcess.start('named-pipe', server1.address, 'echo', ['99']);
+          final verifyLines = await verify.waitForExit();
+          expect(verifyLines, contains('RESULT:99'), reason: 'Server1 should still work');
+
+          await server1.shutdownGracefully();
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A5: Server restart on same pipe name, client reconnects
+      // =======================================================================
+      test(
+        'client reconnects after server restart on same named pipe',
+        () async {
+          final pipeName = _uniquePipeName('a5-restart');
+
+          // Start server v1
+          final server1 = await ServerProcess.start('named-pipe', pipeName: pipeName);
+
+          // Start client with reconnect command
+          final client = await ClientProcess.start('named-pipe', server1.address, 'reconnect-after-restart', ['10']);
+
+          // Wait for client to connect
+          await client.waitForMarker('CONNECTED');
+
+          // Gracefully shut down server v1
+          await server1.shutdownGracefully();
+
+          // Start server v2 on the SAME pipe name
+          final server2 = await ServerProcess.start('named-pipe', pipeName: pipeName);
+          addTearDown(() async {
+            try {
+              await server2.shutdownGracefully();
+            } on StateError {
+              // Server already dead
+            }
+          });
+
+          // Signal client that server has restarted
+          client.sendCommand('RESTART');
+
+          // Wait for client to reconnect
+          final lines = await client.waitForExit(timeout: const Duration(seconds: 30));
+
+          expect(lines, contains('CONNECTED'), reason: 'Client should have connected to server v1');
+          expect(lines, contains('RECONNECTED'), reason: 'Client should reconnect to server v2');
+          expect(lines, contains('RESULT:11'), reason: 'Post-restart echo(11) should return 11');
+
+          await server2.shutdownGracefully();
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A6: Client crash during bidi, server survives
+      // =======================================================================
+      test(
+        'server survives client crash during bidi stream over named pipe',
+        () async {
+          final pipeName = _uniquePipeName('a6-clientcrash');
+          final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+          addTearDown(() async {
+            try {
+              await server.shutdownGracefully();
+            } on StateError {
+              // Server already dead
+            }
+          });
+
+          // Start client holding a bidi stream open
+          final client = await ClientProcess.start('named-pipe', server.address, 'bidi-hold');
+          await client.waitForMarker('HOLDING');
+
+          // Kill the client process (simulates crash)
+          client.kill();
+          await client.exitCode;
+
+          // Server should still be alive and accept new connections
+          final client2 = await ClientProcess.start('named-pipe', server.address, 'echo', ['77']);
+          final lines = await client2.waitForExit();
+          expect(lines, contains('RESULT:77'), reason: 'Server should still work after client crash');
+
+          // Verify server cleaned up the old connection
+          server.sendCommand('CONNECTION_COUNT');
+          final countLine = await server.waitForPrefix('CONNECTIONS:');
+          final count = int.parse(countLine.substring('CONNECTIONS:'.length));
+          // The new client (client2) already exited, so connections should be 0 or 1
+          expect(count, lessThanOrEqualTo(1), reason: 'Crashed client connection should be cleaned up');
+
+          await server.shutdownGracefully();
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
     });
   });
 }
