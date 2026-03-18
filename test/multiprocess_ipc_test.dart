@@ -486,7 +486,7 @@ void main() {
     // =========================================================================
     // D13: 10 clients doing simultaneous echo RPCs
     // =========================================================================
-    test('D13: 10 simultaneous echo clients (TCP)', () async {
+    test('D13: 4 simultaneous echo clients (TCP)', () async {
       final server = await ServerProcess.start('tcp');
       addTearDown(() async {
         try {
@@ -496,18 +496,19 @@ void main() {
         }
       });
 
-      // Start 10 client processes each with echo [0..9]
+      // Start 4 client processes each with echo [0..3].
+      // Reduced from 10: CI runners (2-core) can't compile 10 dart run processes in parallel.
       final clients = <ClientProcess>[];
-      for (var i = 0; i < 10; i++) {
+      for (var i = 0; i < 4; i++) {
         clients.add(await ClientProcess.start('tcp', server.address, 'echo', ['$i']));
       }
 
-      // Wait for all 10 to complete with correct results
+      // Wait for all to complete with correct results
       final allLines = await Future.wait([
         for (final c in clients) c.waitForExit(timeout: const Duration(seconds: 60)),
       ]);
 
-      for (var i = 0; i < 10; i++) {
+      for (var i = 0; i < 4; i++) {
         expect(allLines[i], contains('RESULT:$i'), reason: 'TCP client $i should receive echo result $i');
         expect(allLines[i], contains('CONNECTED'), reason: 'TCP client $i should report connection');
       }
@@ -515,7 +516,7 @@ void main() {
       await server.shutdownGracefully();
     });
 
-    test('D13: 10 simultaneous echo clients (UDS)', () async {
+    test('D13: 4 simultaneous echo clients (UDS)', () async {
       final path = _uniqueSocketPath('d13-uds');
       addTearDown(() {
         try {
@@ -534,18 +535,18 @@ void main() {
         }
       });
 
-      // Start 10 client processes each with echo [0..9]
+      // Start 4 client processes each with echo [0..3]
       final clients = <ClientProcess>[];
-      for (var i = 0; i < 10; i++) {
+      for (var i = 0; i < 4; i++) {
         clients.add(await ClientProcess.start('uds', path, 'echo', ['$i']));
       }
 
-      // Wait for all 10 to complete with correct results
+      // Wait for all to complete with correct results
       final allLines = await Future.wait([
         for (final c in clients) c.waitForExit(timeout: const Duration(seconds: 60)),
       ]);
 
-      for (var i = 0; i < 10; i++) {
+      for (var i = 0; i < 4; i++) {
         expect(allLines[i], contains('RESULT:$i'), reason: 'UDS client $i should receive echo result $i');
         expect(allLines[i], contains('CONNECTED'), reason: 'UDS client $i should report connection');
       }

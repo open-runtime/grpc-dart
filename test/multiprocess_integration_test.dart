@@ -729,8 +729,10 @@ void main() {
         }
       });
 
-      // Wait for all 3 to start streaming
-      await Future.wait([for (final c in clients) c.waitForMarker('STREAMING')]);
+      // Wait for all 3 to start streaming (60s: 3 dart run compiles on 2-core CI runners)
+      await Future.wait([
+        for (final c in clients) c.waitForMarker('STREAMING', timeout: const Duration(seconds: 60)),
+      ]);
 
       // Wait for all 3 to complete
       for (var i = 0; i < 3; i++) {
