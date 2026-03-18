@@ -633,7 +633,7 @@ class _ServerPipeStream {
       _writeData,
       onDone: _onOutgoingDone,
       onError: (error) {
-        if (!_isClosed) {
+        if (!_isClosed && !_incomingController.isClosed) {
           _incomingController.addError(error);
         }
         close(force: true);
