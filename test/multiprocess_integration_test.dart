@@ -730,9 +730,7 @@ void main() {
       });
 
       // Wait for all 3 to start streaming (60s: 3 dart run compiles on 2-core CI runners)
-      await Future.wait([
-        for (final c in clients) c.waitForMarker('STREAMING', timeout: const Duration(seconds: 60)),
-      ]);
+      await Future.wait([for (final c in clients) c.waitForMarker('STREAMING', timeout: const Duration(seconds: 60))]);
 
       // Wait for all 3 to complete
       for (var i = 0; i < 3; i++) {
@@ -1077,6 +1075,261 @@ void main() {
           expect(count, lessThanOrEqualTo(1), reason: 'Crashed client connection should be cleaned up');
 
           await server.shutdownGracefully();
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A7: Graceful shutdown truncates active server stream over named pipe
+      // =======================================================================
+      test(
+        'graceful shutdown truncates active server stream over named pipe',
+        () async {
+          final pipeName = _uniquePipeName('a7-graceful');
+          final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+          addTearDown(() async {
+            try {
+              await server.shutdownGracefully();
+            } on StateError {
+              // Server already dead
+            }
+          });
+
+          // Start client with a long server stream (10000 items with 1ms delays = ~10s)
+          final client = await ClientProcess.start('named-pipe', server.address, 'server-stream-hold', ['10000']);
+          addTearDown(() {
+            client.kill();
+          });
+
+          // Wait for streaming to begin
+          await client.waitForMarker('STREAMING');
+
+          // Gracefully shut down server while stream is active
+          final serverExit = await server.shutdownGracefully();
+          expect(serverExit, equals(0), reason: 'Server should exit cleanly after graceful shutdown');
+
+          // Client should finish with a truncated stream
+          final doneLine = await client.waitForPrefix('DONE:', timeout: const Duration(seconds: 30));
+          final itemCount = int.parse(doneLine.substring('DONE:'.length));
+
+          // Should have received some items but not all 10000
+          expect(itemCount, greaterThan(0), reason: 'Client should have received some items before shutdown');
+          expect(itemCount, lessThan(10000), reason: 'Stream should be truncated by graceful shutdown');
+
+          // Client should exit
+          await client.exitCode.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              client.kill();
+              return -1;
+            },
+          );
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A8: Three concurrent server-streaming clients over named pipe
+      // =======================================================================
+      test(
+        'three concurrent server-streaming clients over named pipe',
+        () async {
+          final pipeName = _uniquePipeName('a8-concurrent-stream');
+          final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+          addTearDown(() async {
+            try {
+              await server.shutdownGracefully();
+            } on StateError {
+              // Server already dead
+            }
+          });
+
+          // Start 3 client processes, each requesting a 100-item server stream
+          final clients = <ClientProcess>[];
+          for (var i = 0; i < 3; i++) {
+            final client = await ClientProcess.start('named-pipe', server.address, 'server-stream-hold', ['100']);
+            addTearDown(() {
+              client.kill();
+            });
+            clients.add(client);
+          }
+
+          // Wait for all 3 clients to begin streaming (STREAMING marker after first item)
+          await Future.wait([
+            for (final client in clients) client.waitForMarker('STREAMING', timeout: const Duration(seconds: 60)),
+          ]);
+
+          // Wait for all 3 clients to finish receiving the full stream
+          final doneLines = await Future.wait([
+            for (final client in clients) client.waitForPrefix('DONE:', timeout: const Duration(seconds: 60)),
+          ]);
+
+          // Each client should have received exactly 100 items
+          for (var i = 0; i < 3; i++) {
+            final itemCount = int.parse(doneLines[i].substring('DONE:'.length));
+            expect(itemCount, equals(100), reason: 'Client $i should have received all 100 items');
+          }
+
+          // All clients should exit cleanly
+          for (final client in clients) {
+            await client.exitCode.timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                client.kill();
+                return -1;
+              },
+            );
+          }
+
+          final exitCode = await server.shutdownGracefully();
+          expect(exitCode, equals(0), reason: 'Server should exit cleanly after graceful shutdown');
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A9: Server survives 5 restart cycles on same named pipe
+      // =======================================================================
+      test(
+        'server survives 5 restart cycles on same named pipe',
+        () async {
+          final pipeName = _uniquePipeName('a9-restart-cycle');
+          int? lastCycle;
+
+          for (var cycle = 0; cycle < 5; cycle++) {
+            final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+
+            final client = await ClientProcess.start('named-pipe', server.address, 'echo', ['$cycle']);
+            final lines = await client.waitForExit();
+            expect(lines, contains('RESULT:$cycle'), reason: 'Cycle $cycle: echo should return $cycle');
+
+            final exitCode = await server.shutdownGracefully();
+            expect(
+              exitCode,
+              equals(0),
+              reason: 'Cycle $cycle: server should exit cleanly with code 0 (cooperative isolate exit)',
+            );
+
+            lastCycle = cycle;
+          }
+
+          expect(lastCycle, equals(4), reason: 'All 5 restart cycles should complete without pipe handle leaks');
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A10: Concurrent 512KB payloads from 3 clients over named pipe
+      // =======================================================================
+      test(
+        'concurrent 512KB payloads from 3 clients over named pipe',
+        () async {
+          final pipeName = _uniquePipeName('a10-large-payload');
+          final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+          addTearDown(() async {
+            try {
+              await server.shutdownGracefully();
+            } on StateError {
+              // Server already dead
+            }
+          });
+
+          // Start 3 client processes, each sending a 512KB (524288 byte) payload.
+          // This exercises the named pipe chunked write path (_enqueueWriteChunks
+          // with 16KB chunks) under concurrent load — a completely different code
+          // path from TCP/UDS.
+          final clients = <ClientProcess>[];
+          for (var i = 0; i < 3; i++) {
+            final client = await ClientProcess.start('named-pipe', server.address, 'echo-bytes', ['524288']);
+            addTearDown(() {
+              client.kill();
+            });
+            clients.add(client);
+          }
+
+          // Wait for all 3 clients to complete
+          final allLines = await Future.wait([
+            for (final c in clients) c.waitForExit(timeout: const Duration(seconds: 120)),
+          ]);
+
+          // Each client should have received exactly 524288 bytes back
+          for (var i = 0; i < 3; i++) {
+            expect(allLines[i], contains('RESULT:524288'), reason: 'Client $i should receive 524288 bytes echoed back');
+            expect(allLines[i], contains('CONNECTED'), reason: 'Client $i should report successful connection');
+          }
+
+          final exitCode = await server.shutdownGracefully();
+          expect(exitCode, equals(0), reason: 'Server should exit cleanly after graceful shutdown');
+        },
+        skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+      );
+
+      // =======================================================================
+      // A11: Client join/leave during active bidi streams over named pipe
+      // =======================================================================
+      test(
+        'client join/leave during active bidi streams over named pipe',
+        () async {
+          final pipeName = _uniquePipeName('a11-joinleave');
+          final server = await ServerProcess.start('named-pipe', pipeName: pipeName);
+          addTearDown(() async {
+            try {
+              await server.shutdownGracefully();
+            } on StateError {
+              // Server already dead
+            }
+          });
+
+          // Start 3 clients holding bidi streams open
+          final bidiClients = <ClientProcess>[];
+          for (var i = 0; i < 3; i++) {
+            bidiClients.add(await ClientProcess.start('named-pipe', server.address, 'bidi-hold'));
+          }
+          addTearDown(() {
+            for (final c in bidiClients) {
+              c.kill();
+            }
+          });
+
+          // Wait for all 3 to be actively holding their bidi streams
+          await Future.wait([
+            for (final c in bidiClients) c.waitForMarker('HOLDING', timeout: const Duration(seconds: 60)),
+          ]);
+
+          // Kill client 0 (simulates crash mid-bidi-stream)
+          bidiClients[0].kill();
+          await bidiClients[0].exitCode;
+
+          // Start 2 new clients with echo command while other bidi streams are active
+          final newClients = <ClientProcess>[];
+          for (var i = 0; i < 2; i++) {
+            newClients.add(await ClientProcess.start('named-pipe', server.address, 'echo', ['99']));
+          }
+
+          // Both new clients should complete successfully despite connection churn
+          for (var i = 0; i < 2; i++) {
+            final lines = await newClients[i].waitForExit(timeout: const Duration(seconds: 60));
+            expect(lines, contains('RESULT:99'), reason: 'New client $i should receive echo result 99');
+            expect(lines, contains('CONNECTED'), reason: 'New client $i should report connection');
+          }
+
+          // Clean up remaining bidi clients (indices 1 and 2)
+          for (var i = 1; i < 3; i++) {
+            bidiClients[i].sendCommand('CLOSE');
+          }
+          await Future.wait([
+            for (var i = 1; i < 3; i++)
+              bidiClients[i].exitCode.timeout(
+                const Duration(seconds: 10),
+                onTimeout: () {
+                  bidiClients[i].kill();
+                  return -1;
+                },
+              ),
+          ]);
+
+          final exitCode = await server.shutdownGracefully();
+          expect(exitCode, equals(0), reason: 'Server should exit cleanly after graceful shutdown');
         },
         skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
       );

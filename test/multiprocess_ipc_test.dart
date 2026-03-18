@@ -477,6 +477,139 @@ void main() {
       },
       skip: Platform.isWindows ? 'UDS not supported on Windows' : null,
     );
+
+    // =========================================================================
+    // B12: Server survives 5 restart cycles on same UDS path
+    // =========================================================================
+    test(
+      'B12: server survives 5 restart cycles on same UDS path',
+      () async {
+        final path = _uniqueSocketPath('b12-restart-cycle');
+        addTearDown(() {
+          try {
+            File(path).deleteSync();
+          } on FileSystemException {
+            // Socket file may already be gone
+          }
+        });
+
+        for (var cycle = 0; cycle < 5; cycle++) {
+          // Each cycle: start server on the same UDS path.
+          // On cycles 1-4 the server must delete the stale socket file left by
+          // the previous graceful shutdown before it can bind.
+          final server = await ServerProcess.start('uds', socketPath: path);
+          addTearDown(() async {
+            try {
+              await server.shutdownGracefully();
+            } on StateError {
+              // Already dead
+            }
+          });
+
+          final client = await ClientProcess.start('uds', path, 'echo', ['${cycle * 10}']);
+          final lines = await client.waitForExit();
+          expect(lines, contains('RESULT:${cycle * 10}'), reason: 'Cycle $cycle: echo should return ${cycle * 10}');
+
+          await server.shutdownGracefully();
+        }
+
+        // After all 5 cycles, verify the socket file is cleaned up.
+        expect(
+          File(path).existsSync(),
+          isFalse,
+          reason: 'Socket file should be cleaned up after graceful shutdown of final cycle',
+        );
+      },
+      skip: Platform.isWindows ? 'UDS not supported on Windows' : null,
+    );
+
+    // =========================================================================
+    // B13: Server crash during active client streaming leaves stale socket
+    // =========================================================================
+    test(
+      'B13: server crash during active client streaming leaves stale socket (UDS)',
+      () async {
+        final path = _uniqueSocketPath('b13-crash-stream');
+        addTearDown(() {
+          try {
+            File(path).deleteSync();
+          } on FileSystemException {
+            // Socket file may already be gone
+          }
+        });
+
+        // Phase 1: Start UDS server and a client with a long-lived server stream
+        final server1 = await ServerProcess.start('uds', socketPath: path);
+        addTearDown(() async {
+          try {
+            await server1.shutdownGracefully();
+          } on StateError {
+            // Already dead
+          }
+        });
+
+        final streamClient = await ClientProcess.start('uds', path, 'server-stream-hold', ['10000']);
+        addTearDown(() {
+          streamClient.kill();
+        });
+
+        // Wait for the client to confirm it is actively streaming
+        await streamClient.waitForMarker('STREAMING', timeout: const Duration(seconds: 60));
+
+        // Phase 2: SIGKILL the server (hard crash — leaves stale socket file)
+        server1.kill();
+        await server1.exitCode;
+
+        // Client should detect the broken connection and exit
+        final streamExitCode = await streamClient.exitCode.timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            streamClient.kill();
+            throw TimeoutException(
+              'Streaming client (pid=${streamClient.pid}) did not exit within 30s after server crash. '
+              'Stdout: ${streamClient.stdout}',
+            );
+          },
+        );
+        // Client exits 0 (server-stream-hold catches GrpcError, prints ERROR: then DONE:)
+        expect(streamExitCode, equals(0), reason: 'Client should exit cleanly after detecting server crash');
+        // Verify the client saw an error (stream interrupted by crash)
+        expect(
+          streamClient.stdout.any((line) => line.startsWith('ERROR:')),
+          isTrue,
+          reason: 'Client should report a gRPC error when server crashes mid-stream',
+        );
+
+        // Phase 3: Verify stale socket file exists (SIGKILL prevents cleanup)
+        expect(File(path).existsSync(), isTrue, reason: 'SIGKILL should leave stale socket file behind');
+
+        // Phase 4: Start a NEW server on the SAME socket path (exercises stale socket cleanup)
+        final server2 = await ServerProcess.start('uds', socketPath: path);
+        addTearDown(() async {
+          try {
+            await server2.shutdownGracefully();
+          } on StateError {
+            // Already dead
+          }
+        });
+
+        // Phase 5: Verify the new server works on the recovered path
+        final echoClient = await ClientProcess.start('uds', path, 'echo', ['42']);
+        final echoLines = await echoClient.waitForExit(timeout: const Duration(seconds: 30));
+        expect(
+          echoLines,
+          contains('RESULT:42'),
+          reason: 'New server should handle RPCs on same path after crash recovery',
+        );
+
+        // Phase 6: Graceful shutdown and verify socket cleanup
+        final exitCode2 = await server2.shutdownGracefully();
+        expect(exitCode2, equals(0), reason: 'Server2 should shut down cleanly');
+
+        expect(File(path).existsSync(), isFalse, reason: 'Graceful shutdown should clean up socket file');
+      },
+      skip: Platform.isWindows ? 'UDS not supported on Windows' : null,
+    );
   });
 
   // ===========================================================================
@@ -619,6 +752,281 @@ void main() {
       await server.shutdownGracefully();
     });
 
+    test(
+      'D14: client join/leave during active bidi streams (UDS)',
+      () async {
+        final path = _uniqueSocketPath('d14-uds');
+        addTearDown(() {
+          try {
+            File(path).deleteSync();
+          } on FileSystemException {
+            // Socket file may already be gone
+          }
+        });
+
+        final server = await ServerProcess.start('uds', socketPath: path);
+        addTearDown(() async {
+          try {
+            await server.shutdownGracefully();
+          } on StateError {
+            // Already dead
+          }
+        });
+
+        // Start 3 clients with bidi-hold, wait for all HOLDING
+        final bidiClients = <ClientProcess>[];
+        for (var i = 0; i < 3; i++) {
+          bidiClients.add(await ClientProcess.start('uds', path, 'bidi-hold'));
+        }
+        addTearDown(() {
+          for (final c in bidiClients) {
+            c.kill();
+          }
+        });
+
+        await Future.wait([
+          for (final c in bidiClients) c.waitForMarker('HOLDING', timeout: const Duration(seconds: 60)),
+        ]);
+
+        // Kill client 0 (simulates crash while other streams active)
+        bidiClients[0].kill();
+        await bidiClients[0].exitCode;
+
+        // Start 2 new clients with echo 99, verify both get RESULT:99
+        final echoClients = <ClientProcess>[];
+        for (var i = 0; i < 2; i++) {
+          echoClients.add(await ClientProcess.start('uds', path, 'echo', ['99']));
+        }
+        final echoResults = await Future.wait([
+          for (final c in echoClients) c.waitForExit(timeout: const Duration(seconds: 60)),
+        ]);
+        for (var i = 0; i < 2; i++) {
+          expect(
+            echoResults[i],
+            contains('RESULT:99'),
+            reason: 'New echo client $i should get result after peer crash',
+          );
+        }
+
+        // Verify remaining 2 bidi clients still have their streams (they stay in HOLDING)
+        expect(bidiClients[1].hasLine('HOLDING'), isTrue, reason: 'Bidi client 1 should still be holding');
+        expect(bidiClients[2].hasLine('HOLDING'), isTrue, reason: 'Bidi client 2 should still be holding');
+
+        // Clean up: close remaining bidi clients gracefully
+        for (var i = 1; i < 3; i++) {
+          bidiClients[i].sendCommand('CLOSE');
+        }
+        for (var i = 1; i < 3; i++) {
+          await bidiClients[i].exitCode.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              bidiClients[i].kill();
+              return -1;
+            },
+          );
+        }
+
+        await server.shutdownGracefully();
+      },
+      skip: Platform.isWindows ? 'UDS not supported on Windows' : null,
+    );
+
+    // =========================================================================
+    // D17: Multi-client bidi hold then mass disconnect
+    // =========================================================================
+    test('D17: 4 clients hold bidi streams then all exit cleanly (TCP)', () async {
+      final server = await ServerProcess.start('tcp');
+      addTearDown(() async {
+        try {
+          await server.shutdownGracefully();
+        } on StateError {
+          // Already dead
+        }
+      });
+
+      // Start 4 bidi-hold clients
+      final bidiClients = <ClientProcess>[];
+      for (var i = 0; i < 4; i++) {
+        bidiClients.add(await ClientProcess.start('tcp', server.address, 'bidi-hold'));
+      }
+      addTearDown(() {
+        for (final c in bidiClients) {
+          c.kill();
+        }
+      });
+
+      // Wait for all 4 to reach HOLDING state (bidi stream open and alive)
+      await Future.wait([
+        for (final c in bidiClients) c.waitForMarker('HOLDING', timeout: const Duration(seconds: 60)),
+      ]);
+
+      // Verify server has 4 active connections
+      server.sendCommand('CONNECTION_COUNT');
+      final countLine4 = await server.waitForPrefix('CONNECTIONS:', timeout: const Duration(seconds: 10));
+      final count4 = int.parse(countLine4.substring('CONNECTIONS:'.length));
+      expect(count4, equals(4), reason: 'Server should have 4 active connections from bidi-hold clients');
+
+      // Kill all 4 clients simultaneously (simulates mass disconnect)
+      for (final c in bidiClients) {
+        c.kill();
+      }
+      await Future.wait([for (final c in bidiClients) c.exitCode]);
+
+      // Poll server CONNECTION_COUNT until it drops to 0 (all cleaned up),
+      // using deadline-bounded polling of concrete state.
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      var lastCount = count4;
+      while (DateTime.now().isBefore(deadline)) {
+        final lineCountBefore = server.stdoutLines.length;
+        server.sendCommand('CONNECTION_COUNT');
+        // Wait for a new CONNECTIONS: line to appear after the command
+        for (var attempts = 0; attempts < 200; attempts++) {
+          await Future<void>.delayed(Duration.zero);
+          if (server.stdoutLines.length > lineCountBefore) {
+            final latest = server.stdoutLines.last;
+            if (latest.startsWith('CONNECTIONS:')) {
+              lastCount = int.parse(latest.substring('CONNECTIONS:'.length));
+              break;
+            }
+          }
+        }
+        if (lastCount == 0) break;
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      expect(lastCount, equals(0), reason: 'Server should have 0 connections after all bidi clients were killed');
+
+      // Verify server is still alive by performing a fresh echo RPC
+      final echoClient = await ClientProcess.start('tcp', server.address, 'echo', ['77']);
+      final echoLines = await echoClient.waitForExit(timeout: const Duration(seconds: 60));
+      expect(echoLines, contains('RESULT:77'), reason: 'Server should still accept new RPCs after mass disconnect');
+
+      // Verify connection count is at most 1 (echo client may or may not have been cleaned up yet)
+      final lineCountBeforeFinal = server.stdoutLines.length;
+      server.sendCommand('CONNECTION_COUNT');
+      final deadlineFinal = DateTime.now().add(const Duration(seconds: 10));
+      var finalCount = -1;
+      while (DateTime.now().isBefore(deadlineFinal)) {
+        await Future<void>.delayed(Duration.zero);
+        for (var i = lineCountBeforeFinal; i < server.stdoutLines.length; i++) {
+          if (server.stdoutLines[i].startsWith('CONNECTIONS:')) {
+            finalCount = int.parse(server.stdoutLines[i].substring('CONNECTIONS:'.length));
+            break;
+          }
+        }
+        if (finalCount >= 0) break;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      // The echo client already terminated, so connections should be 0 or at most 1
+      expect(finalCount, lessThanOrEqualTo(1), reason: 'Connection count should be at most 1 after echo client exited');
+
+      await server.shutdownGracefully();
+    });
+
+    test(
+      'D17: 4 clients hold bidi streams then all exit cleanly (UDS)',
+      () async {
+        final path = _uniqueSocketPath('d17-uds');
+        addTearDown(() {
+          try {
+            File(path).deleteSync();
+          } on FileSystemException {
+            // Socket file may already be gone
+          }
+        });
+
+        final server = await ServerProcess.start('uds', socketPath: path);
+        addTearDown(() async {
+          try {
+            await server.shutdownGracefully();
+          } on StateError {
+            // Already dead
+          }
+        });
+
+        // Start 4 bidi-hold clients
+        final bidiClients = <ClientProcess>[];
+        for (var i = 0; i < 4; i++) {
+          bidiClients.add(await ClientProcess.start('uds', path, 'bidi-hold'));
+        }
+        addTearDown(() {
+          for (final c in bidiClients) {
+            c.kill();
+          }
+        });
+
+        // Wait for all 4 to reach HOLDING state (bidi stream open and alive)
+        await Future.wait([
+          for (final c in bidiClients) c.waitForMarker('HOLDING', timeout: const Duration(seconds: 60)),
+        ]);
+
+        // Verify server has 4 active connections
+        server.sendCommand('CONNECTION_COUNT');
+        final countLine4 = await server.waitForPrefix('CONNECTIONS:', timeout: const Duration(seconds: 10));
+        final count4 = int.parse(countLine4.substring('CONNECTIONS:'.length));
+        expect(count4, equals(4), reason: 'Server should have 4 active connections from bidi-hold clients');
+
+        // Kill all 4 clients simultaneously (simulates mass disconnect)
+        for (final c in bidiClients) {
+          c.kill();
+        }
+        await Future.wait([for (final c in bidiClients) c.exitCode]);
+
+        // Poll server CONNECTION_COUNT until it drops to 0 (all cleaned up),
+        // using deadline-bounded polling of concrete state.
+        final deadline = DateTime.now().add(const Duration(seconds: 30));
+        var lastCount = count4;
+        while (DateTime.now().isBefore(deadline)) {
+          final lineCountBefore = server.stdoutLines.length;
+          server.sendCommand('CONNECTION_COUNT');
+          // Wait for a new CONNECTIONS: line to appear after the command
+          for (var attempts = 0; attempts < 200; attempts++) {
+            await Future<void>.delayed(Duration.zero);
+            if (server.stdoutLines.length > lineCountBefore) {
+              final latest = server.stdoutLines.last;
+              if (latest.startsWith('CONNECTIONS:')) {
+                lastCount = int.parse(latest.substring('CONNECTIONS:'.length));
+                break;
+              }
+            }
+          }
+          if (lastCount == 0) break;
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        }
+        expect(lastCount, equals(0), reason: 'Server should have 0 connections after all bidi clients were killed');
+
+        // Verify server is still alive by performing a fresh echo RPC
+        final echoClient = await ClientProcess.start('uds', path, 'echo', ['77']);
+        final echoLines = await echoClient.waitForExit(timeout: const Duration(seconds: 60));
+        expect(echoLines, contains('RESULT:77'), reason: 'Server should still accept new RPCs after mass disconnect');
+
+        // Verify connection count is at most 1 (echo client may or may not have been cleaned up yet)
+        final lineCountBeforeFinal = server.stdoutLines.length;
+        server.sendCommand('CONNECTION_COUNT');
+        final deadlineFinal = DateTime.now().add(const Duration(seconds: 10));
+        var finalCount = -1;
+        while (DateTime.now().isBefore(deadlineFinal)) {
+          await Future<void>.delayed(Duration.zero);
+          for (var i = lineCountBeforeFinal; i < server.stdoutLines.length; i++) {
+            if (server.stdoutLines[i].startsWith('CONNECTIONS:')) {
+              finalCount = int.parse(server.stdoutLines[i].substring('CONNECTIONS:'.length));
+              break;
+            }
+          }
+          if (finalCount >= 0) break;
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        // The echo client already terminated, so connections should be 0 or at most 1
+        expect(
+          finalCount,
+          lessThanOrEqualTo(1),
+          reason: 'Connection count should be at most 1 after echo client exited',
+        );
+
+        await server.shutdownGracefully();
+      },
+      skip: Platform.isWindows ? 'UDS not supported on Windows' : null,
+    );
+
     // =========================================================================
     // D15: Large payloads from multiple clients
     // =========================================================================
@@ -698,5 +1106,79 @@ void main() {
       },
       skip: Platform.isWindows ? 'UDS not supported on Windows' : null,
     );
+
+    // =========================================================================
+    // D16: Server restart during active client streaming
+    // =========================================================================
+    test('D16: server restart during active client streaming (TCP)', () async {
+      // Phase 1: Start a TCP server and a client with a long-running server stream.
+      final server1 = await ServerProcess.start('tcp');
+      addTearDown(() async {
+        try {
+          await server1.shutdownGracefully();
+        } on StateError {
+          // Already dead
+        }
+      });
+
+      final streamClient = await ClientProcess.start('tcp', server1.address, 'server-stream-hold', ['10000']);
+      addTearDown(() {
+        streamClient.kill();
+      });
+
+      // Wait for the client to confirm it is actively receiving stream data.
+      await streamClient.waitForMarker('STREAMING', timeout: const Duration(seconds: 60));
+
+      // Phase 2: SIGKILL the server while the client has an active stream.
+      // This is a hard crash — no graceful GOAWAY, no RST_STREAM, just a dead socket.
+      server1.kill();
+      await server1.exitCode;
+
+      // The client should detect the broken connection and exit.
+      // server-stream-hold catches GrpcError internally and prints DONE:<count>,
+      // but a hard server kill may also surface as a non-GrpcError (exit code 1).
+      // Either outcome proves the client detected the crash — it must not hang.
+      final streamExitCode = await streamClient.exitCode.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException(
+            'Streaming client (pid=${streamClient.pid}) did not exit within 30s after server SIGKILL. '
+            'Stdout: ${streamClient.stdout}',
+          );
+        },
+      );
+
+      // The client must have exited (any exit code is acceptable — 0 means GrpcError
+      // was caught cleanly, non-zero means an unexpected transport error surfaced).
+      // What matters is that it did NOT hang.
+      final hasDone = streamClient.stdout.any((line) => line.startsWith('DONE:'));
+      final hasError = streamClient.stdout.any((line) => line.startsWith('ERROR:'));
+      expect(
+        hasDone || hasError || streamExitCode != 0,
+        isTrue,
+        reason:
+            'Streaming client should detect server crash via DONE, ERROR, or non-zero exit '
+            '(exitCode=$streamExitCode, stdout=${streamClient.stdout})',
+      );
+
+      // Phase 3: Start a completely new server on a fresh ephemeral port.
+      // This proves the system recovers — a new server on a new port is fully functional.
+      final server2 = await ServerProcess.start('tcp');
+      addTearDown(() async {
+        try {
+          await server2.shutdownGracefully();
+        } on StateError {
+          // Already dead
+        }
+      });
+
+      // Verify the new server is clean and functional with a simple echo RPC.
+      final echoClient = await ClientProcess.start('tcp', server2.address, 'echo', ['42']);
+      final echoLines = await echoClient.waitForExit(timeout: const Duration(seconds: 30));
+      expect(echoLines, contains('RESULT:42'), reason: 'New server should handle echo after predecessor crash');
+      expect(echoLines, contains('CONNECTED'), reason: 'New server should accept connections cleanly');
+
+      await server2.shutdownGracefully();
+    });
   });
 }
