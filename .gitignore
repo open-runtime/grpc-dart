@@ -26,3 +26,5 @@ doc/api/
 pubspec_overrides.yaml
 # Claude AI session data
 .claude/
+inspo/process.dart
+inspo/server.dart
