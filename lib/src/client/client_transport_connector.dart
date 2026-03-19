@@ -15,7 +15,7 @@
 
 import 'dart:async';
 
-import 'package:http2/transport.dart';
+import '../http2/transport.dart';
 
 /// A transport-specific configuration used by gRPC clients to connect.
 abstract class ClientTransportConnector {

@@ -16,8 +16,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:grpc/grpc.dart';
 import 'package:grpc/src/client/transport/web_streams.dart';
-import 'package:grpc/src/shared/message.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -32,5 +32,30 @@ void main() {
                 .first
             as GrpcData;
     expect(data.data, []);
+  });
+
+  test('decoding a message larger than 4MB succeeds by default', () async {
+    const payloadLength = 4 * 1024 * 1024 + 1;
+    final payload = Uint8List(5 + payloadLength)
+      ..[0] = 0x00
+      ..[1] = 0x00
+      ..[2] = 0x40
+      ..[3] = 0x00
+      ..[4] = 0x01;
+
+    final data = await GrpcWebDecoder().bind(Stream.value(payload.buffer)).first as GrpcData;
+    expect(data.data.length, equals(payloadLength));
+  });
+
+  test('decoding rejects oversized message when limit is configured', () async {
+    final payload = Uint8List.fromList([0x00, 0x00, 0x00, 0x00, 0x05]);
+    await expectLater(
+      GrpcWebDecoder(maxInboundMessageSize: 4).bind(Stream.value(payload.buffer)).drain<void>(),
+      throwsA(
+        isA<GrpcError>()
+            .having((e) => e.code, 'code', StatusCode.resourceExhausted)
+            .having((e) => e.message, 'message', contains('Received message larger than max')),
+      ),
+    );
   });
 }

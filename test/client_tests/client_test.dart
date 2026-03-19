@@ -21,7 +21,7 @@ import 'package:grpc/grpc.dart';
 import 'package:grpc/src/client/http2_connection.dart';
 import 'package:grpc/src/generated/google/rpc/status.pb.dart';
 import 'package:grpc/src/shared/status.dart';
-import 'package:http2/transport.dart';
+import 'package:grpc/src/http2/transport.dart';
 import 'package:protobuf/protobuf.dart';
 import 'package:test/test.dart';
 
@@ -634,14 +634,16 @@ void main() {
         'CAMSEGFtb3VudCB0b28gc21hbGwafgopdHlwZS5nb29nbGVhcGlzLmNvbS9nb29nbGUucnBjLkJhZFJlcXVlc3QSUQpPCgZhbW91bnQSRVRoZSByZXF1aXJlZCBjdXJyZW5jeSBjb252ZXJzaW9uIHdvdWxkIHJlc3VsdCBpbiBhIHplcm8gdmFsdWUgcGF5bWVudA==',
       ),
     );
-    expect(status.details, isNotEmpty);
+    // The base64 payload encodes exactly 1 Status detail (BadRequest)
+    // with exactly 1 field violation. Exact counts are deterministic.
+    expect(status.details, hasLength(1));
 
     final detailItem = status.details.first;
     final parsedResult = parseErrorDetailsFromAny(detailItem);
     expect(parsedResult, isA<BadRequest>());
 
     final castedResult = parsedResult as BadRequest;
-    expect(castedResult.fieldViolations, isNotEmpty);
+    expect(castedResult.fieldViolations, hasLength(1));
     expect(castedResult.fieldViolations.first.field_1, 'amount');
     expect(
       castedResult.fieldViolations.first.description,

@@ -1,0 +1,32 @@
+---
+description: Prevent timing and synchronization race masking in Dart code and tests
+alwaysApply: true
+---
+
+# Dart Timing and Synchronization Rules
+
+These are strict rules for tests and implementations.
+
+1. No sleep-based synchronization.
+   Do not use arbitrary `Future.delayed(...)` to coordinate async behavior.
+   Prefer barriers, readiness signals, or deadline-bounded predicate polling.
+2. No timeout-only race fixes.
+   Increasing timeout/retry values without fixing coordination is not a fix.
+3. No assertion broadening to mask flakes.
+   Avoid replacing exact assertions with broad or approximate assertions unless
+   behavior-level requirements explicitly changed.
+4. No timeout-as-success.
+   Timeouts must fail loudly with context.
+5. No swallowed async or teardown errors.
+   Avoid `catch (_)`, broad `onError: (_)`, and ignored cleanup futures.
+6. Deterministic lifecycle sequencing is mandatory.
+   Use start -> ready -> action -> settle -> cleanup and await each stage.
+7. Skip policy is strict.
+   Any `skip:` requires issue id (`#123`) and expiry
+   (`expires: YYYY-MM-DD`).
+8. No mock frameworks in test code.
+   Prefer real collaborators/harnesses and explicit fakes.
+9. Race fixes require stability evidence.
+   Verify via repeated loop/stress execution, not single-pass success.
+10. Exceptions must be explicit and temporary.
+    Include behavior-level rationale, linked issue, and expiry.

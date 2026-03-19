@@ -18,7 +18,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:grpc/grpc.dart';
-import 'package:http2/transport.dart';
+import 'package:grpc/src/http2/transport.dart';
 import 'package:path/path.dart' as p;
 import 'package:stream_channel/stream_channel.dart';
 

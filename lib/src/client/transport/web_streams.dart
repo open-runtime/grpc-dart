@@ -23,6 +23,13 @@ import '../../shared/status.dart';
 enum _GrpcWebParseState { init, length, message }
 
 class GrpcWebDecoder extends Converter<ByteBuffer, GrpcMessage> {
+  /// Maximum allowed inbound message size in bytes.
+  ///
+  /// `null` preserves the historical unlimited behavior.
+  final int? maxInboundMessageSize;
+
+  GrpcWebDecoder({this.maxInboundMessageSize});
+
   @override
   GrpcMessage convert(ByteBuffer input) {
     final sink = GrpcMessageSink();
@@ -34,7 +41,7 @@ class GrpcWebDecoder extends Converter<ByteBuffer, GrpcMessage> {
 
   @override
   Sink<ByteBuffer> startChunkedConversion(Sink<GrpcMessage> sink) {
-    return _GrpcWebConversionSink(sink);
+    return _GrpcWebConversionSink(sink, maxInboundMessageSize);
   }
 }
 
@@ -43,6 +50,7 @@ class _GrpcWebConversionSink implements ChunkedConversionSink<ByteBuffer> {
   static const int frameTypeTrailers = 0x80;
 
   final Sink<GrpcMessage> _out;
+  final int? _maxInboundMessageSize;
 
   final _dataHeader = Uint8List(4);
 
@@ -52,7 +60,7 @@ class _GrpcWebConversionSink implements ChunkedConversionSink<ByteBuffer> {
   var _dataOffset = 0;
   Uint8List? _data;
 
-  _GrpcWebConversionSink(this._out);
+  _GrpcWebConversionSink(this._out, [this._maxInboundMessageSize]);
 
   int _parseFrameType(List<int> chunkData) {
     final frameType = chunkData[_chunkOffset];
@@ -75,6 +83,10 @@ class _GrpcWebConversionSink implements ChunkedConversionSink<ByteBuffer> {
     _chunkOffset += toCopy;
     if (_dataOffset == _dataHeader.lengthInBytes) {
       final dataLength = _dataHeader.buffer.asByteData().getUint32(0);
+      final maxInboundMessageSize = _maxInboundMessageSize;
+      if (maxInboundMessageSize != null && dataLength > maxInboundMessageSize) {
+        throw GrpcError.resourceExhausted('Received message larger than max ($dataLength vs. $maxInboundMessageSize)');
+      }
       _dataOffset = 0;
       _state = _GrpcWebParseState.message;
       _data = Uint8List(dataLength);

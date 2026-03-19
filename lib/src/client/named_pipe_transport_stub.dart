@@ -17,7 +17,7 @@
 // The real implementation is in named_pipe_transport.dart.
 import 'dart:async';
 
-import 'package:http2/transport.dart';
+import '../http2/transport.dart';
 
 import 'client_transport_connector.dart';
 
@@ -33,8 +33,11 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
   /// The name of the pipe (without the `\\.\pipe\` prefix).
   final String pipeName;
 
+  /// Optional connect timeout.
+  final Duration? connectTimeout;
+
   /// Creates a named pipe transport connector.
-  NamedPipeTransportConnector(this.pipeName) {
+  NamedPipeTransportConnector(this.pipeName, {this.connectTimeout}) {
     throw _namedPipeTransportUnsupported('NamedPipeTransportConnector');
   }
 

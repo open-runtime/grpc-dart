@@ -287,3 +287,7 @@ await pipeServer.serve(pipeName: 'my-service-12345');
 ## 6. Related Modules
 - **`googleapis_auth`**: Used internally for handling Google service account authentication and JWT signatures.
 - **`protobuf`**: The base `GeneratedMessage` classes and serializers come from the `protobuf` package.
+
+## 7. Windows Development (Azure Dev Box)
+
+For Windows-specific development using Azure Dev Box, Cursor Remote SSH, and a local mirror with Mutagen sync, see [docs/devbox/README.md](devbox/README.md).

@@ -62,5 +62,6 @@ class NamedPipeChannelOptions extends ChannelOptions {
     super.connectionTimeout,
     super.codecRegistry,
     super.keepAlive,
+    super.maxInboundMessageSize,
   }) : super(credentials: const ChannelCredentials.insecure(), proxy: null);
 }

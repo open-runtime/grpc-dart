@@ -20,6 +20,8 @@ import 'codec.dart';
 import 'codec_registry.dart';
 import 'status.dart';
 
+/// Recommended maximum inbound message size (4 MB).
+///
 abstract class GrpcMessage {}
 
 class GrpcMetadata extends GrpcMessage {

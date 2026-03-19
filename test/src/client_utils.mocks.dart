@@ -7,8 +7,8 @@
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'dart:async' as _i3;
 
-import 'package:http2/src/hpack/hpack.dart' as _i4;
-import 'package:http2/transport.dart' as _i2;
+import 'package:grpc/src/http2/hpack/hpack.dart' as _i4;
+import 'package:grpc/src/http2/transport.dart' as _i2;
 import 'package:mockito/mockito.dart' as _i1;
 
 // ignore_for_file: type=lint

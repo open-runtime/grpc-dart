@@ -36,6 +36,29 @@ All analysis warnings and errors must be fixed; hints should be considered.
 dart test
 ```
 
+## Timing and synchronization discipline (Dart)
+
+The project treats race masking as a correctness bug. Follow these rules:
+
+1. Never use arbitrary `Future.delayed(...)` as synchronization.
+   Use explicit barriers (`Completer`, `expectLater`, or state polling
+   with a deadline).
+2. Never "fix" race failures by only increasing timeouts/retries.
+   Fix the missing coordination signal or lifecycle path.
+3. Never weaken assertions to make flakes pass.
+   Do not replace exact checks with broad checks.
+4. Never swallow async errors or teardown failures.
+   Avoid `catch (_) {}` and always fail with context.
+5. Never skip deterministic lifecycle coordination.
+   Always await shutdown/cancel/done and use ordered barriers.
+
+Common code smells:
+- Adding `skip:` for flaky tests instead of root-cause fixes.
+- Replacing event-driven checks with sleep-based checks.
+- Accepting timeout as success for stress/race tests.
+- Using approximate assertions when exact behavior is expected.
+- Best-effort cleanup that ignores failures.
+
 gRPC-web tests require [`envoy`](
 https://www.envoyproxy.io/docs/envoy/latest/start/start.html) binary to be
 available in the PATH.

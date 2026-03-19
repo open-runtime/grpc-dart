@@ -13,7 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'dart:async';
+
 import 'package:clock/clock.dart';
+
+import '../shared/logging/logging.dart' show logGrpcEvent;
 
 /// Options to configure a gRPC server for receiving keepalive signals.
 class ServerKeepAliveOptions {
@@ -52,6 +56,10 @@ class ServerKeepAlive {
 
   int _badPings = 0;
   Stopwatch? _timeOfLastReceivedPing;
+  bool _tooManyBadPingsTriggered = false;
+
+  StreamSubscription<void>? _pingSubscription;
+  StreamSubscription<void>? _dataSubscription;
 
   ServerKeepAlive({
     this.tooManyBadPings,
@@ -64,9 +72,34 @@ class ServerKeepAlive {
     // If we don't care about bad pings, there is not point in listening to
     // events.
     if (_enforcesMaxBadPings) {
-      pingNotifier.listen((_) => _onPingReceived());
-      dataNotifier.listen((_) => _onDataReceived());
+      _pingSubscription = pingNotifier.listen((_) {
+        _onPingReceived().catchError((e) {
+          logGrpcEvent(
+            '[gRPC] Ping processing error: $e',
+            component: 'ServerKeepAlive',
+            event: 'ping_processing_error',
+            context: 'handle',
+            error: e,
+          );
+        });
+      });
+      _dataSubscription = dataNotifier.listen((_) => _onDataReceived());
     }
+  }
+
+  /// Cancels keepalive subscriptions so the Dart VM event loop can exit.
+  ///
+  /// The http2 package's `_pingReceived` StreamController is never closed
+  /// during `connection.terminate()`, so the ping subscription created in
+  /// [handle] persists indefinitely. For TCP, `socket.destroy()` kills all
+  /// lingering IO. For named pipes there is no equivalent — the orphaned
+  /// subscription keeps the VM alive (root cause of 44-minute Windows CI
+  /// hangs). Explicitly cancelling both subscriptions breaks the reference.
+  void dispose() {
+    _pingSubscription?.cancel();
+    _pingSubscription = null;
+    _dataSubscription?.cancel();
+    _dataSubscription = null;
   }
 
   bool get _enforcesMaxBadPings => (options.maxBadPings ?? 0) > 0;
@@ -77,10 +110,25 @@ class ServerKeepAlive {
         _timeOfLastReceivedPing = clock.stopwatch()
           ..reset()
           ..start();
-      } else if (_timeOfLastReceivedPing!.elapsed > options.minIntervalBetweenPingsWithoutData) {
+      } else if (_timeOfLastReceivedPing!.elapsed < options.minIntervalBetweenPingsWithoutData) {
+        // Strike: ping arrived faster than the minimum allowed interval.
+        // Reference: gRPC C++ ping_abuse_policy.cc — pings below the
+        // minimum interval increment the bad-ping counter.
         _badPings++;
+        _timeOfLastReceivedPing!
+          ..reset()
+          ..start();
+      } else {
+        // Legitimate ping: reset the stopwatch for the next interval
+        // measurement. Without this reset, elapsed time accumulates
+        // across pings, causing subsequent fast pings to appear slow
+        // (C++ reference resets last_ping_recv_time_ = now on every ping).
+        _timeOfLastReceivedPing!
+          ..reset()
+          ..start();
       }
-      if (_badPings > options.maxBadPings!) {
+      if (_badPings > options.maxBadPings! && !_tooManyBadPingsTriggered) {
+        _tooManyBadPingsTriggered = true;
         await tooManyBadPings?.call();
       }
     }
@@ -90,6 +138,9 @@ class ServerKeepAlive {
     if (_enforcesMaxBadPings) {
       _badPings = 0;
       _timeOfLastReceivedPing = null;
+      // Data starts a fresh no-data period, so a future over-limit streak
+      // should be allowed to trigger enforcement again.
+      _tooManyBadPingsTriggered = false;
     }
   }
 }

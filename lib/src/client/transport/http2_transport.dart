@@ -15,10 +15,11 @@
 
 import 'dart:async';
 
-import 'package:http2/transport.dart';
+import '../../http2/transport.dart';
 
 import '../../shared/codec.dart';
 import '../../shared/codec_registry.dart';
+import '../../shared/logging/logging.dart' show logGrpcEvent;
 import '../../shared/message.dart';
 import '../../shared/streams.dart';
 import 'transport.dart';
@@ -29,29 +30,105 @@ class Http2TransportStream extends GrpcTransportStream {
   final Stream<GrpcMessage> incomingMessages;
   final StreamController<List<int>> _outgoingMessages = StreamController();
   final ErrorHandler _onError;
+  late final StreamSubscription _outgoingSubscription;
+  bool _outgoingSubscriptionCancelled = false;
 
   @override
   StreamSink<List<int>> get outgoingMessages => _outgoingMessages.sink;
 
-  Http2TransportStream(this._transportStream, this._onError, CodecRegistry? codecRegistry, Codec? compression)
-    : incomingMessages = _transportStream.incomingMessages
-          .transform(GrpcHttpDecoder(forResponse: true))
-          .transform(grpcDecompressor(codecRegistry: codecRegistry)) {
-    _outgoingMessages.stream
+  Http2TransportStream(
+    this._transportStream,
+    this._onError,
+    CodecRegistry? codecRegistry,
+    Codec? compression, {
+    int? maxInboundMessageSize,
+  }) : incomingMessages = _transportStream.incomingMessages
+           .transform(GrpcHttpDecoder(forResponse: true, maxInboundMessageSize: maxInboundMessageSize))
+           .transform(grpcDecompressor(codecRegistry: codecRegistry)) {
+    final outSink = _transportStream.outgoingMessages;
+    _outgoingSubscription = _outgoingMessages.stream
         .map((payload) => frame(payload, compression))
         .map<StreamMessage>((bytes) => DataStreamMessage(bytes))
         .handleError(_onError)
         .listen(
-          _transportStream.outgoingMessages.add,
-          onError: _transportStream.outgoingMessages.addError,
-          onDone: _transportStream.outgoingMessages.close,
+          // Guard against "Cannot add event after closing": the
+          // transport stream's outgoing sink may be closed externally
+          // (e.g. RST_STREAM received, connection teardown) while we
+          // still have outgoing data queued. The direct method
+          // references would throw an unguarded StateError.
+          (message) {
+            try {
+              outSink.add(message);
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] HTTP/2 outgoing frame dropped'
+                ' (transport sink closed): $e',
+                component: 'Http2TransportStream',
+                event: 'outgoing_frame_dropped',
+                context: 'listen.onData',
+                error: e,
+              );
+              _cancelOutgoingSubscription('listen.onData');
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            try {
+              outSink.addError(error, stackTrace);
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Failed to forward error to'
+                ' HTTP/2 transport sink: $e',
+                component: 'Http2TransportStream',
+                event: 'outgoing_error_dropped',
+                context: 'listen.onError',
+                error: e,
+              );
+              _cancelOutgoingSubscription('listen.onError');
+            }
+          },
+          onDone: () {
+            try {
+              outSink.close();
+            } catch (e) {
+              logGrpcEvent(
+                '[gRPC] Failed to close HTTP/2'
+                ' outgoing transport sink: $e',
+                component: 'Http2TransportStream',
+                event: 'outgoing_close_failed',
+                context: 'listen.onDone',
+                error: e,
+              );
+            }
+          },
           cancelOnError: true,
         );
   }
 
   @override
   Future<void> terminate() async {
+    if (!_outgoingSubscriptionCancelled) {
+      _outgoingSubscriptionCancelled = true;
+      await _outgoingSubscription.cancel();
+    }
     await _outgoingMessages.close();
     _transportStream.terminate();
+  }
+
+  void _cancelOutgoingSubscription(String context) {
+    if (_outgoingSubscriptionCancelled) {
+      return;
+    }
+    _outgoingSubscriptionCancelled = true;
+    unawaited(
+      _outgoingSubscription.cancel().catchError((Object error) {
+        logGrpcEvent(
+          '[gRPC] Failed to cancel HTTP/2 outgoing subscription: $error',
+          component: 'Http2TransportStream',
+          event: 'outgoing_subscription_cancel_failed',
+          context: context,
+          error: error,
+        );
+      }),
+    );
   }
 }

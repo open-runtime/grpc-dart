@@ -25,9 +25,7 @@ void main(List<String> args) {
   final methods = _runSync(
     'grep -rn "Future<\\|Stream<\\|void " $sourceDir 2>/dev/null | grep -v "^\\/\\/" | head -30',
   );
-  final enums = _runSync(
-    'grep -rn "^enum" $sourceDir 2>/dev/null',
-  );
+  final enums = _runSync('grep -rn "^enum" $sourceDir 2>/dev/null');
 
   var testContent = '(no tests found)';
   final testDir = libDir.isNotEmpty ? libDir.replaceFirst('lib/', 'test/') : '';
@@ -100,11 +98,10 @@ Generate the complete EXAMPLES.md content.
 
 String _runSync(String command) {
   try {
-    final result = Process.runSync(
-      'sh',
-      ['-c', command],
-      workingDirectory: Directory.current.path,
-    );
+    final result = Process.runSync('sh', [
+      '-c',
+      command,
+    ], workingDirectory: Directory.current.path);
     if (result.exitCode == 0) return (result.stdout as String).trim();
     return '';
   } catch (_) {
