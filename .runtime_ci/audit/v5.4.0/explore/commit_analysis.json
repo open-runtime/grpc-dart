@@ -1,0 +1,92 @@
+{
+  "version": "5.4.0",
+  "previous_version": "v5.3.8",
+  "total_commits": 1,
+  "categories": {
+    "added": [
+      {
+        "description": "LocalGrpcServer and LocalGrpcChannel for zero-config local IPC API",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Threaded maxInboundMessageSize through the entire stack",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Structured logging via logGrpcEvent for transport diagnostics",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "48 multi-process integration scenarios across TCP, UDS, named pipes and 129 http2 internal tests",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      }
+    ],
+    "changed": [
+      {
+        "description": "Vendored http2 by removing package:http2 dependency into lib/src/http2/",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Rewrote server shutdownActiveConnections() with deterministic 5-phase lifecycle",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Refactored named pipe transport to a two-isolate architecture with cooperative shutdown and write queue chunking",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      }
+    ],
+    "deprecated": [],
+    "removed": [
+      {
+        "description": "Removed package:http2 dependency (vendored instead)",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      }
+    ],
+    "fixed": [
+      {
+        "description": "Fixed server shutdown races and lifecycle issues",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Fixed client connection lifecycle by adding connectTransport() shutdown guard and dispatch loop re-queue fix",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Preserved GrpcError status codes in handler error preservation (_onError)",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Fixed isCanceled setter to respect the value parameter",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Fixed vendored http2 Bug #1: ConnectionMessageQueueIn.onTerminated assert to defensive clear",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Fixed vendored http2 Bug #2: _pingReceived/_frameReceived closed in _terminate()",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      },
+      {
+        "description": "Fixed vendored http2 Bug #3: BufferedBytesWriter._closed guard",
+        "pr": "#41",
+        "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+      }
+    ],
+    "security": []
+  }
+}

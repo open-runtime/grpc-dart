@@ -1,0 +1,12 @@
+{
+  "pull_requests": [
+    {
+      "number": 41,
+      "title": "fix: named pipe race conditions, production hardening, vendored http2, multi-process IPC tests",
+      "author": "tsavo-at-pieces",
+      "labels": ["bug", "enhancement", "tests"],
+      "summary": "Fixes documented production crashes (server Cannot add event after closing crash, hung Server.shutdown(), handler memory leak, inverted keepalive enforcement, stale connection callback race, null connection ArgumentError), introduces a Windows named pipe transport with a two-isolate architecture, and hardens the server/handler/client lifecycle with defense-in-depth shutdown synchronization.",
+      "commits": ["39c24257eb411c11d77a3f131e29155c3ce14d1b"]
+    }
+  ]
+}

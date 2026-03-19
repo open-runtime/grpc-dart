@@ -6,10 +6,12 @@
 This is the **open-runtime fork** of the official [grpc/grpc-dart](https://github.com/grpc/grpc-dart) package, maintained with critical production fixes and enhancements.
 
 **Key Features:**
+- **Currently v5.4.0** (Based on upstream 5.0.0 with fork-specific improvements)
+- Vendored `http2` implementation for precise connection and flow control
+- Local IPC support via Unix Domain Sockets and Windows Named Pipes (see [LOCAL_IPC_GUIDE.md](docs/LOCAL_IPC_GUIDE.md))
 - Race condition fixes for production stability
 - Null connection exception handling
 - ServerInterceptor support for advanced security patterns
-- Based on upstream 5.0.0 with fork-specific improvements
 
 **Why this fork?** See [WHY_USE_OPEN_RUNTIME_FORK.md](WHY_USE_OPEN_RUNTIME_FORK.md) for detailed justification.
 
@@ -32,7 +34,15 @@ For complete documentation, see [Dart gRPC](https://grpc.io/docs/languages/dart)
 - [Flutter](https://flutter.dev)
 
 > **Note:** [grpc-web](https://github.com/grpc/grpc-web) is supported by `package:grpc/grpc_web.dart`.
-> **UDS-unix domain socket** is supported with sdk version >= 2.8.0.
+> **Local IPC** is natively supported via Unix Domain Sockets (macOS/Linux) and Named Pipes (Windows). See the [Local IPC Guide](docs/LOCAL_IPC_GUIDE.md).
+
+## Development Scripts
+
+The `scripts/` directory contains utilities for development and maintenance:
+
+- `scripts/devbox/bootstrap-devbox.ps1` - Provisions an Azure Dev Box for remote Windows development.
+- `scripts/devbox/setup-local-mutagen.sh` - Synchronizes your local macOS/Linux workspace to a remote Windows Dev Box via Mutagen (see [Dev Box Guide](docs/devbox/README.md)).
+- `scripts/prompts/` - Contains AI coding assistant prompts used for generating API references and examples.
 
 ## Contributing
 
