@@ -1,293 +1,247 @@
-# Quickstart
+# QUICKSTART: Package Entry Points
 
 ## 1. Overview
-The `grpc` module provides the foundational libraries to define and consume gRPC client and server endpoints in Dart. It includes implementations for HTTP/2 channels, gRPC-Web, and Windows Named Pipes. Additionally, it ships with common Protocol Buffers types like `Any`, `Duration`, and the Google RPC error detail messages.
+The Package Entry Points module provides the core API surface for building robust gRPC clients and servers in Dart. It offers cross-platform channels for native and web execution, IPC capabilities via Unix Domain Sockets and Windows Named Pipes, server configuration tools, interceptors, and complete Dart representations of standard Google Protocol Buffer well-known types (such as `Duration`, `Any`, and detailed `Status` errors).
 
 ## 2. Import
-Use the following imports depending on your use case:
+Depending on your application type, use one of the following real import paths:
 
 ```dart
-// Main import for gRPC clients, servers, and channels
+// Native client, server, and core gRPC utilities
 import 'package:grpc/grpc.dart';
 
-// Minimal API intended for generated protobuf stubs
-import 'package:grpc/service_api.dart';
-
-// Import for Web specific channels
+// Web-specific client utilities
 import 'package:grpc/grpc_web.dart';
 
-// Automatic switch between HTTP/2 and Web channels based on the platform
+// Cross-platform channel (auto-switches between native and gRPC-Web)
 import 'package:grpc/grpc_or_grpcweb.dart';
 
-// Common Google protobuf types (e.g. Duration) and RPC Error Details
+// Standard Google protobuf types (e.g., Duration, ErrorInfo, etc.)
 import 'package:grpc/protos.dart';
+
+// Specific imports for Any and Status types
+import 'package:grpc/src/generated/google/protobuf/any.pb.dart';
+import 'package:grpc/src/generated/google/rpc/status.pb.dart';
+
+// Minimum API exports required for generated client/server stubs
+import 'package:grpc/service_api.dart';
 ```
 
 ## 3. Setup
-To get started with gRPC, you'll need to instantiate a server or a client channel.
 
-**Client Channel:**
+### Client Setup
+To create a client channel that seamlessly handles both Native (HTTP/2) and Web (gRPC-Web) environments, instantiate `GrpcOrGrpcWebClientChannel`:
+
 ```dart
-import 'package:grpc/grpc.dart';
-
-// HTTP/2 Client Channel
-final channel = ClientChannel(
-  'localhost',
-  port: 50051,
-  options: const ChannelOptions(
-    credentials: ChannelCredentials.insecure(),
-    keepAlive: ClientKeepAliveOptions(
-      pingInterval: Duration(seconds: 30),
-      timeout: Duration(seconds: 15),
-    ),
+final channel = GrpcOrGrpcWebClientChannel.grpc(
+  'api.example.com',
+  port: 443,
+  options: ChannelOptions(
+    credentials: ChannelCredentials.secure(),
   ),
 );
 ```
 
-**Server:**
-```dart
-import 'package:grpc/grpc.dart';
+### Server Setup
+To configure and start a gRPC server on native platforms, use `Server.create`:
 
-// Server instance
+```dart
 final server = Server.create(
-  services: [], // Add your Service implementations here
-  interceptors: [],
-  keepAliveOptions: ServerKeepAliveOptions(
-    maxBadPings: 2,
-    minIntervalBetweenPingsWithoutData: Duration(minutes: 5),
-  ),
+  services: [ /* Provide your Service implementations here */ ],
+  interceptors: [ /* Add global ServerInterceptor instances */ ],
+  codecRegistry: CodecRegistry(codecs: const [GzipCodec(), IdentityCodec()]),
 );
 
-// Start serving
-await server.serve(port: 50051);
+await server.serve(port: 8080);
+print('Server is listening on port ${server.port}');
 ```
 
 ## 4. Common Operations
 
-### Protobuf Types and RPC Error Details
-The package provides compiled Dart code for common Google Protobuf and RPC types.
-This includes EVERY message, enum, and field defined in `any.proto`, `duration.proto`, `status.proto`, and `error_details.proto`.
+### Authentication
+Attach credentials dynamically using HTTP-based authenticators. The module provides `ServiceAccountAuthenticator`, `ComputeEngineAuthenticator`, and `JwtServiceAccountAuthenticator`.
+
+```dart
+final authenticator = ServiceAccountAuthenticator(serviceAccountJsonString, ['https://www.googleapis.com/auth/cloud-platform']);
+final callOptions = authenticator.toCallOptions;
+```
+
+### Local Inter-Process Communication (IPC)
+Establish local-only connections without network overhead using `LocalGrpcServer` and `LocalGrpcChannel`:
+
+```dart
+// Server
+final localServer = LocalGrpcServer('my-service', services: [ /* services */ ]);
+await localServer.serve();
+
+// Client
+final localChannel = LocalGrpcChannel('my-service', options: LocalChannelOptions());
+```
+
+### Protocol Buffer Types and RPC Error Handling
+The module exports fully-featured `google.protobuf` and `google.rpc` types to build structured, well-known responses and complex error payloads. 
+
+Below is an exhaustive example showcasing **every** message, field, and type defined by the module's included protocol buffer sources. All examples use proper cascade notation and apply camelCase field access as per Dart conventions.
 
 ```dart
 import 'package:fixnum/fixnum.dart';
-import 'package:grpc/protos.dart';
-import 'package:grpc/src/generated/google/protobuf/any.pb.dart';
-import 'package:grpc/src/generated/google/rpc/status.pb.dart';
 
-void useProtobufMessages() {
-  // --- google/protobuf/duration.proto ---
-  // A Duration represents a signed, fixed-length span of time represented
-  // as a count of seconds and fractions of seconds at nanosecond resolution.
-  final duration = Duration()
-    // Signed seconds of the span of time. Must be from -315,576,000,000
-    // to +315,576,000,000 inclusive.
-    ..seconds = Int64(60)
-    // Signed fractions of a second at nanosecond resolution of the span
-    // of time. Durations less than one second are represented with a 0
-    // `seconds` field and a positive or negative `nanos` field.
-    ..nanos = 0;
+// 1. Any (google/protobuf/any.proto)
+// `Any` contains an arbitrary serialized protocol buffer message along with a
+// URL that describes the type of the serialized message.
+final anyMessage = Any()
+  // A URL/resource name that uniquely identifies the type of the serialized
+  // protocol buffer message.
+  ..typeUrl = 'type.googleapis.com/my.custom.Message'
+  // Must be a valid serialized protocol buffer of the above specified type.
+  ..value = <int>[1, 2, 3];
 
-  // --- google/protobuf/any.proto ---
-  // `Any` contains an arbitrary serialized protocol buffer message along with a
-  // URL that describes the type of the serialized message.
-  final any = Any()
-    // A URL/resource name that uniquely identifies the type of the serialized
-    // protocol buffer message.
-    ..typeUrl = 'type.googleapis.com/google.protobuf.Duration'
-    // Must be a valid serialized protocol buffer of the above specified type.
-    ..value = duration.writeToBuffer();
+// Example of packing a generated message into an Any
+// Note: Duration is used as an example GeneratedMessage
+final myDuration = Duration()..seconds = Int64(60);
+final packedAny = Any.pack(myDuration);
 
-  // --- google/rpc/status.proto ---
-  // The `Status` type defines a logical error model that is suitable for
-  // different programming environments.
-  final status = Status()
-    // The status code, which should be an enum value of google.rpc.Code.
-    ..code = StatusCode.notFound
-    // A developer-facing error message, which should be in English.
-    ..message = 'Not found'
-    // A list of messages that carry the error details.
-    ..details.add(any);
+// 2. Duration (google/protobuf/duration.proto)
+// A Duration represents a signed, fixed-length span of time represented
+// as a count of seconds and fractions of seconds at nanosecond resolution.
+final duration = Duration()
+  // Signed seconds of the span of time. Must be from -315,576,000,000
+  // to +315,576,000,000 inclusive.
+  ..seconds = Int64(60)
+  // Signed fractions of a second at nanosecond resolution of the span
+  // of time. Must be from -999,999,999 to +999,999,999 inclusive.
+  ..nanos = 500000;
 
-  // --- google/rpc/error_details.proto ---
-  
-  // 1. RetryInfo
-  // Describes when the clients can retry a failed request.
-  final retryInfo = RetryInfo()
-    // Clients should wait at least this long between retrying the same request.
-    ..retryDelay = duration;
+// Duration provides helper methods for Dart's core Duration
+final dartDuration = duration.toDart();
+final fromDart = Duration.fromDart(dartDuration);
 
-  // 2. DebugInfo
-  // Describes additional debugging info.
-  final debugInfo = DebugInfo()
-    // The stack trace entries indicating where the error occurred.
-    ..stackEntries.addAll(['line 1', 'line 2'])
-    // Additional debugging information provided by the server.
-    ..detail = 'Debugging detail';
+// 3. Status (google/rpc/status.proto)
+// The `Status` type defines a logical error model that is suitable for
+// different programming environments, including REST APIs and RPC APIs.
+final status = Status()
+  // The status code, which should be an enum value of google.rpc.Code.
+  ..code = StatusCode.notFound
+  // A developer-facing error message, which should be in English.
+  ..message = 'Resource not found'
+  // A list of messages that carry the error details.
+  ..details.add(anyMessage);
 
-  // 3. QuotaFailure & QuotaFailure_Violation
-  // Describes how a quota check failed.
-  final quotaFailureViolation = QuotaFailure_Violation()
-    // The subject on which the quota check failed.
-    ..subject = 'clientip:127.0.0.1'
-    // A description of how the quota check failed.
-    ..description = 'Daily Limit exceeded';
-    
-  final quotaFailure = QuotaFailure()
-    // Describes all quota violations.
-    ..violations.add(quotaFailureViolation);
+// 4. RetryInfo (google/rpc/error_details.proto)
+// Describes when the clients can retry a failed request.
+final retryInfo = RetryInfo()
+  // Clients should wait at least this long between retrying the same request.
+  ..retryDelay = duration;
 
-  // 4. ErrorInfo
-  // Describes the cause of the error with structured details.
-  final errorInfo = ErrorInfo()
-    // The reason of the error. This is a constant value that identifies the
-    // proximate cause of the error.
-    ..reason = 'API_DISABLED'
-    // The logical grouping to which the "reason" belongs.
-    ..domain = 'googleapis.com'
-    // Additional structured details about this error.
-    ..metadata['service'] = 'pubsub.googleapis.com';
+// 5. DebugInfo (google/rpc/error_details.proto)
+// Describes additional debugging info.
+final debugInfo = DebugInfo()
+  // The stack trace entries indicating where the error occurred.
+  ..stackEntries.addAll(['src/client/call.dart:123', 'src/server/handler.dart:456'])
+  // Additional debugging information provided by the server.
+  ..detail = 'Internal pipeline exception';
 
-  // 5. PreconditionFailure & PreconditionFailure_Violation
-  // Describes what preconditions have failed.
-  final preconditionFailureViolation = PreconditionFailure_Violation()
-    // The type of PreconditionFailure.
-    ..type = 'TOS'
-    // The subject, relative to the type, that failed.
-    ..subject = 'google.com/cloud'
-    // A description of how the precondition failed.
-    ..description = 'Terms of service not accepted';
-    
-  final preconditionFailure = PreconditionFailure()
-    // Describes all precondition violations.
-    ..violations.add(preconditionFailureViolation);
+// 6. QuotaFailure and QuotaFailure_Violation (google/rpc/error_details.proto)
+// Describes how a quota check failed.
+final quotaViolation = QuotaFailure_Violation()
+  // The subject on which the quota check failed.
+  ..subject = 'clientip:192.168.1.1'
+  // A description of how the quota check failed.
+  ..description = 'Daily Limit for read operations exceeded';
 
-  // 6. BadRequest & BadRequest_FieldViolation
-  // Describes violations in a client request.
-  // Note: The protobuf field 'field' is renamed to 'field_1' in Dart 
-  // to avoid collision with language keywords or base classes.
-  final fieldViolation = BadRequest_FieldViolation()
-    // A path leading to a field in the request body.
-    ..field_1 = 'user_id'
-    // A description of why the request element is bad.
-    ..description = 'Must not be empty';
-    
-  final badRequest = BadRequest()
-    // Describes all violations in a client request.
-    ..fieldViolations.add(fieldViolation);
+final quotaFailure = QuotaFailure()
+  // Describes all quota violations.
+  ..violations.add(quotaViolation);
 
-  // 7. RequestInfo
-  // Contains metadata about the request that clients can attach when filing a bug
-  // or providing other forms of feedback.
-  final requestInfo = RequestInfo()
-    // An opaque string that should only be interpreted by the service generating it.
-    ..requestId = 'req-12345'
-    // Any data that was used to serve this request.
-    ..servingData = 'debug-data';
+// 7. ErrorInfo (google/rpc/error_details.proto)
+// Describes the cause of the error with structured details.
+final errorInfo = ErrorInfo()
+  // The reason of the error. This is a constant value that identifies the
+  // proximate cause of the error.
+  ..reason = 'API_DISABLED'
+  // The logical grouping to which the "reason" belongs.
+  ..domain = 'googleapis.com'
+  // Additional structured details about this error.
+  ..metadata.addAll({'service': 'pubsub.googleapis.com'});
 
-  // 8. ResourceInfo
-  // Describes the resource that is being accessed.
-  final resourceInfo = ResourceInfo()
-    // A name for the type of resource being accessed.
-    ..resourceType = 'cloud storage bucket'
-    // The name of the resource being accessed.
-    ..resourceName = 'my-bucket'
-    // The owner of the resource (optional).
-    ..owner = 'user:admin@example.com'
-    // Describes what error is encountered when accessing this resource.
-    ..description = 'Bucket not found';
+// 8. PreconditionFailure and PreconditionFailure_Violation (google/rpc/error_details.proto)
+// Describes what preconditions have failed.
+final preconditionViolation = PreconditionFailure_Violation()
+  // The type of PreconditionFailure.
+  ..type = 'TOS'
+  // The subject, relative to the type, that failed.
+  ..subject = 'google.com/cloud'
+  // A description of how the precondition failed.
+  ..description = 'Terms of service not accepted';
 
-  // 9. Help & Help_Link
-  // Provides links to documentation or for performing an out of band action.
-  final helpLink = Help_Link()
-    // Describes what the link offers.
-    ..description = 'Enable the API here'
-    // The URL of the link.
-    ..url = 'https://console.cloud.google.com';
-    
-  final help = Help()
-    // URL(s) pointing to additional information on handling the current error.
-    ..links.add(helpLink);
+final preconditionFailure = PreconditionFailure()
+  // Describes all precondition violations.
+  ..violations.add(preconditionViolation);
 
-  // 10. LocalizedMessage
-  // Provides a localized error message that is safe to return to the user
-  // which can be attached to an RPC error.
-  final localizedMessage = LocalizedMessage()
-    // The locale used following the specification defined at
-    // http://www.rfc-editor.org/rfc/bcp/bcp47.txt.
-    ..locale = 'en-US'
-    // The localized error message in the above locale.
-    ..message = 'An error occurred';
-}
-```
+// 9. BadRequest and BadRequest_FieldViolation (google/rpc/error_details.proto)
+// Describes violations in a client request.
+// Note: 'field' is translated to 'field_1' in Dart to avoid conflicts.
+final fieldViolation = BadRequest_FieldViolation()
+  // A path leading to a field in the request body.
+  ..field_1 = 'request.id'
+  // A description of why the request element is bad.
+  ..description = 'ID must be a positive integer';
 
-### Authentication
-You can easily set up credentials using `applicationDefaultCredentialsAuthenticator`:
-```dart
-import 'package:grpc/grpc.dart';
+final badRequest = BadRequest()
+  // Describes all violations in a client request.
+  ..fieldViolations.add(fieldViolation);
 
-Future<void> setupAuth() async {
-  final authenticator = await applicationDefaultCredentialsAuthenticator([
-    'https://www.googleapis.com/auth/cloud-platform',
-  ]);
+// 10. RequestInfo (google/rpc/error_details.proto)
+// Contains metadata about the request that clients can attach when filing a bug.
+final requestInfo = RequestInfo()
+  // An opaque string that should only be interpreted by the service generating it.
+  ..requestId = 'req-123456789'
+  // Any data that was used to serve this request.
+  ..servingData = 'encrypted-stack-trace-data';
 
-  final channel = ClientChannel(
-    'my-service.googleapis.com',
-    port: 443,
-    options: ChannelOptions(
-      credentials: ChannelCredentials.secure(),
-    ),
-  );
+// 11. ResourceInfo (google/rpc/error_details.proto)
+// Describes the resource that is being accessed.
+final resourceInfo = ResourceInfo()
+  // A name for the type of resource being accessed.
+  ..resourceType = 'cloud storage bucket'
+  // The name of the resource being accessed.
+  ..resourceName = 'gs://my-bucket'
+  // The owner of the resource (optional).
+  ..owner = 'user:admin@example.com'
+  // Describes what error is encountered when accessing this resource.
+  ..description = 'Bucket requires writer permission';
 
-  final callOptions = authenticator.toCallOptions;
-  // Use callOptions when making client calls
-}
-```
+// 12. Help and Help_Link (google/rpc/error_details.proto)
+// Provides links to documentation or for performing an out of band action.
+final helpLink = Help_Link()
+  // Describes what the link offers.
+  ..description = 'Developer Console'
+  // The URL of the link.
+  ..url = 'https://console.cloud.google.com';
 
-### Service Interceptors
-You can intercept and modify requests on the server side:
+final help = Help()
+  // URL(s) pointing to additional information on handling the current error.
+  ..links.add(helpLink);
 
-```dart
-import 'dart:async';
-import 'package:grpc/grpc.dart';
-
-FutureOr<GrpcError?> myInterceptor(ServiceCall call, ServiceMethod method) {
-  if (call.clientMetadata?['authorization'] == null) {
-    return GrpcError.unauthenticated('Missing auth token');
-  }
-  return null; // Continue with the request
-}
-
-final server = Server.create(
-  services: [],
-  interceptors: [myInterceptor],
-);
-```
-
-### Named Pipes (Windows)
-For local IPC on Windows, you can use named pipes:
-```dart
-import 'package:grpc/grpc.dart';
-
-// Client
-final channel = NamedPipeClientChannel(
-  'my-service-12345', 
-  options: const NamedPipeChannelOptions(),
-);
-
-// Server
-final pipeServer = NamedPipeServer.create(services: []);
-await pipeServer.serve(pipeName: 'my-service-12345');
+// 13. LocalizedMessage (google/rpc/error_details.proto)
+// Provides a localized error message that is safe to return to the user.
+final localizedMessage = LocalizedMessage()
+  // The locale used following the specification defined at
+  // http://www.rfc-editor.org/rfc/bcp/bcp47.txt.
+  ..locale = 'en-US'
+  // The localized error message in the above locale.
+  ..message = 'An unexpected networking error occurred.';
 ```
 
 ## 5. Configuration
-- **Application Default Credentials:** The `applicationDefaultCredentialsAuthenticator` will automatically check the `GOOGLE_APPLICATION_CREDENTIALS` environment variable for a path to your service account JSON file.
-- **Client Channel Options:** Configure connections using `ChannelOptions` to adjust `connectTimeout`, `idleTimeout`, `keepAlive`, and `backoffStrategy`.
-- **Server KeepAlive:** Use `ServerKeepAliveOptions` to configure thresholds for `maxBadPings` and `minIntervalBetweenPingsWithoutData`.
+The module relies on several foundational configuration classes:
+*   **`ChannelOptions`**: Configures client channels with HTTP/2 attributes including `credentials` (e.g., `ChannelCredentials.insecure()` or `ChannelCredentials.secure()`), `idleTimeout`, `connectionTimeout`, `connectTimeout`, `backoffStrategy`, `userAgent`, `maxInboundMessageSize`, and a custom `proxy` object.
+*   **`ClientKeepAliveOptions`**: Embedded in `ChannelOptions` to send active HTTP/2 pings (`pingInterval`, `timeout`, `permitWithoutCalls`).
+*   **`ServerKeepAliveOptions`**: Controls server-side safeguards via `minIntervalBetweenPingsWithoutData` and `maxBadPings` to protect against ping floods.
+*   **`LocalChannelOptions`**: Scoped configuration explicitly tailored for IPC paths (like `connectTimeout` and `backoffStrategy`).
+*   **`ServerTlsCredentials`**: Encapsulates TLS parameters using `certificate` and `privateKey` byte lists along with passwords.
+*   **`ServerLocalCredentials`**: Credentials restricted to accepting only local loopback networking.
 
 ## 6. Related Modules
-- **`googleapis_auth`**: Used internally for handling Google service account authentication and JWT signatures.
-- **`protobuf`**: The base `GeneratedMessage` classes and serializers come from the `protobuf` package.
-
-## 7. Windows Development (Azure Dev Box)
-
-For Windows-specific development using Azure Dev Box, Cursor Remote SSH, and a local mirror with Mutagen sync, see [docs/devbox/README.md](devbox/README.md).
+*   **`package:protobuf`**: Provides the foundational `GeneratedMessage` and parsing runtime backing the generated proto outputs.
+*   **`package:googleapis_auth`**: Supplies robust credential exchange and refreshing (utilized under the hood by `HttpBasedAuthenticator`).

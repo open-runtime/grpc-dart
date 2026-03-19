@@ -18,8 +18,8 @@
         "api_reference",
         "examples"
       ],
-      "hash": "981983b7acfe415f460eb374060c4ed40a01c607260f63f1a81d07fa6a7b9710",
-      "last_updated": "2026-02-22T23:42:05.860967Z"
+      "hash": "ba44c6a6c3a752f25cbf0661df8502f8a7b293491a973b25f2b66005164b4eda",
+      "last_updated": "2026-03-19T15:01:44.956684Z"
     },
     {
       "id": "client",
@@ -36,8 +36,8 @@
         "api_reference",
         "examples"
       ],
-      "hash": "0e23ede4a722b5da58d07fff3408e4cfdd4c760ba47ad41400561e13af534be9",
-      "last_updated": "2026-02-22T23:42:05.869378Z"
+      "hash": "d349c411f371ccb0c5687c22370324b4849839cb141cd32d6c721889ba463a74",
+      "last_updated": "2026-03-19T15:01:44.968346Z"
     },
     {
       "id": "server",
@@ -54,8 +54,8 @@
         "api_reference",
         "examples"
       ],
-      "hash": "67e94e8ef14e8844bbe4888be23c3183c457348c549c64f95b25e41d10c1fe53",
-      "last_updated": "2026-02-22T23:42:05.875837Z"
+      "hash": "065902e1623ad545d95e291434c54eb1ecbd79e18cde915679a48b557cf95c0e",
+      "last_updated": "2026-03-19T15:01:44.973284Z"
     },
     {
       "id": "shared",
@@ -70,8 +70,8 @@
       "generate": [
         "api_reference"
       ],
-      "hash": "8a50431e3967aa0ddbd1ceb473b5705dc4acb6e87eded003476b30070938a788",
-      "last_updated": "2026-02-22T23:42:05.882092Z"
+      "hash": "01d3179d0db6b83c2c39aa604c811acbc8f825b8110396b0cda92be6bb61fe1f",
+      "last_updated": "2026-03-19T15:01:44.976060Z"
     },
     {
       "id": "protos",
@@ -85,8 +85,8 @@
       "generate": [
         "api_reference"
       ],
-      "hash": "7ed4eb72dc6e59cea3cec372f9bdfd81d233e42eb8296e03a25fb9ef0bdb2aee",
-      "last_updated": "2026-02-22T23:42:05.888436Z"
+      "hash": "f5ee531733b406cbdc01818ae94faa890d5646dab7d0adfbc08e72e935e77be2",
+      "last_updated": "2026-03-19T15:01:44.978317Z"
     },
     {
       "id": "top_level",
@@ -99,8 +99,8 @@
       "generate": [
         "quickstart"
       ],
-      "hash": "b9651e5ed403d61d4dc3ae2f11abaf5df8d3e0efcc222d182680a9830cec7197",
-      "last_updated": "2026-02-22T23:42:05.896202Z"
+      "hash": "90d41251a2324428c92aa641000e36f823f3ad8eaa518df1fa1427eeb79ca552",
+      "last_updated": "2026-03-19T15:01:44.992220Z"
     },
     {
       "id": "generated",
@@ -116,8 +116,8 @@
         "quickstart",
         "api_reference"
       ],
-      "hash": "",
-      "last_updated": null
+      "hash": "8a7171317993bb4cc23ffc831e44ed8db2cb7bd4add39a57cc7d446353aff0a4",
+      "last_updated": "2026-03-19T15:01:44.994116Z"
     }
   ],
   "templates": {
