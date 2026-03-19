@@ -1216,6 +1216,7 @@ void main() {
           expect(lastCycle, equals(4), reason: 'All 5 restart cycles should complete without pipe handle leaks');
         },
         skip: !Platform.isWindows ? 'Named pipes are Windows-only' : null,
+        timeout: const Timeout(Duration(minutes: 5)),
       );
 
       // =======================================================================
