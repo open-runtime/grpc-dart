@@ -10,9 +10,9 @@ topics:
   - protocols
   - rpc
 
-
 environment:
   sdk: ^3.9.0
+
 
 dependencies:
   async: ^2.13.0
@@ -37,7 +37,7 @@ dev_dependencies:
     git:
       url: git@github.com:open-runtime/runtime_ci_tooling.git
       tag_pattern: v{{version}}
-    version: ^0.16.0
+    version: ^0.23.0
 
   # ==========================================================================
   # Direct pub.dev dev dependencies
