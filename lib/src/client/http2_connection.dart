@@ -453,14 +453,6 @@ class Http2ClientConnection implements connection.ClientConnection {
     // so we don't call it here to avoid double-call.
     _disconnect();
     _setState(ConnectionState.idle);
-    // Do NOT call _releaseTransportConnectorOsResources() here. An orphaned
-    // transport's onActiveStateChanged callback can fire _handleIdleTimeout
-    // while a newer connection is active. The connector is shared across
-    // generations, so destroying it here could kill the current generation's
-    // resources. The next connect() disposes old resources (named pipe) or
-    // creates a fresh socket (TCP). shutdown()/terminate() handles final
-    // cleanup. Named pipe handles are closed by _disposeCurrentPipeResources()
-    // at the top of NamedPipeTransportConnector.connect().
   }
 
   void _cancelTimer() {
@@ -498,12 +490,6 @@ class Http2ClientConnection implements connection.ClientConnection {
     }
     _pendingCalls.clear();
     _setState(ConnectionState.idle);
-    // Do NOT call _releaseTransportConnectorOsResources() here. The failed
-    // calls may still be reading error responses from in-flight HTTP/2 streams
-    // that flow through the connector's byte stream. The next connect() call
-    // will dispose old resources via _disposeCurrentPipeResources() (named
-    // pipe) or overwrite the socket (TCP). If no reconnect ever happens,
-    // channel.shutdown()/terminate() handles final cleanup.
   }
 
   void _handleReconnect() {
@@ -572,15 +558,6 @@ class Http2ClientConnection implements connection.ClientConnection {
     if (!_hasPendingCalls()) {
       // No pending calls. Just hop to idle, and wait for a new RPC.
       _setState(ConnectionState.idle);
-      // Do NOT call _releaseTransportConnectorOsResources() here. Active
-      // (dispatched) streams may still be in flight on the old HTTP/2
-      // transport, reading from the connector's byte stream (socket / pipe).
-      // _hasPendingCalls() only checks _pendingCalls (queued, not yet
-      // dispatched), so "no pending" does not mean "no active streams."
-      // Destroying the connector here kills those streams prematurely
-      // (regression: "client reconnects when stream limit is used").
-      // The next connect() disposes old resources; shutdown()/terminate()
-      // handles final cleanup.
       return;
     }
 
