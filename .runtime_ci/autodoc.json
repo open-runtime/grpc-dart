@@ -12,14 +12,14 @@
       "lib_paths": [
         "lib/src/auth/"
       ],
-      "output_path": "docs/auth/",
+      "output_path": "docs/auth",
       "generate": [
         "quickstart",
         "api_reference",
         "examples"
       ],
-      "hash": "ba44c6a6c3a752f25cbf0661df8502f8a7b293491a973b25f2b66005164b4eda",
-      "last_updated": "2026-03-19T15:01:44.956684Z"
+      "hash": "a5a2f9ec2c5980996da1664178796236b3cffb74670d7d1fbd4de848270dd763",
+      "last_updated": "2026-03-24T17:55:53.531802Z"
     },
     {
       "id": "client",
@@ -30,14 +30,14 @@
       "lib_paths": [
         "lib/src/client/"
       ],
-      "output_path": "docs/client/",
+      "output_path": "docs/client",
       "generate": [
         "quickstart",
         "api_reference",
         "examples"
       ],
-      "hash": "d349c411f371ccb0c5687c22370324b4849839cb141cd32d6c721889ba463a74",
-      "last_updated": "2026-03-19T15:01:44.968346Z"
+      "hash": "246d0ec4c3f2fedfccf4fa6b538274c0c5235c0413cd7403471cc790b13a4ccf",
+      "last_updated": "2026-03-24T17:55:53.531973Z"
     },
     {
       "id": "server",
@@ -48,14 +48,14 @@
       "lib_paths": [
         "lib/src/server/"
       ],
-      "output_path": "docs/server/",
+      "output_path": "docs/server",
       "generate": [
         "quickstart",
         "api_reference",
         "examples"
       ],
-      "hash": "065902e1623ad545d95e291434c54eb1ecbd79e18cde915679a48b557cf95c0e",
-      "last_updated": "2026-03-19T15:01:44.973284Z"
+      "hash": "b0cc260bc1ea73ecdf8032490572bb315e7aee307dc0be58d942db3e25f0f1f9",
+      "last_updated": "2026-03-24T17:55:53.531976Z"
     },
     {
       "id": "shared",
@@ -66,12 +66,12 @@
       "lib_paths": [
         "lib/src/shared/"
       ],
-      "output_path": "docs/shared/",
+      "output_path": "docs/shared",
       "generate": [
         "api_reference"
       ],
-      "hash": "01d3179d0db6b83c2c39aa604c811acbc8f825b8110396b0cda92be6bb61fe1f",
-      "last_updated": "2026-03-19T15:01:44.976060Z"
+      "hash": "c70aed638b435a1d574126df4611566d8540f8607f2f4c7a806771136b41866e",
+      "last_updated": "2026-03-24T17:55:53.531978Z"
     },
     {
       "id": "protos",
@@ -81,12 +81,12 @@
         "lib/src/generated/"
       ],
       "lib_paths": [],
-      "output_path": "docs/protos/",
+      "output_path": "docs/protos",
       "generate": [
         "api_reference"
       ],
-      "hash": "f5ee531733b406cbdc01818ae94faa890d5646dab7d0adfbc08e72e935e77be2",
-      "last_updated": "2026-03-19T15:01:44.978317Z"
+      "hash": "fe41059d09b924433874d1f7aa628d532f606920faee80a2f46f4d08d0ad4573",
+      "last_updated": "2026-03-24T17:55:53.531980Z"
     },
     {
       "id": "top_level",
@@ -95,12 +95,12 @@
         "lib/"
       ],
       "lib_paths": [],
-      "output_path": "docs/",
+      "output_path": "docs",
       "generate": [
         "quickstart"
       ],
-      "hash": "90d41251a2324428c92aa641000e36f823f3ad8eaa518df1fa1427eeb79ca552",
-      "last_updated": "2026-03-19T15:01:44.992220Z"
+      "hash": "fcdf6fd1c5c5ddd6c4ab19d85fbe7fb3929d5a0fade0c40f43a393d2faf25145",
+      "last_updated": "2026-03-24T17:55:53.531982Z"
     },
     {
       "id": "generated",
@@ -111,13 +111,13 @@
       "lib_paths": [
         "lib/src/generated/"
       ],
-      "output_path": "docs/generated/",
+      "output_path": "docs/generated",
       "generate": [
         "quickstart",
         "api_reference"
       ],
-      "hash": "8a7171317993bb4cc23ffc831e44ed8db2cb7bd4add39a57cc7d446353aff0a4",
-      "last_updated": "2026-03-19T15:01:44.994116Z"
+      "hash": "5c4f0d45c7408be963695f676e202f9a8ce94ace45391317e92ecc363e0321c3",
+      "last_updated": "2026-03-24T17:55:53.531983Z"
     },
     {
       "id": "http2",
@@ -128,7 +128,7 @@
       "lib_paths": [
         "lib/src/http2/"
       ],
-      "output_path": "docs/http2/",
+      "output_path": "docs/http2",
       "generate": [
         "quickstart",
         "api_reference"
@@ -141,5 +141,6 @@
     "quickstart": "scripts/prompts/autodoc_quickstart_prompt.dart",
     "api_reference": "scripts/prompts/autodoc_api_reference_prompt.dart",
     "examples": "scripts/prompts/autodoc_examples_prompt.dart"
-  }
+  },
+  "review_model": "gemini-3.1-flash-lite"
 }
