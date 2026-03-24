@@ -1,0 +1,19 @@
+2026-03-24T18:18:20.4628594Z ##[group]Run actions/checkout@v6
+2026-03-24T18:18:20.4629445Z with:
+2026-03-24T18:18:20.4629897Z   ref: fix/windows-named-pipe-ci-hardening
+2026-03-24T18:18:20.4630714Z   token: ***
+2026-03-24T18:18:20.4631127Z   persist-credentials: true
+2026-03-24T18:18:20.4631636Z   repository: open-runtime/grpc-dart
+2026-03-24T18:18:20.4632143Z   ssh-strict: true
+2026-03-24T18:18:20.4632601Z   ssh-user: git
+2026-03-24T18:18:20.4633040Z   clean: true
+2026-03-24T18:18:20.4633445Z   sparse-checkout-cone-mode: true
+2026-03-24T18:18:20.4634321Z   fetch-depth: 1
+2026-03-24T18:18:20.4634743Z   fetch-tags: false
+2026-03-24T18:18:20.4635188Z   show-progress: true
+2026-03-24T18:18:20.4635603Z   lfs: false
+2026-03-24T18:18:20.4635970Z   submodules: false
+2026-03-24T18:18:20.4636384Z   set-safe-directory: true
+2026-03-24T18:18:20.4637113Z env:
+2026-03-24T18:18:20.4637538Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:20.4638071Z ##[endgroup]

@@ -1,0 +1,9 @@
+2026-03-24T18:19:57.7310667Z ##[group]✅ loading test/client_tests/client_xhr_transport_test.dart
+2026-03-24T18:19:57.7311746Z file:///home/runner/.pub-cache/hosted/pub.dev/mockito-5.6.4/lib/src/mock.dart:161:11:
+2026-03-24T18:19:57.7312922Z Hint: Overriding 'noSuchMethod' causes the compiler to generate more code and prevents the compiler from doing some optimizations.
+2026-03-24T18:19:57.7313940Z Consider removing this 'noSuchMethod' implementation.
+2026-03-24T18:19:57.7314413Z   dynamic noSuchMethod(
+2026-03-24T18:19:57.7314735Z           ^
+2026-03-24T18:19:57.7315610Z Compiled 14,812,497 input bytes (9,816,644 characters source) to 1,495,337 characters JavaScript in 5.38 seconds
+2026-03-24T18:19:57.7316630Z 
+2026-03-24T18:19:57.7317023Z ##[endgroup]

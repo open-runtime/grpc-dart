@@ -1,0 +1,8 @@
+2026-03-24T18:18:49.3650565Z ##[group]Run dart pub global activate --source git https://github.com/open-runtime/runtime_ci_tooling.git --git-ref v0.23.10
+2026-03-24T18:18:49.3651475Z [36;1mdart pub global activate --source git https://github.com/open-runtime/runtime_ci_tooling.git --git-ref v0.23.10[0m
+2026-03-24T18:18:49.3701406Z shell: /usr/bin/bash -e {0}
+2026-03-24T18:18:49.3701665Z env:
+2026-03-24T18:18:49.3701882Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:49.3702193Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:49.3702494Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:49.3702749Z ##[endgroup]

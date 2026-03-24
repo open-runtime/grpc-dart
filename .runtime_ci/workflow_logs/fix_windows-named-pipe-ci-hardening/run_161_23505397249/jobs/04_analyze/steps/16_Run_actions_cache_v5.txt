@@ -1,0 +1,14 @@
+2026-03-24T18:18:46.9397066Z ##[group]Run actions/cache@v5
+2026-03-24T18:18:46.9397421Z with:
+2026-03-24T18:18:46.9397953Z   path: ~/.pub-cache
+2026-03-24T18:18:46.9398465Z   key: Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f
+2026-03-24T18:18:46.9399057Z   restore-keys: Linux-X64-dart-pub-
+2026-03-24T18:18:46.9399391Z   enableCrossOsArchive: false
+2026-03-24T18:18:46.9399694Z   fail-on-cache-miss: false
+2026-03-24T18:18:46.9399988Z   lookup-only: false
+2026-03-24T18:18:46.9400248Z   save-always: false
+2026-03-24T18:18:46.9400502Z env:
+2026-03-24T18:18:46.9400738Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:46.9401071Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:46.9401450Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:46.9401764Z ##[endgroup]

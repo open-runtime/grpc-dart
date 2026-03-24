@@ -1,0 +1,21 @@
+2026-03-24T18:18:39.6981936Z ##[group]Checking out the ref
+2026-03-24T18:18:39.6982869Z [command]/usr/bin/git checkout --progress --force 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:39.7367142Z Note: switching to '0bb39b9a4d8668bf352d6f095cbaa0415742d25a'.
+2026-03-24T18:18:39.7368290Z 
+2026-03-24T18:18:39.7368731Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-03-24T18:18:39.7369815Z changes and commit them, and you can discard any commits you make in this
+2026-03-24T18:18:39.7371331Z state without impacting any branches by switching back to a branch.
+2026-03-24T18:18:39.7372361Z 
+2026-03-24T18:18:39.7372952Z If you want to create a new branch to retain commits you create, you may
+2026-03-24T18:18:39.7374338Z do so (now or later) by using -c with the switch command. Example:
+2026-03-24T18:18:39.7375098Z 
+2026-03-24T18:18:39.7375425Z   git switch -c <new-branch-name>
+2026-03-24T18:18:39.7376002Z 
+2026-03-24T18:18:39.7376319Z Or undo this operation with:
+2026-03-24T18:18:39.7376877Z 
+2026-03-24T18:18:39.7377190Z   git switch -
+2026-03-24T18:18:39.7377797Z 
+2026-03-24T18:18:39.7378493Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-03-24T18:18:39.7379513Z 
+2026-03-24T18:18:39.7380547Z HEAD is now at 0bb39b9 Merge bd22051b8777bdb8d4902141f760ae66998a5026 into c133e8766b7224ea25fd8451fae1591eb9d107bf
+2026-03-24T18:18:39.7383901Z ##[endgroup]

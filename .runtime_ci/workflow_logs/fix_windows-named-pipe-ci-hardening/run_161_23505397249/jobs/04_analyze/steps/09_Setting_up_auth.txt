@@ -1,0 +1,16 @@
+2026-03-24T18:18:39.1810432Z ##[group]Setting up auth
+2026-03-24T18:18:39.1811237Z Removing SSH command configuration
+2026-03-24T18:18:39.1816811Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-24T18:18:39.1855132Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-24T18:18:39.2221308Z Removing HTTP extra header
+2026-03-24T18:18:39.2228797Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-24T18:18:39.2269878Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-24T18:18:39.2537695Z Removing includeIf entries pointing to credentials config files
+2026-03-24T18:18:39.2543674Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-24T18:18:39.2583784Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-24T18:18:39.2855304Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-03-24T18:18:39.2904542Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.2947946Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.2988479Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.3028312Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.3073229Z ##[endgroup]

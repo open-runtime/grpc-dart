@@ -1,0 +1,7 @@
+2026-03-24T18:18:40.6339105Z ##[group]Fetching the repository
+2026-03-24T18:18:40.6340576Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:41.3769201Z From https://github.com/open-runtime/grpc-dart
+2026-03-24T18:18:41.3770218Z  * branch            0bb39b9a4d8668bf352d6f095cbaa0415742d25a -> FETCH_HEAD
+2026-03-24T18:18:41.3798549Z [command]/usr/bin/git rev-parse --verify --quiet 0bb39b9a4d8668bf352d6f095cbaa0415742d25a^{object}
+2026-03-24T18:18:41.3824031Z 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:41.3827841Z ##[endgroup]

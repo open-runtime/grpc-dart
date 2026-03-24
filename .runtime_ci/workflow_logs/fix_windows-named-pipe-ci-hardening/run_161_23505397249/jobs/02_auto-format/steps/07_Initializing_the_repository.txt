@@ -1,0 +1,18 @@
+2026-03-24T18:18:20.5872384Z ##[group]Initializing the repository
+2026-03-24T18:18:20.5877758Z [command]/usr/bin/git init /home/runner/work/grpc-dart/grpc-dart
+2026-03-24T18:18:20.6002145Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-03-24T18:18:20.6004484Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-03-24T18:18:20.6006125Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-03-24T18:18:20.6007490Z hint: call:
+2026-03-24T18:18:20.6008393Z hint:
+2026-03-24T18:18:20.6009285Z hint: 	git config --global init.defaultBranch <name>
+2026-03-24T18:18:20.6010489Z hint:
+2026-03-24T18:18:20.6011531Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-03-24T18:18:20.6012886Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-03-24T18:18:20.6014317Z hint:
+2026-03-24T18:18:20.6014946Z hint: 	git branch -m <name>
+2026-03-24T18:18:20.6015632Z hint:
+2026-03-24T18:18:20.6016537Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-03-24T18:18:20.6018055Z Initialized empty Git repository in /home/runner/work/grpc-dart/grpc-dart/.git/
+2026-03-24T18:18:20.6021269Z [command]/usr/bin/git remote add origin https://github.com/open-runtime/grpc-dart
+2026-03-24T18:18:20.6060903Z ##[endgroup]

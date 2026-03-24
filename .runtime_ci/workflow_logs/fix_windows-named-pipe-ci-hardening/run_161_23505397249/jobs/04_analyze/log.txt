@@ -1,0 +1,986 @@
+2026-03-24T18:18:37.7503447Z Current runner version: '2.332.0'
+2026-03-24T18:18:37.7539334Z ##[group]Runner Image Provisioner
+2026-03-24T18:18:37.7540721Z Hosted Compute Agent
+2026-03-24T18:18:37.7541870Z Version: 20260213.493
+2026-03-24T18:18:37.7542888Z Commit: 5c115507f6dd24b8de37d8bbe0bb4509d0cc0fa3
+2026-03-24T18:18:37.7544123Z Build Date: 2026-02-13T00:28:41Z
+2026-03-24T18:18:37.7545455Z Worker ID: {b7ce009e-eb54-4b8e-8b05-e8b4212770c3}
+2026-03-24T18:18:37.7546682Z Azure Region: eastus2
+2026-03-24T18:18:37.7547978Z ##[endgroup]
+2026-03-24T18:18:37.7550235Z ##[group]Operating System
+2026-03-24T18:18:37.7551158Z Ubuntu
+2026-03-24T18:18:37.7552098Z 24.04.3
+2026-03-24T18:18:37.7552881Z LTS
+2026-03-24T18:18:37.7553690Z ##[endgroup]
+2026-03-24T18:18:37.7554699Z ##[group]Runner Image
+2026-03-24T18:18:37.7555687Z Image: ubuntu-24.04
+2026-03-24T18:18:37.7556607Z Version: 20260309.50.1
+2026-03-24T18:18:37.7559018Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260309.50/images/ubuntu/Ubuntu2404-Readme.md
+2026-03-24T18:18:37.7561725Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260309.50
+2026-03-24T18:18:37.7563243Z ##[endgroup]
+2026-03-24T18:18:37.7568016Z ##[group]GITHUB_TOKEN Permissions
+2026-03-24T18:18:37.7571366Z Actions: write
+2026-03-24T18:18:37.7572230Z ArtifactMetadata: write
+2026-03-24T18:18:37.7573202Z Attestations: write
+2026-03-24T18:18:37.7574019Z Checks: write
+2026-03-24T18:18:37.7574920Z Contents: write
+2026-03-24T18:18:37.7575812Z Deployments: write
+2026-03-24T18:18:37.7576682Z Discussions: write
+2026-03-24T18:18:37.7577728Z Issues: write
+2026-03-24T18:18:37.7578555Z Metadata: read
+2026-03-24T18:18:37.7579536Z Models: read
+2026-03-24T18:18:37.7580361Z Packages: write
+2026-03-24T18:18:37.7581103Z Pages: write
+2026-03-24T18:18:37.7582266Z PullRequests: write
+2026-03-24T18:18:37.7583199Z RepositoryProjects: write
+2026-03-24T18:18:37.7584114Z SecurityEvents: write
+2026-03-24T18:18:37.7585155Z Statuses: write
+2026-03-24T18:18:37.7585973Z ##[endgroup]
+2026-03-24T18:18:37.7589656Z Secret source: Actions
+2026-03-24T18:18:37.7591334Z Prepare workflow directory
+2026-03-24T18:18:37.8166437Z Prepare all required actions
+2026-03-24T18:18:37.8226289Z Getting action download info
+2026-03-24T18:18:38.1768716Z Download action repository 'actions/checkout@v6' (SHA:de0fac2e4500dabe0009e67214ff5f5447ce83dd)
+2026-03-24T18:18:38.2980921Z Download action repository 'dart-lang/setup-dart@v1.7.1' (SHA:e51d8e571e22473a2ddebf0ef8a2123f0ab2c02c)
+2026-03-24T18:18:38.5312302Z Download action repository 'actions/cache@v5' (SHA:668228422ae6a00e4ad889ee87cd7109ec5666a7)
+2026-03-24T18:18:38.9558787Z Complete job name: analyze
+2026-03-24T18:18:39.0372016Z ##[group]Run actions/checkout@v6
+2026-03-24T18:18:39.0372987Z with:
+2026-03-24T18:18:39.0373477Z   ref: 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:39.0374083Z   fetch-depth: 1
+2026-03-24T18:18:39.0374563Z   persist-credentials: false
+2026-03-24T18:18:39.0375110Z   repository: open-runtime/grpc-dart
+2026-03-24T18:18:39.0375986Z   token: ***
+2026-03-24T18:18:39.0376449Z   ssh-strict: true
+2026-03-24T18:18:39.0376895Z   ssh-user: git
+2026-03-24T18:18:39.0377326Z   clean: true
+2026-03-24T18:18:39.0378060Z   sparse-checkout-cone-mode: true
+2026-03-24T18:18:39.0378613Z   fetch-tags: false
+2026-03-24T18:18:39.0379075Z   show-progress: true
+2026-03-24T18:18:39.0379549Z   lfs: false
+2026-03-24T18:18:39.0379988Z   submodules: false
+2026-03-24T18:18:39.0380447Z   set-safe-directory: true
+2026-03-24T18:18:39.0381287Z env:
+2026-03-24T18:18:39.0381768Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:39.0382351Z ##[endgroup]
+2026-03-24T18:18:39.1384577Z Syncing repository: open-runtime/grpc-dart
+2026-03-24T18:18:39.1386685Z ##[group]Getting Git version info
+2026-03-24T18:18:39.1387648Z Working directory is '/home/runner/work/grpc-dart/grpc-dart'
+2026-03-24T18:18:39.1388733Z [command]/usr/bin/git version
+2026-03-24T18:18:39.1454557Z git version 2.53.0
+2026-03-24T18:18:39.1513413Z ##[endgroup]
+2026-03-24T18:18:39.1530620Z Temporarily overriding HOME='/home/runner/work/_temp/0103f051-16c3-4018-b827-6d250cb8be34' before making global git config changes
+2026-03-24T18:18:39.1533851Z Adding repository directory to the temporary git global config as a safe directory
+2026-03-24T18:18:39.1536930Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/grpc-dart/grpc-dart
+2026-03-24T18:18:39.1584281Z Deleting the contents of '/home/runner/work/grpc-dart/grpc-dart'
+2026-03-24T18:18:39.1589362Z ##[group]Initializing the repository
+2026-03-24T18:18:39.1595029Z [command]/usr/bin/git init /home/runner/work/grpc-dart/grpc-dart
+2026-03-24T18:18:39.1710119Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-03-24T18:18:39.1712260Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-03-24T18:18:39.1713781Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-03-24T18:18:39.1715303Z hint: call:
+2026-03-24T18:18:39.1716175Z hint:
+2026-03-24T18:18:39.1717331Z hint: 	git config --global init.defaultBranch <name>
+2026-03-24T18:18:39.1718798Z hint:
+2026-03-24T18:18:39.1719969Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-03-24T18:18:39.1721857Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-03-24T18:18:39.1723288Z hint:
+2026-03-24T18:18:39.1724075Z hint: 	git branch -m <name>
+2026-03-24T18:18:39.1724958Z hint:
+2026-03-24T18:18:39.1726276Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-03-24T18:18:39.1728340Z Initialized empty Git repository in /home/runner/work/grpc-dart/grpc-dart/.git/
+2026-03-24T18:18:39.1730549Z [command]/usr/bin/git remote add origin https://github.com/open-runtime/grpc-dart
+2026-03-24T18:18:39.1770158Z ##[endgroup]
+2026-03-24T18:18:39.1771237Z ##[group]Disabling automatic garbage collection
+2026-03-24T18:18:39.1774035Z [command]/usr/bin/git config --local gc.auto 0
+2026-03-24T18:18:39.1808954Z ##[endgroup]
+2026-03-24T18:18:39.1810432Z ##[group]Setting up auth
+2026-03-24T18:18:39.1811237Z Removing SSH command configuration
+2026-03-24T18:18:39.1816811Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-24T18:18:39.1855132Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-24T18:18:39.2221308Z Removing HTTP extra header
+2026-03-24T18:18:39.2228797Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-24T18:18:39.2269878Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-24T18:18:39.2537695Z Removing includeIf entries pointing to credentials config files
+2026-03-24T18:18:39.2543674Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-24T18:18:39.2583784Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-24T18:18:39.2855304Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-03-24T18:18:39.2904542Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.2947946Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.2988479Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.3028312Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.3073229Z ##[endgroup]
+2026-03-24T18:18:39.3074778Z ##[group]Fetching the repository
+2026-03-24T18:18:39.3089611Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:39.6809408Z From https://github.com/open-runtime/grpc-dart
+2026-03-24T18:18:39.6810444Z  * branch            0bb39b9a4d8668bf352d6f095cbaa0415742d25a -> FETCH_HEAD
+2026-03-24T18:18:39.6848105Z [command]/usr/bin/git rev-parse --verify --quiet 0bb39b9a4d8668bf352d6f095cbaa0415742d25a^{object}
+2026-03-24T18:18:39.6880839Z 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:39.6885182Z ##[endgroup]
+2026-03-24T18:18:39.6886081Z ##[group]Determining the checkout info
+2026-03-24T18:18:39.6887386Z ##[endgroup]
+2026-03-24T18:18:39.6891921Z [command]/usr/bin/git sparse-checkout disable
+2026-03-24T18:18:39.6942219Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-03-24T18:18:39.6981936Z ##[group]Checking out the ref
+2026-03-24T18:18:39.6982869Z [command]/usr/bin/git checkout --progress --force 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:39.7367142Z Note: switching to '0bb39b9a4d8668bf352d6f095cbaa0415742d25a'.
+2026-03-24T18:18:39.7368290Z 
+2026-03-24T18:18:39.7368731Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-03-24T18:18:39.7369815Z changes and commit them, and you can discard any commits you make in this
+2026-03-24T18:18:39.7371331Z state without impacting any branches by switching back to a branch.
+2026-03-24T18:18:39.7372361Z 
+2026-03-24T18:18:39.7372952Z If you want to create a new branch to retain commits you create, you may
+2026-03-24T18:18:39.7374338Z do so (now or later) by using -c with the switch command. Example:
+2026-03-24T18:18:39.7375098Z 
+2026-03-24T18:18:39.7375425Z   git switch -c <new-branch-name>
+2026-03-24T18:18:39.7376002Z 
+2026-03-24T18:18:39.7376319Z Or undo this operation with:
+2026-03-24T18:18:39.7376877Z 
+2026-03-24T18:18:39.7377190Z   git switch -
+2026-03-24T18:18:39.7377797Z 
+2026-03-24T18:18:39.7378493Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-03-24T18:18:39.7379513Z 
+2026-03-24T18:18:39.7380547Z HEAD is now at 0bb39b9 Merge bd22051b8777bdb8d4902141f760ae66998a5026 into c133e8766b7224ea25fd8451fae1591eb9d107bf
+2026-03-24T18:18:39.7383901Z ##[endgroup]
+2026-03-24T18:18:39.7420359Z [command]/usr/bin/git log -1 --format=%H
+2026-03-24T18:18:39.7446391Z 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:39.7462825Z ##[group]Removing auth
+2026-03-24T18:18:39.7463663Z Removing SSH command configuration
+2026-03-24T18:18:39.7469037Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-24T18:18:39.7507207Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-24T18:18:39.7791327Z Removing HTTP extra header
+2026-03-24T18:18:39.7794822Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-24T18:18:39.7844647Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-24T18:18:39.8137399Z Removing includeIf entries pointing to credentials config files
+2026-03-24T18:18:39.8141544Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-24T18:18:39.8169508Z includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path
+2026-03-24T18:18:39.8172729Z includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path
+2026-03-24T18:18:39.8174464Z includeif.gitdir:/github/workspace/.git.path
+2026-03-24T18:18:39.8175439Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-03-24T18:18:39.8181475Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path
+2026-03-24T18:18:39.8236314Z /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.8243300Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.8273326Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path
+2026-03-24T18:18:39.8299627Z /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.8309315Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.8354469Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-03-24T18:18:39.8384063Z /github/runner_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.8397693Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.8453406Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-03-24T18:18:39.8483160Z /github/runner_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.8495650Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config
+2026-03-24T18:18:39.8534959Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-24T18:18:39.8782037Z Removing credentials config '/home/runner/work/_temp/git-credentials-9f5be836-3304-4434-8c67-22ee63ca1a3c.config'
+2026-03-24T18:18:39.8790370Z ##[endgroup]
+2026-03-24T18:18:39.9080248Z ##[group]Run echo "::add-mask::${GH_PAT}"
+2026-03-24T18:18:39.9080914Z [36;1mecho "::add-mask::${GH_PAT}"[0m
+2026-03-24T18:18:39.9081822Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "git@github.com:"[0m
+2026-03-24T18:18:39.9083075Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "ssh://git@github.com/"[0m
+2026-03-24T18:18:39.9084313Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"[0m
+2026-03-24T18:18:39.9085665Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"[0m
+2026-03-24T18:18:39.9087128Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"[0m
+2026-03-24T18:18:39.9144045Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-03-24T18:18:39.9144692Z env:
+2026-03-24T18:18:39.9145145Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:39.9145942Z   GH_PAT: ***
+2026-03-24T18:18:39.9146322Z ##[endgroup]
+2026-03-24T18:18:39.9407782Z ##[group]Run dart-lang/setup-dart@v1.7.1
+2026-03-24T18:18:39.9408385Z with:
+2026-03-24T18:18:39.9408722Z   sdk: 3.9.2
+2026-03-24T18:18:39.9409069Z env:
+2026-03-24T18:18:39.9409427Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:39.9409931Z ##[endgroup]
+2026-03-24T18:18:40.0283654Z Installing the linux-x64 Dart SDK version 3.9.2 from the stable (release) channel.
+2026-03-24T18:18:40.0296047Z https://storage.googleapis.com/dart-archive/channels/stable/release/3.9.2/sdk/dartsdk-linux-x64-release.zip ...
+2026-03-24T18:18:41.0663902Z [command]/usr/bin/unzip -o -q /home/runner/work/_temp/dartsdk-linux-x64-release.zip
+2026-03-24T18:18:46.7924239Z [command]/opt/hostedtoolcache/dart/3.9.2/x64/bin/dart --version
+2026-03-24T18:18:46.7976441Z Dart SDK version: 3.9.2 (stable) (Wed Aug 27 03:49:40 2025 -0700) on "linux_x64"
+2026-03-24T18:18:46.9397066Z ##[group]Run actions/cache@v5
+2026-03-24T18:18:46.9397421Z with:
+2026-03-24T18:18:46.9397953Z   path: ~/.pub-cache
+2026-03-24T18:18:46.9398465Z   key: Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f
+2026-03-24T18:18:46.9399057Z   restore-keys: Linux-X64-dart-pub-
+2026-03-24T18:18:46.9399391Z   enableCrossOsArchive: false
+2026-03-24T18:18:46.9399694Z   fail-on-cache-miss: false
+2026-03-24T18:18:46.9399988Z   lookup-only: false
+2026-03-24T18:18:46.9400248Z   save-always: false
+2026-03-24T18:18:46.9400502Z env:
+2026-03-24T18:18:46.9400738Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:46.9401071Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:46.9401450Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:46.9401764Z ##[endgroup]
+2026-03-24T18:18:47.1619175Z Cache hit for: Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f
+2026-03-24T18:18:47.4442231Z Received 21545637 of 21545637 (100.0%), 92.1 MBs/sec
+2026-03-24T18:18:47.4442968Z Cache Size: ~21 MB (21545637 B)
+2026-03-24T18:18:47.4473894Z [command]/usr/bin/tar -xf /home/runner/work/_temp/c925acb5-8606-4ae1-b8b8-ff291e74c3ef/cache.tzst -P -C /home/runner/work/grpc-dart/grpc-dart --use-compress-program unzstd
+2026-03-24T18:18:47.9924810Z Cache restored successfully
+2026-03-24T18:18:48.0046697Z Cache restored from key: Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f
+2026-03-24T18:18:48.0148481Z ##[group]Run dart pub get
+2026-03-24T18:18:48.0148800Z [36;1mdart pub get[0m
+2026-03-24T18:18:48.0204196Z shell: /usr/bin/bash -e {0}
+2026-03-24T18:18:48.0204457Z env:
+2026-03-24T18:18:48.0204666Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:48.0204998Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:48.0205301Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:48.0205573Z   GIT_LFS_SKIP_SMUDGE: 1
+2026-03-24T18:18:48.0205809Z ##[endgroup]
+2026-03-24T18:18:48.1562846Z Resolving dependencies...
+2026-03-24T18:18:49.2797921Z Downloading packages...
+2026-03-24T18:18:49.2969471Z + _fe_analyzer_shared 96.0.0 (98.0.0 available)
+2026-03-24T18:18:49.2970076Z + analyzer 10.2.0 (12.0.0 available)
+2026-03-24T18:18:49.2970532Z + args 2.7.0
+2026-03-24T18:18:49.2970866Z + async 2.13.0
+2026-03-24T18:18:49.2971208Z + boolean_selector 2.1.2
+2026-03-24T18:18:49.2971582Z + build 4.0.5
+2026-03-24T18:18:49.2971929Z + build_config 1.3.0
+2026-03-24T18:18:49.2972352Z + build_daemon 4.1.1
+2026-03-24T18:18:49.2972725Z + build_runner 2.13.1
+2026-03-24T18:18:49.2973090Z + build_test 3.5.12
+2026-03-24T18:18:49.2973437Z + built_collection 5.1.1
+2026-03-24T18:18:49.2973816Z + built_value 8.12.4
+2026-03-24T18:18:49.2974075Z + checked_yaml 2.0.4
+2026-03-24T18:18:49.2974322Z + cli_config 0.2.0
+2026-03-24T18:18:49.2974523Z + clock 1.1.2
+2026-03-24T18:18:49.2974712Z + code_builder 4.11.1
+2026-03-24T18:18:49.2974927Z + collection 1.19.1
+2026-03-24T18:18:49.2975145Z + convert 3.1.2
+2026-03-24T18:18:49.2975341Z + coverage 1.15.0
+2026-03-24T18:18:49.2975535Z + crypto 3.0.7
+2026-03-24T18:18:49.2975730Z + csslib 1.0.2
+2026-03-24T18:18:49.2975939Z + dart_style 3.1.5 (3.1.8 available)
+2026-03-24T18:18:49.2976203Z + fake_async 1.3.3
+2026-03-24T18:18:49.2976394Z + ffi 2.2.0
+2026-03-24T18:18:49.2976580Z + file 7.0.1
+2026-03-24T18:18:49.2976771Z + fixnum 1.1.1
+2026-03-24T18:18:49.2976986Z + frontend_server_client 4.0.0
+2026-03-24T18:18:49.2977225Z + glob 2.1.3
+2026-03-24T18:18:49.2977422Z + google_cloud 0.3.1
+2026-03-24T18:18:49.2977975Z + google_identity_services_web 0.3.3+1
+2026-03-24T18:18:49.2978399Z + googleapis_auth 2.2.0
+2026-03-24T18:18:49.2978765Z + graphs 2.3.2
+2026-03-24T18:18:49.2979087Z + html 0.15.6
+2026-03-24T18:18:49.2979412Z + http 1.6.0
+2026-03-24T18:18:49.2980111Z + http_multi_server 3.2.2
+2026-03-24T18:18:49.2980356Z + http_parser 4.1.2
+2026-03-24T18:18:49.2980567Z + io 1.0.5
+2026-03-24T18:18:49.2980764Z + json_annotation 4.11.0
+2026-03-24T18:18:49.2980990Z + lints 6.1.0
+2026-03-24T18:18:49.2981184Z + logging 1.3.0
+2026-03-24T18:18:49.2981382Z + matcher 0.12.19
+2026-03-24T18:18:49.2981578Z + meta 1.18.2
+2026-03-24T18:18:49.2981759Z + mime 2.0.0
+2026-03-24T18:18:49.2981946Z + mockito 5.6.4
+2026-03-24T18:18:49.2982149Z + node_preamble 2.0.2
+2026-03-24T18:18:49.2982370Z + package_config 2.2.0
+2026-03-24T18:18:49.2982580Z + path 1.9.1
+2026-03-24T18:18:49.2982765Z + pool 1.5.2
+2026-03-24T18:18:49.2982950Z + protobuf 6.0.0
+2026-03-24T18:18:49.2983153Z + pub_semver 2.2.0
+2026-03-24T18:18:49.2983361Z + pubspec_parse 1.5.0
+2026-03-24T18:18:49.2983568Z + shelf 1.4.2
+2026-03-24T18:18:49.2983770Z + shelf_packages_handler 3.0.2
+2026-03-24T18:18:49.2984014Z + shelf_static 1.1.3
+2026-03-24T18:18:49.2984224Z + shelf_web_socket 3.0.0
+2026-03-24T18:18:49.2984463Z + source_gen 4.2.2
+2026-03-24T18:18:49.2984673Z + source_map_stack_trace 2.1.2
+2026-03-24T18:18:49.2984914Z + source_maps 0.10.13
+2026-03-24T18:18:49.2985108Z + source_span 1.10.2
+2026-03-24T18:18:49.2985295Z + stack_trace 1.12.1
+2026-03-24T18:18:49.2985492Z + stream_channel 2.1.4
+2026-03-24T18:18:49.2985688Z + stream_transform 2.1.1
+2026-03-24T18:18:49.2985893Z + string_scanner 1.4.1
+2026-03-24T18:18:49.2986090Z + term_glyph 1.2.2
+2026-03-24T18:18:49.2986347Z + test 1.31.0
+2026-03-24T18:18:49.2986551Z + test_api 0.7.11
+2026-03-24T18:18:49.2986723Z + test_core 0.6.17
+2026-03-24T18:18:49.2986902Z + typed_data 1.4.0
+2026-03-24T18:18:49.2987081Z + vm_service 15.0.2
+2026-03-24T18:18:49.2987258Z + watcher 1.2.1
+2026-03-24T18:18:49.2987900Z + web 1.1.1
+2026-03-24T18:18:49.2988094Z + web_socket 1.0.1
+2026-03-24T18:18:49.2988286Z + web_socket_channel 3.0.3
+2026-03-24T18:18:49.2988516Z + webkit_inspection_protocol 1.2.1
+2026-03-24T18:18:49.2988754Z + win32 5.15.0 (6.0.0 available)
+2026-03-24T18:18:49.2988971Z + yaml 3.1.3
+2026-03-24T18:18:49.2998894Z Changed 76 dependencies!
+2026-03-24T18:18:49.3022131Z 4 packages have newer versions incompatible with dependency constraints.
+2026-03-24T18:18:49.3022759Z Try `dart pub outdated` for more information.
+2026-03-24T18:18:49.3650565Z ##[group]Run dart pub global activate --source git https://github.com/open-runtime/runtime_ci_tooling.git --git-ref v0.23.10
+2026-03-24T18:18:49.3651475Z [36;1mdart pub global activate --source git https://github.com/open-runtime/runtime_ci_tooling.git --git-ref v0.23.10[0m
+2026-03-24T18:18:49.3701406Z shell: /usr/bin/bash -e {0}
+2026-03-24T18:18:49.3701665Z env:
+2026-03-24T18:18:49.3701882Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:49.3702193Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:49.3702494Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:49.3702749Z ##[endgroup]
+2026-03-24T18:18:49.9144380Z Package runtime_ci_tooling is currently active from Git repository "https://github.com/open-runtime/runtime_ci_tooling.git".
+2026-03-24T18:18:49.9174957Z Resolving dependencies...
+2026-03-24T18:18:50.3281948Z Downloading packages...
+2026-03-24T18:18:50.3357166Z The package runtime_ci_tooling is already activated at newest available version.
+2026-03-24T18:18:50.3358505Z To recompile executables, first run `dart pub global deactivate runtime_ci_tooling`.
+2026-03-24T18:18:50.3591743Z Installed executables manage_cicd and triage_cli.
+2026-03-24T18:18:50.3673055Z Activated runtime_ci_tooling 0.23.10 from Git repository "https://github.com/open-runtime/runtime_ci_tooling.git".
+2026-03-24T18:18:50.7014610Z ##[group]Run actions/cache@v5
+2026-03-24T18:18:50.7014900Z with:
+2026-03-24T18:18:50.7015097Z   path: ~/.dartServer
+2026-03-24T18:18:50.7015578Z   key: Linux-X64-dart-analysis-1bed97b88de51a56512773c2636af577220f35479addcad8f762a84577167f63
+2026-03-24T18:18:50.7016149Z   restore-keys: Linux-X64-dart-analysis-
+2026-03-24T18:18:50.7016456Z   enableCrossOsArchive: false
+2026-03-24T18:18:50.7016720Z   fail-on-cache-miss: false
+2026-03-24T18:18:50.7017156Z   lookup-only: false
+2026-03-24T18:18:50.7017373Z   save-always: false
+2026-03-24T18:18:50.7017857Z env:
+2026-03-24T18:18:50.7018257Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:50.7018599Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:50.7018970Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:50.7019244Z ##[endgroup]
+2026-03-24T18:18:50.9024501Z Cache hit for: Linux-X64-dart-analysis-1bed97b88de51a56512773c2636af577220f35479addcad8f762a84577167f63
+2026-03-24T18:18:51.1114481Z Received 10127706 of 10127706 (100.0%), 63.5 MBs/sec
+2026-03-24T18:18:51.1115145Z Cache Size: ~10 MB (10127706 B)
+2026-03-24T18:18:51.1148874Z [command]/usr/bin/tar -xf /home/runner/work/_temp/f8c640d7-f7ca-45fa-90e0-d83e9a476653/cache.tzst -P -C /home/runner/work/grpc-dart/grpc-dart --use-compress-program unzstd
+2026-03-24T18:18:51.2599266Z Cache restored successfully
+2026-03-24T18:18:51.2701573Z Cache restored from key: Linux-X64-dart-analysis-1bed97b88de51a56512773c2636af577220f35479addcad8f762a84577167f63
+2026-03-24T18:18:51.2804953Z ##[group]Run dart pub global run runtime_ci_tooling:manage_cicd analyze
+2026-03-24T18:18:51.2805499Z [36;1mdart pub global run runtime_ci_tooling:manage_cicd analyze[0m
+2026-03-24T18:18:51.2855411Z shell: /usr/bin/bash -e {0}
+2026-03-24T18:18:51.2855656Z env:
+2026-03-24T18:18:51.2855874Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:51.2856195Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:51.2856500Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:51.2856756Z ##[endgroup]
+2026-03-24T18:18:51.6476797Z 
+2026-03-24T18:18:51.6477885Z [1mRunning Dart analysis[0m
+2026-03-24T18:18:52.4385145Z Analyzing grpc-dart...
+2026-03-24T18:18:52.4385450Z 
+2026-03-24T18:18:52.4386150Z    info - lib/grpc.dart:62:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4388043Z    info - lib/src/client/named_pipe_transport.dart:22:1 - Place 'package:' imports before relative imports. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4390353Z    info - lib/src/client/named_pipe_transport.dart:362:34 - Uncancelled instance of 'StreamSubscription'. Try invoking 'cancel' in the function in which the 'StreamSubscription' was created. - cancel_subscriptions
+2026-03-24T18:18:52.4392160Z    info - lib/src/http2/async_utils/async_utils.dart:54:9 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.4393160Z    info - lib/src/http2/byte_utils.dart:16:3 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4394016Z    info - lib/src/http2/byte_utils.dart:17:3 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4394867Z    info - lib/src/http2/connection.dart:9:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4396007Z    info - lib/src/http2/connection.dart:25:20 - The constant name 'Initialized' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4398431Z    info - lib/src/http2/connection.dart:28:20 - The constant name 'Operational' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4399986Z    info - lib/src/http2/connection.dart:31:20 - The constant name 'Finishing' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4401232Z    info - lib/src/http2/connection.dart:34:20 - The constant name 'Terminated' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4402505Z    info - lib/src/http2/connection.dart:37:20 - The constant name 'FinishingActive' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4404133Z    info - lib/src/http2/connection.dart:40:20 - The constant name 'FinishingPassive' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4405207Z    info - lib/src/http2/connection.dart:161:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4406055Z    info - lib/src/http2/connection.dart:189:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4407311Z    info - lib/src/http2/connection.dart:209:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4408529Z    info - lib/src/http2/connection.dart:242:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4409707Z    info - lib/src/http2/connection.dart:245:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4410628Z    info - lib/src/http2/connection.dart:251:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4411433Z    info - lib/src/http2/connection.dart:408:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4412296Z    info - lib/src/http2/connection.dart:414:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4413729Z    info - lib/src/http2/connection.dart:421:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4414555Z    info - lib/src/http2/connection.dart:470:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4415377Z    info - lib/src/http2/connection.dart:488:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4416485Z    info - lib/src/http2/connection_preface.dart:12:17 - The constant name 'CONNECTION_PREFACE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4417950Z    info - lib/src/http2/connection_preface.dart:48:3 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4418839Z    info - lib/src/http2/connection_preface.dart:80:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4419703Z    info - lib/src/http2/connection_preface.dart:82:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4420560Z    info - lib/src/http2/connection_preface.dart:83:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4421437Z    info - lib/src/http2/connection_preface.dart:84:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4422378Z    info - lib/src/http2/flowcontrol/connection_queues.dart:13:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4423374Z    info - lib/src/http2/flowcontrol/connection_queues.dart:109:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4424330Z    info - lib/src/http2/flowcontrol/connection_queues.dart:125:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4425277Z    info - lib/src/http2/flowcontrol/connection_queues.dart:126:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4426226Z    info - lib/src/http2/flowcontrol/connection_queues.dart:127:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4427348Z    info - lib/src/http2/flowcontrol/connection_queues.dart:132:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4428592Z    info - lib/src/http2/flowcontrol/connection_queues.dart:225:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4429547Z    info - lib/src/http2/flowcontrol/connection_queues.dart:245:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4430495Z    info - lib/src/http2/flowcontrol/connection_queues.dart:246:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4431445Z    info - lib/src/http2/flowcontrol/connection_queues.dart:261:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4432568Z    info - lib/src/http2/flowcontrol/connection_queues.dart:262:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4433533Z    info - lib/src/http2/flowcontrol/connection_queues.dart:270:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4434480Z    info - lib/src/http2/flowcontrol/connection_queues.dart:271:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4435425Z    info - lib/src/http2/flowcontrol/connection_queues.dart:285:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4436367Z    info - lib/src/http2/flowcontrol/connection_queues.dart:286:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4437314Z    info - lib/src/http2/flowcontrol/connection_queues.dart:296:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4438637Z    info - lib/src/http2/flowcontrol/connection_queues.dart:305:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4439594Z    info - lib/src/http2/flowcontrol/stream_queues.dart:9:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4440535Z    info - lib/src/http2/flowcontrol/stream_queues.dart:96:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4441450Z    info - lib/src/http2/flowcontrol/stream_queues.dart:99:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4442362Z    info - lib/src/http2/flowcontrol/stream_queues.dart:105:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4443323Z    info - lib/src/http2/flowcontrol/stream_queues.dart:111:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4444856Z    info - lib/src/http2/flowcontrol/stream_queues.dart:114:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4446660Z    info - lib/src/http2/flowcontrol/stream_queues.dart:115:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4448774Z    info - lib/src/http2/flowcontrol/stream_queues.dart:116:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4450482Z    info - lib/src/http2/flowcontrol/stream_queues.dart:117:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4452095Z    info - lib/src/http2/flowcontrol/stream_queues.dart:216:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4453628Z    info - lib/src/http2/flowcontrol/stream_queues.dart:278:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4455874Z    info - lib/src/http2/flowcontrol/window.dart:6:20 - The constant name 'MAX_WINDOW_SIZE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4458258Z    info - lib/src/http2/flowcontrol/window_handler.dart:31:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4460721Z    info - lib/src/http2/frames/frame_defragmenter.dart:41:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4462229Z    info - lib/src/http2/frames/frame_defragmenter.dart:61:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4463306Z    info - lib/src/http2/frames/frame_reader.dart:21:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4464570Z    info - lib/src/http2/frames/frame_reader.dart:36:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4465591Z    info - lib/src/http2/frames/frame_reader.dart:42:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4466607Z    info - lib/src/http2/frames/frame_reader.dart:45:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4467810Z    info - lib/src/http2/frames/frame_reader.dart:84:17 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4468839Z    info - lib/src/http2/frames/frame_reader.dart:139:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4469762Z    info - lib/src/http2/frames/frame_reader.dart:142:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4470760Z    info - lib/src/http2/frames/frame_reader.dart:153:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4471637Z    info - lib/src/http2/frames/frame_reader.dart:154:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4472514Z    info - lib/src/http2/frames/frame_reader.dart:155:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4473385Z    info - lib/src/http2/frames/frame_reader.dart:156:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4474260Z    info - lib/src/http2/frames/frame_reader.dart:163:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4475120Z    info - lib/src/http2/frames/frame_reader.dart:173:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4475992Z    info - lib/src/http2/frames/frame_reader.dart:175:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4476855Z    info - lib/src/http2/frames/frame_reader.dart:194:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4477918Z    info - lib/src/http2/frames/frame_reader.dart:196:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4478794Z    info - lib/src/http2/frames/frame_reader.dart:204:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4479661Z    info - lib/src/http2/frames/frame_reader.dart:205:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4480530Z    info - lib/src/http2/frames/frame_reader.dart:206:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4481565Z    info - lib/src/http2/frames/frame_reader.dart:214:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4482448Z    info - lib/src/http2/frames/frame_reader.dart:223:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4483324Z    info - lib/src/http2/frames/frame_reader.dart:224:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4484208Z    info - lib/src/http2/frames/frame_reader.dart:226:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4485082Z    info - lib/src/http2/frames/frame_reader.dart:227:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4486071Z    info - lib/src/http2/frames/frame_reader.dart:230:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4486950Z    info - lib/src/http2/frames/frame_reader.dart:242:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4487996Z    info - lib/src/http2/frames/frame_reader.dart:244:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4488868Z    info - lib/src/http2/frames/frame_reader.dart:246:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4489736Z    info - lib/src/http2/frames/frame_reader.dart:254:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4490603Z    info - lib/src/http2/frames/frame_reader.dart:259:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4491484Z    info - lib/src/http2/frames/frame_reader.dart:260:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4492355Z    info - lib/src/http2/frames/frame_reader.dart:261:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4493221Z    info - lib/src/http2/frames/frame_reader.dart:269:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4494085Z    info - lib/src/http2/frames/frame_reader.dart:273:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4495204Z    info - lib/src/http2/frames/frame_types.dart:7:11 - The constant name 'FRAME_HEADER_SIZE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4496511Z    info - lib/src/http2/frames/frame_types.dart:10:20 - The constant name 'DATA' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4497959Z    info - lib/src/http2/frames/frame_types.dart:11:20 - The constant name 'HEADERS' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4499250Z    info - lib/src/http2/frames/frame_types.dart:12:20 - The constant name 'PRIORITY' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4500537Z    info - lib/src/http2/frames/frame_types.dart:13:20 - The constant name 'RST_STREAM' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4501828Z    info - lib/src/http2/frames/frame_types.dart:14:20 - The constant name 'SETTINGS' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4503127Z    info - lib/src/http2/frames/frame_types.dart:15:20 - The constant name 'PUSH_PROMISE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4504629Z    info - lib/src/http2/frames/frame_types.dart:16:20 - The constant name 'PING' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4505881Z    info - lib/src/http2/frames/frame_types.dart:17:20 - The constant name 'GOAWAY' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4507169Z    info - lib/src/http2/frames/frame_types.dart:18:20 - The constant name 'WINDOW_UPDATE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4508998Z    info - lib/src/http2/frames/frame_types.dart:19:20 - The constant name 'CONTINUATION' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4510435Z    info - lib/src/http2/frames/frame_types.dart:23:20 - The constant name 'NO_ERROR' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4511883Z    info - lib/src/http2/frames/frame_types.dart:24:20 - The constant name 'PROTOCOL_ERROR' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4513201Z    info - lib/src/http2/frames/frame_types.dart:25:20 - The constant name 'INTERNAL_ERROR' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4514538Z    info - lib/src/http2/frames/frame_types.dart:26:20 - The constant name 'FLOW_CONTROL_ERROR' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4515886Z    info - lib/src/http2/frames/frame_types.dart:27:20 - The constant name 'SETTINGS_TIMEOUT' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4517206Z    info - lib/src/http2/frames/frame_types.dart:28:20 - The constant name 'STREAM_CLOSED' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4518767Z    info - lib/src/http2/frames/frame_types.dart:29:20 - The constant name 'FRAME_SIZE_ERROR' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4520092Z    info - lib/src/http2/frames/frame_types.dart:30:20 - The constant name 'REFUSED_STREAM' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4521393Z    info - lib/src/http2/frames/frame_types.dart:31:20 - The constant name 'CANCEL' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4522705Z    info - lib/src/http2/frames/frame_types.dart:32:20 - The constant name 'COMPRESSION_ERROR' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4524023Z    info - lib/src/http2/frames/frame_types.dart:33:20 - The constant name 'CONNECT_ERROR' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4525335Z    info - lib/src/http2/frames/frame_types.dart:34:20 - The constant name 'ENHANCE_YOUR_CALM' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4526679Z    info - lib/src/http2/frames/frame_types.dart:35:20 - The constant name 'INADEQUATE_SECURITY' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4528372Z    info - lib/src/http2/frames/frame_types.dart:36:20 - The constant name 'HTTP_1_1_REQUIRED' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4529666Z    info - lib/src/http2/frames/frame_types.dart:51:20 - The constant name 'MAX_LEN' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4530965Z    info - lib/src/http2/frames/frame_types.dart:61:20 - The constant name 'FLAG_END_STREAM' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4532440Z    info - lib/src/http2/frames/frame_types.dart:62:20 - The constant name 'FLAG_PADDED' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4533751Z    info - lib/src/http2/frames/frame_types.dart:84:20 - The constant name 'FLAG_END_STREAM' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4535065Z    info - lib/src/http2/frames/frame_types.dart:85:20 - The constant name 'FLAG_END_HEADERS' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4536373Z    info - lib/src/http2/frames/frame_types.dart:86:20 - The constant name 'FLAG_PADDED' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4537922Z    info - lib/src/http2/frames/frame_types.dart:87:20 - The constant name 'FLAG_PRIORITY' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4539322Z    info - lib/src/http2/frames/frame_types.dart:91:20 - The constant name 'MAX_CONSTANT_PAYLOAD' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4540444Z    info - lib/src/http2/frames/frame_types.dart:119:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4541315Z    info - lib/src/http2/frames/frame_types.dart:120:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4542176Z    info - lib/src/http2/frames/frame_types.dart:121:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4543028Z    info - lib/src/http2/frames/frame_types.dart:123:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4544151Z    info - lib/src/http2/frames/frame_types.dart:144:20 - The constant name 'FIXED_FRAME_LENGTH' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4545505Z    info - lib/src/http2/frames/frame_types.dart:159:20 - The constant name 'FIXED_FRAME_LENGTH' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4546888Z    info - lib/src/http2/frames/frame_types.dart:170:20 - The constant name 'SETTINGS_HEADER_TABLE_SIZE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4548470Z    info - lib/src/http2/frames/frame_types.dart:171:20 - The constant name 'SETTINGS_ENABLE_PUSH' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4549880Z    info - lib/src/http2/frames/frame_types.dart:172:20 - The constant name 'SETTINGS_MAX_CONCURRENT_STREAMS' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4551485Z    info - lib/src/http2/frames/frame_types.dart:173:20 - The constant name 'SETTINGS_INITIAL_WINDOW_SIZE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4552882Z    info - lib/src/http2/frames/frame_types.dart:174:20 - The constant name 'SETTINGS_MAX_FRAME_SIZE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4554294Z    info - lib/src/http2/frames/frame_types.dart:175:20 - The constant name 'SETTINGS_MAX_HEADER_LIST_SIZE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4555770Z    info - lib/src/http2/frames/frame_types.dart:186:20 - The constant name 'FLAG_ACK' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4557074Z    info - lib/src/http2/frames/frame_types.dart:189:20 - The constant name 'SETTING_SIZE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4558512Z    info - lib/src/http2/frames/frame_types.dart:202:20 - The constant name 'FLAG_END_HEADERS' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4559834Z    info - lib/src/http2/frames/frame_types.dart:203:20 - The constant name 'FLAG_PADDED' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4561166Z    info - lib/src/http2/frames/frame_types.dart:207:20 - The constant name 'MAX_CONSTANT_PAYLOAD' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4562292Z    info - lib/src/http2/frames/frame_types.dart:222:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4563164Z    info - lib/src/http2/frames/frame_types.dart:223:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4564028Z    info - lib/src/http2/frames/frame_types.dart:224:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4564888Z    info - lib/src/http2/frames/frame_types.dart:226:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4566000Z    info - lib/src/http2/frames/frame_types.dart:245:20 - The constant name 'FIXED_FRAME_LENGTH' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4567330Z    info - lib/src/http2/frames/frame_types.dart:247:20 - The constant name 'FLAG_ACK' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4568746Z    info - lib/src/http2/frames/frame_types.dart:273:20 - The constant name 'FIXED_FRAME_LENGTH' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4570091Z    info - lib/src/http2/frames/frame_types.dart:284:20 - The constant name 'FLAG_END_HEADERS' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4571194Z    info - lib/src/http2/frames/frame_writer.dart:35:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4572066Z    info - lib/src/http2/frames/frame_writer.dart:43:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4573061Z    info - lib/src/http2/frames/frame_writer.dart:44:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4573920Z    info - lib/src/http2/frames/frame_writer.dart:46:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4574779Z    info - lib/src/http2/frames/frame_writer.dart:59:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4575638Z    info - lib/src/http2/frames/frame_writer.dart:64:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4576494Z    info - lib/src/http2/frames/frame_writer.dart:68:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4577628Z    info - lib/src/http2/frames/frame_writer.dart:77:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4578549Z    info - lib/src/http2/frames/frame_writer.dart:82:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4579401Z    info - lib/src/http2/frames/frame_writer.dart:94:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4580256Z    info - lib/src/http2/frames/frame_writer.dart:95:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4581122Z    info - lib/src/http2/frames/frame_writer.dart:97:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4582323Z    info - lib/src/http2/frames/frame_writer.dart:109:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4583203Z    info - lib/src/http2/frames/frame_writer.dart:110:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4584075Z    info - lib/src/http2/frames/frame_writer.dart:112:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4584938Z    info - lib/src/http2/frames/frame_writer.dart:129:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4585804Z    info - lib/src/http2/frames/frame_writer.dart:130:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4586666Z    info - lib/src/http2/frames/frame_writer.dart:132:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4587788Z    info - lib/src/http2/frames/frame_writer.dart:144:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4588674Z    info - lib/src/http2/frames/frame_writer.dart:145:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4589546Z    info - lib/src/http2/frames/frame_writer.dart:147:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4590415Z    info - lib/src/http2/frames/frame_writer.dart:154:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4591283Z    info - lib/src/http2/frames/frame_writer.dart:163:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4592146Z    info - lib/src/http2/frames/frame_writer.dart:164:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4593014Z    info - lib/src/http2/frames/frame_writer.dart:166:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4593881Z    info - lib/src/http2/frames/frame_writer.dart:177:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4594912Z    info - lib/src/http2/frames/frame_writer.dart:182:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4595779Z    info - lib/src/http2/frames/frame_writer.dart:186:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4596652Z    info - lib/src/http2/frames/frame_writer.dart:195:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4597680Z    info - lib/src/http2/frames/frame_writer.dart:196:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4598556Z    info - lib/src/http2/frames/frame_writer.dart:198:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4599554Z    info - lib/src/http2/frames/frame_writer.dart:211:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4600434Z    info - lib/src/http2/frames/frame_writer.dart:212:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4601300Z    info - lib/src/http2/frames/frame_writer.dart:214:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4602164Z    info - lib/src/http2/frames/frame_writer.dart:225:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4603026Z    info - lib/src/http2/frames/frame_writer.dart:226:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4603892Z    info - lib/src/http2/frames/frame_writer.dart:228:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4604779Z    info - lib/src/http2/frames/frame_writer.dart:242:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4605647Z    info - lib/src/http2/frames/frame_writer.dart:243:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4606509Z    info - lib/src/http2/frames/frame_writer.dart:245:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4607693Z    info - lib/src/http2/frames/frames.dart:5:9 - Library names are not necessary. Remove the library name. - unnecessary_library_name
+2026-03-24T18:18:52.4608605Z    info - lib/src/http2/hpack/hpack.dart:8:9 - Library names are not necessary. Remove the library name. - unnecessary_library_name
+2026-03-24T18:18:52.4609532Z    info - lib/src/http2/hpack/hpack.dart:72:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4610532Z    info - lib/src/http2/hpack/hpack.dart:80:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4611684Z    info - lib/src/http2/hpack/hpack.dart:95:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4612560Z    info - lib/src/http2/hpack/hpack.dart:96:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4613437Z    info - lib/src/http2/hpack/hpack.dart:98:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4614302Z    info - lib/src/http2/hpack/hpack.dart:120:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4615170Z    info - lib/src/http2/hpack/hpack.dart:122:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4616031Z    info - lib/src/http2/hpack/hpack.dart:123:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4617125Z    info - lib/src/http2/hpack/hpack.dart:124:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4618253Z    info - lib/src/http2/hpack/hpack.dart:126:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4619145Z    info - lib/src/http2/hpack/hpack.dart:127:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4620029Z    info - lib/src/http2/hpack/hpack.dart:128:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4620913Z    info - lib/src/http2/hpack/hpack.dart:131:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4621790Z    info - lib/src/http2/hpack/hpack.dart:132:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4622819Z    info - lib/src/http2/hpack/hpack.dart:135:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4623680Z    info - lib/src/http2/hpack/hpack.dart:143:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4624550Z    info - lib/src/http2/hpack/hpack.dart:178:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4625422Z    info - lib/src/http2/hpack/hpack.dart:335:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4626321Z    info - lib/src/http2/hpack/huffman.dart:38:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4627189Z    info - lib/src/http2/hpack/huffman.dart:44:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4628373Z    info - lib/src/http2/hpack/huffman.dart:46:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4629376Z    info - lib/src/http2/hpack/huffman.dart:94:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4630386Z    info - lib/src/http2/hpack/huffman.dart:124:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4631379Z    info - lib/src/http2/hpack/huffman.dart:125:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4632371Z    info - lib/src/http2/hpack/huffman.dart:157:3 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4633392Z    info - lib/src/http2/hpack/huffman.dart:160:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4634341Z    info - lib/src/http2/hpack/huffman.dart:164:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4635652Z    info - lib/src/http2/hpack/huffman_table.dart:15:11 - The constant name 'EOS_BYTE' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4636932Z    info - lib/src/http2/http2.dart:45:9 - Library names are not necessary. Remove the library name. - unnecessary_library_name
+2026-03-24T18:18:52.4638091Z    info - lib/src/http2/ping/ping_handler.dart:48:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4639137Z    info - lib/src/http2/ping/ping_handler.dart:62:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4640007Z    info - lib/src/http2/ping/ping_handler.dart:63:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4640906Z    info - lib/src/http2/settings/settings.dart:142:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4642132Z    info - lib/src/http2/settings/settings.dart:143:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4643174Z    info - lib/src/http2/settings/settings.dart:165:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4644213Z    info - lib/src/http2/settings/settings.dart:208:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4645231Z    info - lib/src/http2/streams/stream_handler.dart:9:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4646540Z    info - lib/src/http2/streams/stream_handler.dart:22:3 - The constant name 'ReservedLocal' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4648489Z    info - lib/src/http2/streams/stream_handler.dart:23:3 - The constant name 'ReservedRemote' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4650161Z    info - lib/src/http2/streams/stream_handler.dart:24:3 - The constant name 'Idle' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4651487Z    info - lib/src/http2/streams/stream_handler.dart:25:3 - The constant name 'Open' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4652814Z    info - lib/src/http2/streams/stream_handler.dart:26:3 - The constant name 'HalfClosedLocal' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4654204Z    info - lib/src/http2/streams/stream_handler.dart:27:3 - The constant name 'HalfClosedRemote' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4655543Z    info - lib/src/http2/streams/stream_handler.dart:28:3 - The constant name 'Closed' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4656878Z    info - lib/src/http2/streams/stream_handler.dart:32:3 - The constant name 'Terminated' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4658503Z    info - lib/src/http2/streams/stream_handler.dart:70:27 - Uncancelled instance of 'StreamSubscription'. Try invoking 'cancel' in the function in which the 'StreamSubscription' was created. - cancel_subscriptions
+2026-03-24T18:18:52.4660579Z    info - lib/src/http2/streams/stream_handler.dart:130:20 - The constant name 'MAX_STREAM_ID' isn't a lowerCamelCase identifier. Try changing the name to follow the lowerCamelCase style. - constant_identifier_names
+2026-03-24T18:18:52.4662608Z    info - lib/src/http2/streams/stream_handler.dart:237:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4664295Z    info - lib/src/http2/streams/stream_handler.dart:238:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4666011Z    info - lib/src/http2/streams/stream_handler.dart:240:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4667995Z    info - lib/src/http2/streams/stream_handler.dart:254:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4669699Z    info - lib/src/http2/streams/stream_handler.dart:255:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4671884Z    info - lib/src/http2/streams/stream_handler.dart:261:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4673621Z    info - lib/src/http2/streams/stream_handler.dart:274:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4675287Z    info - lib/src/http2/streams/stream_handler.dart:302:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4677012Z    info - lib/src/http2/streams/stream_handler.dart:321:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4679044Z    info - lib/src/http2/streams/stream_handler.dart:323:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4680792Z    info - lib/src/http2/streams/stream_handler.dart:325:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4682748Z    info - lib/src/http2/streams/stream_handler.dart:327:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4684575Z    info - lib/src/http2/streams/stream_handler.dart:329:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4686329Z    info - lib/src/http2/streams/stream_handler.dart:330:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4688304Z    info - lib/src/http2/streams/stream_handler.dart:334:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4690177Z    info - lib/src/http2/streams/stream_handler.dart:334:9 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.4692122Z    info - lib/src/http2/streams/stream_handler.dart:335:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4693913Z    info - lib/src/http2/streams/stream_handler.dart:364:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4695641Z    info - lib/src/http2/streams/stream_handler.dart:377:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4697390Z    info - lib/src/http2/streams/stream_handler.dart:378:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4699375Z    info - lib/src/http2/streams/stream_handler.dart:405:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4701148Z    info - lib/src/http2/streams/stream_handler.dart:462:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4702945Z    info - lib/src/http2/streams/stream_handler.dart:533:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4704646Z    info - lib/src/http2/streams/stream_handler.dart:536:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4706385Z    info - lib/src/http2/streams/stream_handler.dart:537:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4708268Z    info - lib/src/http2/streams/stream_handler.dart:538:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4709870Z    info - lib/src/http2/streams/stream_handler.dart:539:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4711475Z    info - lib/src/http2/streams/stream_handler.dart:552:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4713413Z    info - lib/src/http2/streams/stream_handler.dart:675:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4715047Z    info - lib/src/http2/streams/stream_handler.dart:687:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4716717Z    info - lib/src/http2/streams/stream_handler.dart:775:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4718715Z    info - lib/src/http2/streams/stream_handler.dart:819:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4720446Z    info - lib/src/http2/streams/stream_handler.dart:828:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4722092Z    info - lib/src/http2/streams/stream_handler.dart:878:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4724237Z    info - lib/src/server/named_pipe_server.dart:23:1 - Place 'package:' imports before relative imports. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4726156Z    info - lib/src/server/named_pipe_server.dart:24:1 - Place 'package:' imports before relative imports. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4728599Z    info - lib/src/server/named_pipe_server.dart:593:34 - Uncancelled instance of 'StreamSubscription'. Try invoking 'cancel' in the function in which the 'StreamSubscription' was created. - cancel_subscriptions
+2026-03-24T18:18:52.4730888Z    info - lib/src/server/server.dart:20:1 - Place 'package:' imports before relative imports. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4733010Z    info - lib/src/server/server.dart:203:11 - Uncancelled instance of 'StreamSubscription'. Try invoking 'cancel' in the function in which the 'StreamSubscription' was created. - cancel_subscriptions
+2026-03-24T18:18:52.4736011Z    info - test/client_tests/client_interceptor_test.dart:19:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.4738912Z    info - test/client_tests/client_test.dart:24:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4741354Z    info - test/client_tests/client_test.dart:24:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.4744758Z    info - test/client_tests/client_transport_connector_test.dart:20:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.4748444Z    info - test/connection_server_error_cleanup_test.dart:34:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.4751849Z    info - test/connection_server_test.dart:21:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.4755110Z    info - test/grpc_web_server.dart:21:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.4757804Z    info - test/handler_hardening_test.dart:37:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4760692Z    info - test/handler_hardening_test.dart:37:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.4763161Z    info - test/handler_regression_test.dart:37:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.4765457Z    info - test/handler_regression_test.dart:37:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.4767981Z    info - test/http2/client_test.dart:28:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4769779Z    info - test/http2/client_test.dart:51:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4771221Z    info - test/http2/client_test.dart:92:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4772802Z    info - test/http2/client_test.dart:153:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4774368Z    info - test/http2/client_test.dart:201:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4775991Z    info - test/http2/client_test.dart:222:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4777761Z    info - test/http2/client_test.dart:232:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4779338Z    info - test/http2/client_test.dart:236:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4780937Z    info - test/http2/client_test.dart:263:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4782416Z    info - test/http2/client_test.dart:279:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4783876Z    info - test/http2/client_test.dart:289:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4785364Z    info - test/http2/client_test.dart:292:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4786844Z    info - test/http2/client_test.dart:295:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4788634Z    info - test/http2/client_test.dart:299:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4790122Z    info - test/http2/client_test.dart:346:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4791814Z    info - test/http2/client_test.dart:348:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4793441Z    info - test/http2/client_test.dart:364:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4795110Z    info - test/http2/client_test.dart:365:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4796146Z    info - test/http2/client_test.dart:366:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4797019Z    info - test/http2/client_test.dart:376:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4798515Z    info - test/http2/client_test.dart:378:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4799415Z    info - test/http2/client_test.dart:429:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4800228Z    info - test/http2/client_test.dart:433:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4801028Z    info - test/http2/client_test.dart:451:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4801829Z    info - test/http2/client_test.dart:452:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4802623Z    info - test/http2/client_test.dart:453:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4803603Z    info - test/http2/client_test.dart:454:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4804408Z    info - test/http2/client_test.dart:464:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4805507Z    info - test/http2/client_test.dart:466:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4806872Z    info - test/http2/client_test.dart:510:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4808318Z    info - test/http2/client_test.dart:513:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4809597Z    info - test/http2/client_test.dart:535:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4810945Z    info - test/http2/client_test.dart:545:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4812332Z    info - test/http2/client_test.dart:548:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4813687Z    info - test/http2/client_test.dart:554:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4814989Z    info - test/http2/client_test.dart:558:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4816346Z    info - test/http2/client_test.dart:567:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4818013Z    info - test/http2/client_test.dart:569:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4819906Z    info - test/http2/client_test.dart:589:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4821740Z    info - test/http2/client_test.dart:599:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4823713Z    info - test/http2/client_test.dart:600:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4825457Z    info - test/http2/client_test.dart:606:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4827203Z    info - test/http2/client_test.dart:610:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4829384Z    info - test/http2/client_test.dart:619:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4831183Z    info - test/http2/client_test.dart:637:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4832945Z    info - test/http2/client_test.dart:647:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4835149Z    info - test/http2/client_test.dart:648:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4836607Z    info - test/http2/client_test.dart:661:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4838388Z    info - test/http2/client_test.dart:676:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4839902Z    info - test/http2/client_test.dart:677:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4841817Z    info - test/http2/client_test.dart:677:15 - Uncancelled instance of 'StreamSubscription'. Try invoking 'cancel' in the function in which the 'StreamSubscription' was created. - cancel_subscriptions
+2026-03-24T18:18:52.4844124Z    info - test/http2/client_test.dart:699:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4845742Z    info - test/http2/client_test.dart:700:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4847279Z    info - test/http2/client_test.dart:703:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4849113Z    info - test/http2/client_test.dart:713:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4850718Z    info - test/http2/client_test.dart:715:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4852290Z    info - test/http2/client_test.dart:741:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4853852Z    info - test/http2/client_test.dart:763:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4855433Z    info - test/http2/client_test.dart:766:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4857030Z    info - test/http2/client_test.dart:776:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4858672Z    info - test/http2/client_test.dart:778:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4860270Z    info - test/http2/client_test.dart:794:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4861831Z    info - test/http2/client_test.dart:834:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4863436Z    info - test/http2/client_test.dart:835:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4865186Z    info - test/http2/client_test.dart:847:37 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.4867014Z    info - test/http2/client_test.dart:848:37 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.4868956Z    info - test/http2/client_test.dart:853:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4870516Z    info - test/http2/client_test.dart:854:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4872088Z    info - test/http2/client_test.dart:859:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4873671Z    info - test/http2/client_test.dart:860:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4875700Z    info - test/http2/server_test.dart:98:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4877296Z    info - test/http2/server_test.dart:167:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4879099Z    info - test/http2/server_test.dart:170:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4880721Z    info - test/http2/server_test.dart:218:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4882304Z    info - test/http2/server_test.dart:219:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4884034Z    info - test/http2/server_test.dart:231:37 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.4885976Z    info - test/http2/server_test.dart:237:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4887733Z    info - test/http2/server_test.dart:242:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4889289Z    info - test/http2/server_test.dart:243:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4891051Z    info - test/http2/src/async_utils/async_utils_test.dart:13:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4892897Z    info - test/http2/src/async_utils/async_utils_test.dart:38:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4894884Z    info - test/http2/src/async_utils/async_utils_test.dart:38:11 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.4896855Z    info - test/http2/src/async_utils/async_utils_test.dart:39:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4898816Z    info - test/http2/src/async_utils/async_utils_test.dart:42:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4900615Z    info - test/http2/src/async_utils/async_utils_test.dart:71:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4902619Z    info - test/http2/src/async_utils/async_utils_test.dart:71:11 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.4904608Z    info - test/http2/src/async_utils/async_utils_test.dart:72:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4906441Z    info - test/http2/src/async_utils/async_utils_test.dart:76:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4908403Z    info - test/http2/src/connection_preface_test.dart:18:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4910199Z    info - test/http2/src/connection_preface_test.dart:19:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4911989Z    info - test/http2/src/connection_preface_test.dart:22:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4913883Z    info - test/http2/src/connection_preface_test.dart:23:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4915673Z    info - test/http2/src/connection_preface_test.dart:34:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4917975Z    info - test/http2/src/connection_preface_test.dart:35:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4919753Z    info - test/http2/src/connection_preface_test.dart:53:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4921534Z    info - test/http2/src/connection_preface_test.dart:54:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4923325Z    info - test/http2/src/connection_preface_test.dart:72:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4925120Z    info - test/http2/src/connection_preface_test.dart:73:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4927122Z    info - test/http2/src/flowcontrol/mock_free_unit_test.dart:31:9 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.4929657Z    info - test/http2/src/frames/frame_defragmenter_test.dart:19:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4931611Z    info - test/http2/src/frames/frame_defragmenter_test.dart:20:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4933480Z    info - test/http2/src/frames/frame_defragmenter_test.dart:25:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4935368Z    info - test/http2/src/frames/frame_defragmenter_test.dart:26:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4937352Z    info - test/http2/src/frames/frame_defragmenter_test.dart:31:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4939372Z    info - test/http2/src/frames/frame_defragmenter_test.dart:32:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4941237Z    info - test/http2/src/frames/frame_defragmenter_test.dart:37:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4943052Z    info - test/http2/src/frames/frame_defragmenter_test.dart:42:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4944860Z    info - test/http2/src/frames/frame_defragmenter_test.dart:44:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4946703Z    info - test/http2/src/frames/frame_defragmenter_test.dart:45:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4948833Z    info - test/http2/src/frames/frame_defragmenter_test.dart:46:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4950779Z    info - test/http2/src/frames/frame_defragmenter_test.dart:50:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4952659Z    info - test/http2/src/frames/frame_defragmenter_test.dart:59:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4954574Z    info - test/http2/src/frames/frame_defragmenter_test.dart:61:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4956468Z    info - test/http2/src/frames/frame_defragmenter_test.dart:62:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4958549Z    info - test/http2/src/frames/frame_defragmenter_test.dart:63:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4960685Z    info - test/http2/src/frames/frame_defragmenter_test.dart:67:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4962910Z    info - test/http2/src/frames/frame_defragmenter_test.dart:75:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4964810Z    info - test/http2/src/frames/frame_defragmenter_test.dart:77:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4966684Z    info - test/http2/src/frames/frame_defragmenter_test.dart:78:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4968769Z    info - test/http2/src/frames/frame_defragmenter_test.dart:85:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4970669Z    info - test/http2/src/frames/frame_defragmenter_test.dart:87:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4972812Z    info - test/http2/src/frames/frame_defragmenter_test.dart:88:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4974758Z    info - test/http2/src/frames/frame_defragmenter_test.dart:95:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4976647Z    info - test/http2/src/frames/frame_defragmenter_test.dart:97:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4978816Z    info - test/http2/src/frames/frame_defragmenter_test.dart:98:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4980742Z    info - test/http2/src/frames/frame_defragmenter_test.dart:105:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4982649Z    info - test/http2/src/frames/frame_defragmenter_test.dart:107:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4984601Z    info - test/http2/src/frames/frame_defragmenter_test.dart:108:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4986552Z    info - test/http2/src/frames/frame_defragmenter_test.dart:115:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4988728Z    info - test/http2/src/frames/frame_defragmenter_test.dart:117:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4990379Z    info - test/http2/src/frames/frame_reader_test.dart:17:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4991439Z    info - test/http2/src/frames/frame_reader_test.dart:18:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4992381Z    info - test/http2/src/frames/frame_reader_test.dart:19:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4993819Z    info - test/http2/src/frames/frame_reader_test.dart:37:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4995512Z    info - test/http2/src/frames/frame_reader_test.dart:43:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4997317Z    info - test/http2/src/frames/frame_reader_test.dart:53:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.4999254Z    info - test/http2/src/frames/frame_reader_test.dart:63:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5000971Z    info - test/http2/src/frames/frame_reader_test.dart:65:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5002983Z    info - test/http2/src/frames/frame_reader_test.dart:66:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5004692Z    info - test/http2/src/frames/frame_reader_test.dart:81:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5006391Z    info - test/http2/src/frames/frame_reader_test.dart:83:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5008236Z    info - test/http2/src/frames/frame_reader_test.dart:84:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5009975Z    info - test/http2/src/frames/frame_reader_test.dart:104:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5011724Z    info - test/http2/src/frames/frame_reader_test.dart:106:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5013705Z    info - test/http2/src/frames/frame_reader_test.dart:107:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5015561Z    info - test/http2/src/frames/frame_writer_reader_test.dart:20:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5017409Z    info - test/http2/src/frames/frame_writer_reader_test.dart:24:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5019450Z    info - test/http2/src/frames/frame_writer_reader_test.dart:35:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5021294Z    info - test/http2/src/frames/frame_writer_reader_test.dart:39:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5023165Z    info - test/http2/src/frames/frame_writer_reader_test.dart:50:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5025000Z    info - test/http2/src/frames/frame_writer_reader_test.dart:58:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5026801Z    info - test/http2/src/frames/frame_writer_reader_test.dart:62:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5028795Z    info - test/http2/src/frames/frame_writer_reader_test.dart:72:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5030770Z    info - test/http2/src/frames/frame_writer_reader_test.dart:76:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5032844Z    info - test/http2/src/frames/frame_writer_reader_test.dart:84:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5034992Z    info - test/http2/src/frames/frame_writer_reader_test.dart:88:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5037128Z    info - test/http2/src/frames/frame_writer_reader_test.dart:99:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5039186Z    info - test/http2/src/frames/frame_writer_reader_test.dart:103:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5041233Z    info - test/http2/src/frames/frame_writer_reader_test.dart:112:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5043331Z    info - test/http2/src/frames/frame_writer_reader_test.dart:116:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5045452Z    info - test/http2/src/frames/frame_writer_reader_test.dart:123:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5047926Z    info - test/http2/src/frames/frame_writer_reader_test.dart:131:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5050058Z    info - test/http2/src/frames/frame_writer_reader_test.dart:135:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5052082Z    info - test/http2/src/frames/frame_writer_reader_test.dart:144:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5054008Z    info - test/http2/src/frames/frame_writer_reader_test.dart:148:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5056139Z    info - test/http2/src/frames/frame_writer_reader_test.dart:158:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5058333Z    info - test/http2/src/frames/frame_writer_reader_test.dart:162:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5060144Z    info - test/http2/src/frames/frame_writer_reader_test.dart:168:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5061923Z    info - test/http2/src/frames/frame_writer_reader_test.dart:169:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5063627Z    info - test/http2/src/frames/frame_writer_reader_test.dart:170:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5065380Z    info - test/http2/src/frames/frame_writer_reader_test.dart:174:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5067167Z    info - test/http2/src/frames/frame_writer_reader_test.dart:179:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5069179Z    info - test/http2/src/frames/frame_writer_reader_test.dart:187:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5070849Z    info - test/http2/src/frames/frame_writer_reader_test.dart:191:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5072618Z    info - test/http2/src/frames/frame_writer_reader_test.dart:193:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5074583Z    info - test/http2/src/frames/frame_writer_reader_test.dart:204:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5076350Z    info - test/http2/src/frames/frame_writer_reader_test.dart:205:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5077905Z    info - test/http2/src/frames/frame_writer_reader_test.dart:206:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5078958Z    info - test/http2/src/frames/frame_writer_reader_test.dart:206:9 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.5080006Z    info - test/http2/src/frames/frame_writer_reader_test.dart:207:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5080965Z    info - test/http2/src/frames/frame_writer_reader_test.dart:208:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5081896Z    info - test/http2/src/frames/frame_writer_test.dart:16:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5082797Z    info - test/http2/src/frames/frame_writer_test.dart:17:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5083945Z    info - test/http2/src/frames/frame_writer_test.dart:18:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5084924Z    info - test/http2/src/frames/frame_writer_test.dart:18:13 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.5085944Z    info - test/http2/src/frames/frame_writer_test.dart:19:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5086832Z    info - test/http2/src/hpack/hpack_test.dart:12:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5087906Z    info - test/http2/src/hpack/hpack_test.dart:109:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5088912Z    info - test/http2/src/hpack/hpack_test.dart:183:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5089773Z    info - test/http2/src/hpack/hpack_test.dart:384:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5090628Z    info - test/http2/src/hpack/hpack_test.dart:552:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5091488Z    info - test/http2/src/hpack/hpack_test.dart:557:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5092338Z    info - test/http2/src/hpack/hpack_test.dart:562:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5093182Z    info - test/http2/src/hpack/hpack_test.dart:567:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5094032Z    info - test/http2/src/hpack/hpack_test.dart:569:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5094907Z    info - test/http2/src/hpack/hpack_test.dart:585:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5095820Z    info - test/http2/src/hpack/hpack_test.dart:592:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5096680Z    info - test/http2/src/hpack/hpack_test.dart:594:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5097755Z    info - test/http2/src/hpack/hpack_test.dart:644:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5099241Z    info - test/http2/src/hpack/hpack_test.dart:645:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5100134Z    info - test/http2/src/hpack/hpack_test.dart:650:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5100993Z    info - test/http2/src/hpack/hpack_test.dart:651:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5101848Z    info - test/http2/src/hpack/hpack_test.dart:716:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5102701Z    info - test/http2/src/hpack/hpack_test.dart:740:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5103544Z    info - test/http2/src/hpack/hpack_test.dart:745:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5104398Z    info - test/http2/src/hpack/hpack_test.dart:749:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5105256Z    info - test/http2/src/hpack/hpack_test.dart:762:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5106310Z    info - test/http2/src/hpack/huffman_table_test.dart:17:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5107217Z    info - test/http2/src/hpack/huffman_table_test.dart:32:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5108316Z    info - test/http2/src/hpack/huffman_table_test.dart:55:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5109216Z    info - test/http2/src/hpack/huffman_table_test.dart:69:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5110091Z    info - test/http2/src/streams/helper.dart:28:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5111084Z    info - test/http2/src/streams/helper.dart:30:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5111929Z    info - test/http2/src/streams/helper.dart:31:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5112856Z    info - test/http2/src/streams/helper.dart:38:37 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.5113861Z    info - test/http2/src/streams/helper.dart:39:37 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.5114807Z    info - test/http2/src/streams/simple_flow_test.dart:17:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5115709Z    info - test/http2/src/streams/simple_flow_test.dart:18:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5116615Z    info - test/http2/src/streams/simple_flow_test.dart:32:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5117747Z    info - test/http2/src/streams/simple_flow_test.dart:48:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5118659Z    info - test/http2/src/streams/simple_flow_test.dart:65:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5119985Z    info - test/http2/src/streams/simple_flow_test.dart:85:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5120991Z    info - test/http2/src/streams/simple_push_test.dart:18:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5121976Z    info - test/http2/src/streams/simple_push_test.dart:19:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5123128Z    info - test/http2/src/streams/simple_push_test.dart:37:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5124129Z    info - test/http2/src/streams/simple_push_test.dart:40:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5125170Z    info - test/http2/src/streams/simple_push_test.dart:43:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5126212Z    info - test/http2/src/streams/simple_push_test.dart:61:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5127217Z    info - test/http2/src/streams/simple_push_test.dart:72:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5128829Z    info - test/http2/src/streams/simple_push_test.dart:78:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5130071Z    info - test/http2/src/streams/simple_push_test.dart:79:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5131072Z    info - test/http2/src/streams/simple_push_test.dart:83:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5132157Z    info - test/http2/src/streams/streams_test.dart:18:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5147166Z    info - test/http2/src/streams/streams_test.dart:26:15 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5148316Z    info - test/http2/src/streams/streams_test.dart:35:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5149708Z    info - test/http2/src/streams/streams_test.dart:43:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5150626Z    info - test/http2/src/streams/streams_test.dart:51:15 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5151505Z    info - test/http2/src/streams/streams_test.dart:60:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5152375Z    info - test/http2/src/streams/streams_test.dart:70:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5153244Z    info - test/http2/src/streams/streams_test.dart:71:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5154118Z    info - test/http2/src/streams/streams_test.dart:80:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5154995Z    info - test/http2/src/streams/streams_test.dart:87:17 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5155873Z    info - test/http2/src/streams/streams_test.dart:92:17 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5156741Z    info - test/http2/src/streams/streams_test.dart:104:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5157821Z    info - test/http2/src/streams/streams_test.dart:114:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5158719Z    info - test/http2/src/streams/streams_test.dart:122:15 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5159608Z    info - test/http2/src/streams/streams_test.dart:131:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5160489Z    info - test/http2/src/streams/streams_test.dart:137:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5161369Z    info - test/http2/src/streams/streams_test.dart:148:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5162241Z    info - test/http2/src/streams/streams_test.dart:156:15 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5163113Z    info - test/http2/src/streams/streams_test.dart:168:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5163986Z    info - test/http2/src/streams/streams_test.dart:174:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5164857Z    info - test/http2/src/streams/streams_test.dart:184:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5165904Z    info - test/http2/src/streams/streams_test.dart:185:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5166779Z    info - test/http2/src/streams/streams_test.dart:197:15 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5167851Z    info - test/http2/src/streams/streams_test.dart:208:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5168787Z    info - test/http2/src/streams/streams_test.dart:224:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5169665Z    info - test/http2/src/streams/streams_test.dart:225:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5170543Z    info - test/http2/src/streams/streams_test.dart:238:15 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5171566Z    info - test/http2/src/streams/streams_test.dart:245:15 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5172448Z    info - test/http2/src/streams/streams_test.dart:258:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5173297Z    info - test/http2/transport_test.dart:22:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5174113Z    info - test/http2/transport_test.dart:49:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5174926Z    info - test/http2/transport_test.dart:121:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5175731Z    info - test/http2/transport_test.dart:123:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5176558Z    info - test/http2/transport_test.dart:142:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5177372Z    info - test/http2/transport_test.dart:167:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5178405Z    info - test/http2/transport_test.dart:173:17 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5179242Z    info - test/http2/transport_test.dart:182:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5180065Z    info - test/http2/transport_test.dart:191:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5180904Z    info - test/http2/transport_test.dart:210:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5181728Z    info - test/http2/transport_test.dart:211:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5182550Z    info - test/http2/transport_test.dart:212:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5183358Z    info - test/http2/transport_test.dart:213:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5184168Z    info - test/http2/transport_test.dart:225:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5184981Z    info - test/http2/transport_test.dart:244:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5185787Z    info - test/http2/transport_test.dart:245:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5186600Z    info - test/http2/transport_test.dart:266:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5187709Z    info - test/http2/transport_test.dart:267:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5188528Z    info - test/http2/transport_test.dart:268:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5189338Z    info - test/http2/transport_test.dart:285:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5190143Z    info - test/http2/transport_test.dart:307:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5190956Z    info - test/http2/transport_test.dart:308:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5191768Z    info - test/http2/transport_test.dart:322:7 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5192726Z    info - test/http2/transport_test.dart:341:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5193554Z    info - test/http2/transport_test.dart:342:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5194364Z    info - test/http2/transport_test.dart:424:9 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5195180Z    info - test/http2/transport_test.dart:431:13 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5196001Z    info - test/http2/transport_test.dart:435:19 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5196816Z    info - test/http2/transport_test.dart:472:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5197827Z    info - test/http2/transport_test.dart:477:11 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5198901Z    info - test/http2/transport_test.dart:477:15 - Uncancelled instance of 'StreamSubscription'. Try invoking 'cancel' in the function in which the 'StreamSubscription' was created. - cancel_subscriptions
+2026-03-24T18:18:52.5199962Z    info - test/http2/transport_test.dart:483:15 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5200784Z    info - test/http2/transport_test.dart:528:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5201592Z    info - test/http2/transport_test.dart:531:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5202405Z    info - test/http2/transport_test.dart:532:5 - Local variables should be final. Try making the variable final. - prefer_final_locals
+2026-03-24T18:18:52.5203317Z    info - test/http2/transport_test.dart:541:37 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.5204295Z    info - test/http2/transport_test.dart:542:37 - Unclosed instance of 'Sink'. Try invoking 'close' in the function in which the 'Sink' was created. - close_sinks
+2026-03-24T18:18:52.5205667Z    info - test/http2_connection_refresh_test.dart:32:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5207378Z    info - test/keepalive_test.dart:25:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5209487Z    info - test/named_pipe_adversarial_test.dart:36:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5210782Z    info - test/race_condition_test.dart:21:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.5212045Z    info - test/race_condition_test.dart:21:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5213700Z    info - test/server_test.dart:21:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5215050Z    info - test/src/client_utils.dart:23:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.5216321Z    info - test/src/client_utils.dart:23:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5217748Z    info - test/src/server_utils.dart:21:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.5218996Z    info - test/src/server_utils.dart:21:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5220212Z    info - test/src/utils.dart:20:1 - Sort directive sections alphabetically. Try sorting the directives. - directives_ordering
+2026-03-24T18:18:52.5221429Z    info - test/stream_test.dart:20:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5223062Z    info - test/tcp_adversarial_test.dart:37:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5224696Z    info - test/timeout_test.dart:19:8 - The import of 'package:grpc/src/http2/transport.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5226320Z    info - test/tools/http2_client.dart:20:8 - The import of 'package:grpc/src/http2/http2.dart' is unnecessary because all of the used elements are also provided by the import of 'package:grpc/grpc.dart'. Try removing the import directive. - unnecessary_import
+2026-03-24T18:18:52.5227180Z 
+2026-03-24T18:18:52.5227264Z 606 issues found.
+2026-03-24T18:18:52.5227867Z [32mRoot analysis complete[0m
+2026-03-24T18:18:52.5228169Z [32mAll analysis complete[0m
+2026-03-24T18:18:52.8102361Z Post job cleanup.
+2026-03-24T18:18:52.9364293Z Cache hit occurred on the primary key Linux-X64-dart-analysis-1bed97b88de51a56512773c2636af577220f35479addcad8f762a84577167f63, not saving cache.
+2026-03-24T18:18:53.0742229Z Post job cleanup.
+2026-03-24T18:18:53.2023745Z Cache hit occurred on the primary key Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f, not saving cache.
+2026-03-24T18:18:53.2151557Z Post job cleanup.
+2026-03-24T18:18:53.3014661Z [command]/usr/bin/git version
+2026-03-24T18:18:53.3088364Z git version 2.53.0
+2026-03-24T18:18:53.3123417Z Copying '/home/runner/.gitconfig' to '/home/runner/work/_temp/4711f589-c7c6-46ed-836c-e383630814d3/.gitconfig'
+2026-03-24T18:18:53.3134188Z Temporarily overriding HOME='/home/runner/work/_temp/4711f589-c7c6-46ed-836c-e383630814d3' before making global git config changes
+2026-03-24T18:18:53.3135726Z Adding repository directory to the temporary git global config as a safe directory
+2026-03-24T18:18:53.3141620Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/grpc-dart/grpc-dart
+2026-03-24T18:18:53.3177439Z Removing SSH command configuration
+2026-03-24T18:18:53.3184317Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-24T18:18:53.3225690Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-24T18:18:53.3482128Z Removing HTTP extra header
+2026-03-24T18:18:53.3487973Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-24T18:18:53.3527276Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-24T18:18:53.3777886Z Removing includeIf entries pointing to credentials config files
+2026-03-24T18:18:53.3785516Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-24T18:18:53.3823210Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-24T18:18:53.4216800Z Cleaning up orphan processes
+2026-03-24T18:18:53.4509832Z ##[warning]Node.js 20 actions are deprecated. The following actions are running on Node.js 20 and may not work as expected: dart-lang/setup-dart@v1.7.1. Actions will be forced to run with Node.js 24 by default starting June 2nd, 2026. Please check if updated versions of these actions are available that support Node.js 24. To opt into Node.js 24 now, set the FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true environment variable on the runner or in your workflow file. Once Node.js 24 becomes the default, you can temporarily opt out by setting ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

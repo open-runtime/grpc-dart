@@ -1,0 +1,4 @@
+2026-03-24T18:18:21.1138337Z ##[group]Determining the checkout info
+2026-03-24T18:18:21.1146726Z [command]/usr/bin/git branch --list --remote origin/fix/windows-named-pipe-ci-hardening
+2026-03-24T18:18:21.1172402Z   origin/fix/windows-named-pipe-ci-hardening
+2026-03-24T18:18:21.1178828Z ##[endgroup]

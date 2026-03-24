@@ -1,0 +1,28 @@
+2026-03-24T18:18:41.4241885Z ##[group]Removing auth
+2026-03-24T18:18:41.4242432Z Removing SSH command configuration
+2026-03-24T18:18:41.4245057Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-24T18:18:41.4269739Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-24T18:18:41.4452227Z Removing HTTP extra header
+2026-03-24T18:18:41.4456832Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-24T18:18:41.4485907Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-24T18:18:41.4658767Z Removing includeIf entries pointing to credentials config files
+2026-03-24T18:18:41.4662925Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-24T18:18:41.4682485Z includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path
+2026-03-24T18:18:41.4683425Z includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path
+2026-03-24T18:18:41.4684475Z includeif.gitdir:/github/workspace/.git.path
+2026-03-24T18:18:41.4685040Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-03-24T18:18:41.4691341Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path
+2026-03-24T18:18:41.4709241Z /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4717923Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4744601Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path
+2026-03-24T18:18:41.4762324Z /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4769766Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4798150Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-03-24T18:18:41.4818736Z /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4827281Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4858155Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-03-24T18:18:41.4879214Z /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4884311Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4909396Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-24T18:18:41.5077420Z Removing credentials config '/home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config'
+2026-03-24T18:18:41.5085025Z ##[endgroup]

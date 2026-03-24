@@ -1,0 +1,11 @@
+2026-03-24T18:19:18.7556923Z ##[group]Run browser-actions/setup-chrome@v2
+2026-03-24T18:19:18.7557240Z with:
+2026-03-24T18:19:18.7557442Z   install-dependencies: true
+2026-03-24T18:19:18.7557675Z   chrome-version: stable
+2026-03-24T18:19:18.7557893Z   install-chromedriver: false
+2026-03-24T18:19:18.7558109Z   no-sudo: false
+2026-03-24T18:19:18.7558280Z env:
+2026-03-24T18:19:18.7558462Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:19:18.7558754Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:19:18.7559039Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:19:18.7559281Z ##[endgroup]

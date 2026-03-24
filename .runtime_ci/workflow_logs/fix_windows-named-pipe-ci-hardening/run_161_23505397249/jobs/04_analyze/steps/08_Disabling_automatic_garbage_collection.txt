@@ -1,0 +1,3 @@
+2026-03-24T18:18:39.1771237Z ##[group]Disabling automatic garbage collection
+2026-03-24T18:18:39.1774035Z [command]/usr/bin/git config --local gc.auto 0
+2026-03-24T18:18:39.1808954Z ##[endgroup]

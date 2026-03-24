@@ -1,0 +1,371 @@
+2026-03-24T18:18:38.0411426Z Current runner version: '2.332.0'
+2026-03-24T18:18:38.0434066Z ##[group]Runner Image Provisioner
+2026-03-24T18:18:38.0434858Z Hosted Compute Agent
+2026-03-24T18:18:38.0435401Z Version: 20260213.493
+2026-03-24T18:18:38.0435959Z Commit: 5c115507f6dd24b8de37d8bbe0bb4509d0cc0fa3
+2026-03-24T18:18:38.0436625Z Build Date: 2026-02-13T00:28:41Z
+2026-03-24T18:18:38.0437212Z Worker ID: {6233c8fc-197c-4f6a-88d7-65dc480b1c17}
+2026-03-24T18:18:38.0437801Z Azure Region: westus3
+2026-03-24T18:18:38.0438319Z ##[endgroup]
+2026-03-24T18:18:38.0439494Z ##[group]Operating System
+2026-03-24T18:18:38.0440413Z Ubuntu
+2026-03-24T18:18:38.0440914Z 24.04.3
+2026-03-24T18:18:38.0441330Z LTS
+2026-03-24T18:18:38.0441742Z ##[endgroup]
+2026-03-24T18:18:38.0442163Z ##[group]Runner Image
+2026-03-24T18:18:38.0442678Z Image: ubuntu-24.04
+2026-03-24T18:18:38.0443173Z Version: 20260309.50.1
+2026-03-24T18:18:38.0444231Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260309.50/images/ubuntu/Ubuntu2404-Readme.md
+2026-03-24T18:18:38.0445475Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260309.50
+2026-03-24T18:18:38.0446274Z ##[endgroup]
+2026-03-24T18:18:38.0448589Z ##[group]GITHUB_TOKEN Permissions
+2026-03-24T18:18:38.0450734Z Actions: write
+2026-03-24T18:18:38.0451240Z ArtifactMetadata: write
+2026-03-24T18:18:38.0451733Z Attestations: write
+2026-03-24T18:18:38.0452175Z Checks: write
+2026-03-24T18:18:38.0452676Z Contents: write
+2026-03-24T18:18:38.0453165Z Deployments: write
+2026-03-24T18:18:38.0453602Z Discussions: write
+2026-03-24T18:18:38.0454068Z Issues: write
+2026-03-24T18:18:38.0454473Z Metadata: read
+2026-03-24T18:18:38.0454913Z Models: read
+2026-03-24T18:18:38.0455387Z Packages: write
+2026-03-24T18:18:38.0455802Z Pages: write
+2026-03-24T18:18:38.0456324Z PullRequests: write
+2026-03-24T18:18:38.0456815Z RepositoryProjects: write
+2026-03-24T18:18:38.0457292Z SecurityEvents: write
+2026-03-24T18:18:38.0457786Z Statuses: write
+2026-03-24T18:18:38.0458240Z ##[endgroup]
+2026-03-24T18:18:38.0460547Z Secret source: Actions
+2026-03-24T18:18:38.0461206Z Prepare workflow directory
+2026-03-24T18:18:38.0873743Z Prepare all required actions
+2026-03-24T18:18:38.0911607Z Getting action download info
+2026-03-24T18:18:38.5174471Z Download action repository 'actions/checkout@v6' (SHA:de0fac2e4500dabe0009e67214ff5f5447ce83dd)
+2026-03-24T18:18:38.6214889Z Download action repository 'dart-lang/setup-dart@v1.7.1' (SHA:e51d8e571e22473a2ddebf0ef8a2123f0ab2c02c)
+2026-03-24T18:18:39.3758705Z Download action repository 'actions/cache@v5' (SHA:668228422ae6a00e4ad889ee87cd7109ec5666a7)
+2026-03-24T18:18:40.3586796Z Complete job name: docs-freshness
+2026-03-24T18:18:40.4351745Z ##[group]Run actions/checkout@v6
+2026-03-24T18:18:40.4352378Z with:
+2026-03-24T18:18:40.4352716Z   ref: 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:40.4353116Z   fetch-depth: 1
+2026-03-24T18:18:40.4353428Z   persist-credentials: false
+2026-03-24T18:18:40.4353804Z   repository: open-runtime/grpc-dart
+2026-03-24T18:18:40.4354391Z   token: ***
+2026-03-24T18:18:40.4354685Z   ssh-strict: true
+2026-03-24T18:18:40.4354980Z   ssh-user: git
+2026-03-24T18:18:40.4355245Z   clean: true
+2026-03-24T18:18:40.4355561Z   sparse-checkout-cone-mode: true
+2026-03-24T18:18:40.4355914Z   fetch-tags: false
+2026-03-24T18:18:40.4356207Z   show-progress: true
+2026-03-24T18:18:40.4356507Z   lfs: false
+2026-03-24T18:18:40.4356768Z   submodules: false
+2026-03-24T18:18:40.4357061Z   set-safe-directory: true
+2026-03-24T18:18:40.4357556Z env:
+2026-03-24T18:18:40.4357847Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:40.4358206Z ##[endgroup]
+2026-03-24T18:18:40.5248082Z Syncing repository: open-runtime/grpc-dart
+2026-03-24T18:18:40.5249627Z ##[group]Getting Git version info
+2026-03-24T18:18:40.5250418Z Working directory is '/home/runner/work/grpc-dart/grpc-dart'
+2026-03-24T18:18:40.5251242Z [command]/usr/bin/git version
+2026-03-24T18:18:40.5281558Z git version 2.53.0
+2026-03-24T18:18:40.5300948Z ##[endgroup]
+2026-03-24T18:18:40.5313738Z Temporarily overriding HOME='/home/runner/work/_temp/5e36decb-2c59-4286-aabe-26bb2873c7bd' before making global git config changes
+2026-03-24T18:18:40.5315420Z Adding repository directory to the temporary git global config as a safe directory
+2026-03-24T18:18:40.5318042Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/grpc-dart/grpc-dart
+2026-03-24T18:18:40.5351760Z Deleting the contents of '/home/runner/work/grpc-dart/grpc-dart'
+2026-03-24T18:18:40.5355360Z ##[group]Initializing the repository
+2026-03-24T18:18:40.5359283Z [command]/usr/bin/git init /home/runner/work/grpc-dart/grpc-dart
+2026-03-24T18:18:40.5436241Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-03-24T18:18:40.5437446Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-03-24T18:18:40.5438479Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-03-24T18:18:40.5439278Z hint: call:
+2026-03-24T18:18:40.5439704Z hint:
+2026-03-24T18:18:40.5440437Z hint: 	git config --global init.defaultBranch <name>
+2026-03-24T18:18:40.5441065Z hint:
+2026-03-24T18:18:40.5441711Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-03-24T18:18:40.5442722Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-03-24T18:18:40.5443536Z hint:
+2026-03-24T18:18:40.5444021Z hint: 	git branch -m <name>
+2026-03-24T18:18:40.5444530Z hint:
+2026-03-24T18:18:40.5445204Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-03-24T18:18:40.5446333Z Initialized empty Git repository in /home/runner/work/grpc-dart/grpc-dart/.git/
+2026-03-24T18:18:40.5452422Z [command]/usr/bin/git remote add origin https://github.com/open-runtime/grpc-dart
+2026-03-24T18:18:40.5479562Z ##[endgroup]
+2026-03-24T18:18:40.5480635Z ##[group]Disabling automatic garbage collection
+2026-03-24T18:18:40.5484424Z [command]/usr/bin/git config --local gc.auto 0
+2026-03-24T18:18:40.5508723Z ##[endgroup]
+2026-03-24T18:18:40.5509655Z ##[group]Setting up auth
+2026-03-24T18:18:40.5510511Z Removing SSH command configuration
+2026-03-24T18:18:40.5516979Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-24T18:18:40.5542752Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-24T18:18:40.5796667Z Removing HTTP extra header
+2026-03-24T18:18:40.5801992Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-24T18:18:40.5826764Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-24T18:18:40.5993607Z Removing includeIf entries pointing to credentials config files
+2026-03-24T18:18:40.5999705Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-24T18:18:40.6026492Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-24T18:18:40.6202535Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-03-24T18:18:40.6233377Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:40.6257908Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:40.6282447Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:40.6308702Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:40.6331625Z ##[endgroup]
+2026-03-24T18:18:40.6339105Z ##[group]Fetching the repository
+2026-03-24T18:18:40.6340576Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:41.3769201Z From https://github.com/open-runtime/grpc-dart
+2026-03-24T18:18:41.3770218Z  * branch            0bb39b9a4d8668bf352d6f095cbaa0415742d25a -> FETCH_HEAD
+2026-03-24T18:18:41.3798549Z [command]/usr/bin/git rev-parse --verify --quiet 0bb39b9a4d8668bf352d6f095cbaa0415742d25a^{object}
+2026-03-24T18:18:41.3824031Z 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:41.3827841Z ##[endgroup]
+2026-03-24T18:18:41.3836701Z ##[group]Determining the checkout info
+2026-03-24T18:18:41.3837553Z ##[endgroup]
+2026-03-24T18:18:41.3838060Z [command]/usr/bin/git sparse-checkout disable
+2026-03-24T18:18:41.3877734Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-03-24T18:18:41.3903916Z ##[group]Checking out the ref
+2026-03-24T18:18:41.3909389Z [command]/usr/bin/git checkout --progress --force 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:41.4173022Z Note: switching to '0bb39b9a4d8668bf352d6f095cbaa0415742d25a'.
+2026-03-24T18:18:41.4173574Z 
+2026-03-24T18:18:41.4173904Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-03-24T18:18:41.4174708Z changes and commit them, and you can discard any commits you make in this
+2026-03-24T18:18:41.4175527Z state without impacting any branches by switching back to a branch.
+2026-03-24T18:18:41.4176029Z 
+2026-03-24T18:18:41.4176373Z If you want to create a new branch to retain commits you create, you may
+2026-03-24T18:18:41.4176979Z do so (now or later) by using -c with the switch command. Example:
+2026-03-24T18:18:41.4177478Z 
+2026-03-24T18:18:41.4177607Z   git switch -c <new-branch-name>
+2026-03-24T18:18:41.4177941Z 
+2026-03-24T18:18:41.4178136Z Or undo this operation with:
+2026-03-24T18:18:41.4178424Z 
+2026-03-24T18:18:41.4178537Z   git switch -
+2026-03-24T18:18:41.4178673Z 
+2026-03-24T18:18:41.4178888Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-03-24T18:18:41.4179181Z 
+2026-03-24T18:18:41.4179575Z HEAD is now at 0bb39b9 Merge bd22051b8777bdb8d4902141f760ae66998a5026 into c133e8766b7224ea25fd8451fae1591eb9d107bf
+2026-03-24T18:18:41.4181042Z ##[endgroup]
+2026-03-24T18:18:41.4212697Z [command]/usr/bin/git log -1 --format=%H
+2026-03-24T18:18:41.4231727Z 0bb39b9a4d8668bf352d6f095cbaa0415742d25a
+2026-03-24T18:18:41.4241885Z ##[group]Removing auth
+2026-03-24T18:18:41.4242432Z Removing SSH command configuration
+2026-03-24T18:18:41.4245057Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-24T18:18:41.4269739Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-24T18:18:41.4452227Z Removing HTTP extra header
+2026-03-24T18:18:41.4456832Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-24T18:18:41.4485907Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-24T18:18:41.4658767Z Removing includeIf entries pointing to credentials config files
+2026-03-24T18:18:41.4662925Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-24T18:18:41.4682485Z includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path
+2026-03-24T18:18:41.4683425Z includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path
+2026-03-24T18:18:41.4684475Z includeif.gitdir:/github/workspace/.git.path
+2026-03-24T18:18:41.4685040Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-03-24T18:18:41.4691341Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path
+2026-03-24T18:18:41.4709241Z /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4717923Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git.path /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4744601Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path
+2026-03-24T18:18:41.4762324Z /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4769766Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/grpc-dart/grpc-dart/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4798150Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-03-24T18:18:41.4818736Z /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4827281Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4858155Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-03-24T18:18:41.4879214Z /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4884311Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config
+2026-03-24T18:18:41.4909396Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-24T18:18:41.5077420Z Removing credentials config '/home/runner/work/_temp/git-credentials-9fe76699-b1be-4da0-ba9c-bfda1520e21e.config'
+2026-03-24T18:18:41.5085025Z ##[endgroup]
+2026-03-24T18:18:41.5237807Z ##[group]Run if [ -f .runtime_ci/config.json ]; then
+2026-03-24T18:18:41.5238356Z [36;1mif [ -f .runtime_ci/config.json ]; then[0m
+2026-03-24T18:18:41.5238842Z [36;1m  enabled=$(jq -r '.ci.features.autodoc' .runtime_ci/config.json)[0m
+2026-03-24T18:18:41.5239298Z [36;1m  if [ "$enabled" = "null" ]; then[0m
+2026-03-24T18:18:41.5239621Z [36;1m    enabled="true"[0m
+2026-03-24T18:18:41.5240132Z [36;1m  fi[0m
+2026-03-24T18:18:41.5240345Z [36;1melse[0m
+2026-03-24T18:18:41.5240567Z [36;1m  enabled="true"[0m
+2026-03-24T18:18:41.5240790Z [36;1mfi[0m
+2026-03-24T18:18:41.5241042Z [36;1mecho "enabled=$enabled" >> "$GITHUB_OUTPUT"[0m
+2026-03-24T18:18:41.5241368Z [36;1mif [ "$enabled" != "true" ]; then[0m
+2026-03-24T18:18:41.5241853Z [36;1m  echo "::notice::Autodoc disabled in .runtime_ci/config.json — skipping docs freshness check."[0m
+2026-03-24T18:18:41.5242381Z [36;1mfi[0m
+2026-03-24T18:18:41.5273856Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-03-24T18:18:41.5274278Z env:
+2026-03-24T18:18:41.5274503Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:41.5274788Z ##[endgroup]
+2026-03-24T18:18:41.5444576Z ##[group]Run echo "::add-mask::${GH_PAT}"
+2026-03-24T18:18:41.5444913Z [36;1mecho "::add-mask::${GH_PAT}"[0m
+2026-03-24T18:18:41.5445417Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "git@github.com:"[0m
+2026-03-24T18:18:41.5446120Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "ssh://git@github.com/"[0m
+2026-03-24T18:18:41.5446828Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"[0m
+2026-03-24T18:18:41.5447716Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"[0m
+2026-03-24T18:18:41.5448535Z [36;1mgit config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"[0m
+2026-03-24T18:18:41.5474404Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-03-24T18:18:41.5474756Z env:
+2026-03-24T18:18:41.5475022Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:41.5475491Z   GH_PAT: ***
+2026-03-24T18:18:41.5475704Z ##[endgroup]
+2026-03-24T18:18:41.5629960Z ##[group]Run dart-lang/setup-dart@v1.7.1
+2026-03-24T18:18:41.5630326Z with:
+2026-03-24T18:18:41.5630521Z   sdk: 3.9.2
+2026-03-24T18:18:41.5630718Z env:
+2026-03-24T18:18:41.5630929Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:41.5631209Z ##[endgroup]
+2026-03-24T18:18:41.6372716Z Installing the linux-x64 Dart SDK version 3.9.2 from the stable (release) channel.
+2026-03-24T18:18:41.6383153Z https://storage.googleapis.com/dart-archive/channels/stable/release/3.9.2/sdk/dartsdk-linux-x64-release.zip ...
+2026-03-24T18:18:43.1104507Z [command]/usr/bin/unzip -o -q /home/runner/work/_temp/dartsdk-linux-x64-release.zip
+2026-03-24T18:18:50.8789645Z [command]/opt/hostedtoolcache/dart/3.9.2/x64/bin/dart --version
+2026-03-24T18:18:50.8830433Z Dart SDK version: 3.9.2 (stable) (Wed Aug 27 03:49:40 2025 -0700) on "linux_x64"
+2026-03-24T18:18:50.9976800Z ##[group]Run actions/cache@v5
+2026-03-24T18:18:50.9977045Z with:
+2026-03-24T18:18:50.9977223Z   path: ~/.pub-cache
+2026-03-24T18:18:50.9977620Z   key: Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f
+2026-03-24T18:18:50.9978073Z   restore-keys: Linux-X64-dart-pub-
+2026-03-24T18:18:50.9978321Z   enableCrossOsArchive: false
+2026-03-24T18:18:50.9978539Z   fail-on-cache-miss: false
+2026-03-24T18:18:50.9978749Z   lookup-only: false
+2026-03-24T18:18:50.9978939Z   save-always: false
+2026-03-24T18:18:50.9979106Z env:
+2026-03-24T18:18:50.9979317Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:50.9979601Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:50.9980115Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:50.9980346Z ##[endgroup]
+2026-03-24T18:18:51.3339184Z Cache hit for: Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f
+2026-03-24T18:18:52.5344202Z Received 21545637 of 21545637 (100.0%), 21.3 MBs/sec
+2026-03-24T18:18:52.5344773Z Cache Size: ~21 MB (21545637 B)
+2026-03-24T18:18:52.5375729Z [command]/usr/bin/tar -xf /home/runner/work/_temp/2e7641d4-9a6c-4278-921e-068078bd06ab/cache.tzst -P -C /home/runner/work/grpc-dart/grpc-dart --use-compress-program unzstd
+2026-03-24T18:18:52.8274753Z Cache restored successfully
+2026-03-24T18:18:52.8373897Z Cache restored from key: Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f
+2026-03-24T18:18:52.8448431Z ##[group]Run dart pub get
+2026-03-24T18:18:52.8448681Z [36;1mdart pub get[0m
+2026-03-24T18:18:52.8476710Z shell: /usr/bin/bash -e {0}
+2026-03-24T18:18:52.8476974Z env:
+2026-03-24T18:18:52.8477169Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:52.8477472Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:52.8477777Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:52.8478044Z   GIT_LFS_SKIP_SMUDGE: 1
+2026-03-24T18:18:52.8478240Z ##[endgroup]
+2026-03-24T18:18:52.9614847Z Resolving dependencies...
+2026-03-24T18:18:53.9397990Z Downloading packages...
+2026-03-24T18:18:53.9525501Z + _fe_analyzer_shared 96.0.0 (98.0.0 available)
+2026-03-24T18:18:53.9526061Z + analyzer 10.2.0 (12.0.0 available)
+2026-03-24T18:18:53.9526454Z + args 2.7.0
+2026-03-24T18:18:53.9526732Z + async 2.13.0
+2026-03-24T18:18:53.9527039Z + boolean_selector 2.1.2
+2026-03-24T18:18:53.9527390Z + build 4.0.5
+2026-03-24T18:18:53.9527678Z + build_config 1.3.0
+2026-03-24T18:18:53.9528116Z + build_daemon 4.1.1
+2026-03-24T18:18:53.9528428Z + build_runner 2.13.1
+2026-03-24T18:18:53.9528762Z + build_test 3.5.12
+2026-03-24T18:18:53.9529404Z + built_collection 5.1.1
+2026-03-24T18:18:53.9529741Z + built_value 8.12.4
+2026-03-24T18:18:53.9530180Z + checked_yaml 2.0.4
+2026-03-24T18:18:53.9530526Z + cli_config 0.2.0
+2026-03-24T18:18:53.9530832Z + clock 1.1.2
+2026-03-24T18:18:53.9531133Z + code_builder 4.11.1
+2026-03-24T18:18:53.9531439Z + collection 1.19.1
+2026-03-24T18:18:53.9531760Z + convert 3.1.2
+2026-03-24T18:18:53.9532068Z + coverage 1.15.0
+2026-03-24T18:18:53.9532376Z + crypto 3.0.7
+2026-03-24T18:18:53.9532667Z + csslib 1.0.2
+2026-03-24T18:18:53.9532974Z + dart_style 3.1.5 (3.1.8 available)
+2026-03-24T18:18:53.9533394Z + fake_async 1.3.3
+2026-03-24T18:18:53.9533787Z + ffi 2.2.0
+2026-03-24T18:18:53.9534038Z + file 7.0.1
+2026-03-24T18:18:53.9534315Z + fixnum 1.1.1
+2026-03-24T18:18:53.9534628Z + frontend_server_client 4.0.0
+2026-03-24T18:18:53.9534977Z + glob 2.1.3
+2026-03-24T18:18:53.9535270Z + google_cloud 0.3.1
+2026-03-24T18:18:53.9535604Z + google_identity_services_web 0.3.3+1
+2026-03-24T18:18:53.9536009Z + googleapis_auth 2.2.0
+2026-03-24T18:18:53.9536354Z + graphs 2.3.2
+2026-03-24T18:18:53.9536638Z + html 0.15.6
+2026-03-24T18:18:53.9536983Z + http 1.6.0
+2026-03-24T18:18:53.9537265Z + http_multi_server 3.2.2
+2026-03-24T18:18:53.9537612Z + http_parser 4.1.2
+2026-03-24T18:18:53.9537899Z + io 1.0.5
+2026-03-24T18:18:53.9538187Z + json_annotation 4.11.0
+2026-03-24T18:18:53.9538504Z + lints 6.1.0
+2026-03-24T18:18:53.9538775Z + logging 1.3.0
+2026-03-24T18:18:53.9539054Z + matcher 0.12.19
+2026-03-24T18:18:53.9539337Z + meta 1.18.2
+2026-03-24T18:18:53.9539629Z + mime 2.0.0
+2026-03-24T18:18:53.9540121Z + mockito 5.6.4
+2026-03-24T18:18:53.9540422Z + node_preamble 2.0.2
+2026-03-24T18:18:53.9540778Z + package_config 2.2.0
+2026-03-24T18:18:53.9541096Z + path 1.9.1
+2026-03-24T18:18:53.9541361Z + pool 1.5.2
+2026-03-24T18:18:53.9541633Z + protobuf 6.0.0
+2026-03-24T18:18:53.9541943Z + pub_semver 2.2.0
+2026-03-24T18:18:53.9542282Z + pubspec_parse 1.5.0
+2026-03-24T18:18:53.9542593Z + shelf 1.4.2
+2026-03-24T18:18:53.9542908Z + shelf_packages_handler 3.0.2
+2026-03-24T18:18:53.9543287Z + shelf_static 1.1.3
+2026-03-24T18:18:53.9543611Z + shelf_web_socket 3.0.0
+2026-03-24T18:18:53.9543949Z + source_gen 4.2.2
+2026-03-24T18:18:53.9544274Z + source_map_stack_trace 2.1.2
+2026-03-24T18:18:53.9544663Z + source_maps 0.10.13
+2026-03-24T18:18:53.9544995Z + source_span 1.10.2
+2026-03-24T18:18:53.9545307Z + stack_trace 1.12.1
+2026-03-24T18:18:53.9545624Z + stream_channel 2.1.4
+2026-03-24T18:18:53.9545969Z + stream_transform 2.1.1
+2026-03-24T18:18:53.9546332Z + string_scanner 1.4.1
+2026-03-24T18:18:53.9546688Z + term_glyph 1.2.2
+2026-03-24T18:18:53.9547011Z + test 1.31.0
+2026-03-24T18:18:53.9547316Z + test_api 0.7.11
+2026-03-24T18:18:53.9547629Z + test_core 0.6.17
+2026-03-24T18:18:53.9547907Z + typed_data 1.4.0
+2026-03-24T18:18:53.9548192Z + vm_service 15.0.2
+2026-03-24T18:18:53.9548532Z + watcher 1.2.1
+2026-03-24T18:18:53.9549136Z + web 1.1.1
+2026-03-24T18:18:53.9549434Z + web_socket 1.0.1
+2026-03-24T18:18:53.9549740Z + web_socket_channel 3.0.3
+2026-03-24T18:18:53.9550241Z + webkit_inspection_protocol 1.2.1
+2026-03-24T18:18:53.9550620Z + win32 5.15.0 (6.0.0 available)
+2026-03-24T18:18:53.9550986Z + yaml 3.1.3
+2026-03-24T18:18:53.9551332Z Changed 76 dependencies!
+2026-03-24T18:18:53.9563396Z 4 packages have newer versions incompatible with dependency constraints.
+2026-03-24T18:18:53.9564078Z Try `dart pub outdated` for more information.
+2026-03-24T18:18:54.0034665Z ##[group]Run dart pub global activate --source git https://github.com/open-runtime/runtime_ci_tooling.git --git-ref v0.23.10
+2026-03-24T18:18:54.0035462Z [36;1mdart pub global activate --source git https://github.com/open-runtime/runtime_ci_tooling.git --git-ref v0.23.10[0m
+2026-03-24T18:18:54.0062828Z shell: /usr/bin/bash -e {0}
+2026-03-24T18:18:54.0063076Z env:
+2026-03-24T18:18:54.0063282Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:54.0063581Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:54.0063863Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:54.0064217Z ##[endgroup]
+2026-03-24T18:18:54.8180946Z Package runtime_ci_tooling is currently active from Git repository "https://github.com/open-runtime/runtime_ci_tooling.git".
+2026-03-24T18:18:54.8205394Z Resolving dependencies...
+2026-03-24T18:18:55.1331371Z Downloading packages...
+2026-03-24T18:18:55.1385069Z The package runtime_ci_tooling is already activated at newest available version.
+2026-03-24T18:18:55.1387114Z To recompile executables, first run `dart pub global deactivate runtime_ci_tooling`.
+2026-03-24T18:18:55.1552172Z Installed executables manage_cicd and triage_cli.
+2026-03-24T18:18:55.1604273Z Activated runtime_ci_tooling 0.23.10 from Git repository "https://github.com/open-runtime/runtime_ci_tooling.git".
+2026-03-24T18:18:55.1939318Z ##[group]Run dart pub global run runtime_ci_tooling:manage_cicd autodoc --dry-run
+2026-03-24T18:18:55.1939973Z [36;1mdart pub global run runtime_ci_tooling:manage_cicd autodoc --dry-run[0m
+2026-03-24T18:18:55.1967113Z shell: /usr/bin/bash -e {0}
+2026-03-24T18:18:55.1967362Z env:
+2026-03-24T18:18:55.1967561Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-03-24T18:18:55.1967848Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
+2026-03-24T18:18:55.1968130Z   PUB_CACHE: /home/runner/.pub-cache
+2026-03-24T18:18:55.1968369Z ##[endgroup]
+2026-03-24T18:18:55.4814334Z 
+2026-03-24T18:18:55.4815253Z [1mAutodoc: Documentation Generation[0m
+2026-03-24T18:18:55.5026280Z [33mGemini CLI not installed — skipping Gemini-powered step.[0m
+2026-03-24T18:18:55.5026930Z [33mGemini unavailable -- skipping autodoc generation.[0m
+2026-03-24T18:18:55.6423313Z Post job cleanup.
+2026-03-24T18:18:55.7557849Z Cache hit occurred on the primary key Linux-X64-dart-pub-af5e32e45c7d8ed5be5cbc00cd0a49a820be186c618de900fc6a977644b9673f, not saving cache.
+2026-03-24T18:18:55.7653902Z Post job cleanup.
+2026-03-24T18:18:55.8419704Z [command]/usr/bin/git version
+2026-03-24T18:18:55.8454638Z git version 2.53.0
+2026-03-24T18:18:55.8486048Z Copying '/home/runner/.gitconfig' to '/home/runner/work/_temp/eabad9b3-07e5-4e93-bed4-045d4581ab35/.gitconfig'
+2026-03-24T18:18:55.8495385Z Temporarily overriding HOME='/home/runner/work/_temp/eabad9b3-07e5-4e93-bed4-045d4581ab35' before making global git config changes
+2026-03-24T18:18:55.8496617Z Adding repository directory to the temporary git global config as a safe directory
+2026-03-24T18:18:55.8501195Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/grpc-dart/grpc-dart
+2026-03-24T18:18:55.8529008Z Removing SSH command configuration
+2026-03-24T18:18:55.8535720Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-03-24T18:18:55.8569698Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-03-24T18:18:55.8755712Z Removing HTTP extra header
+2026-03-24T18:18:55.8762087Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-03-24T18:18:55.8794326Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-03-24T18:18:55.8974792Z Removing includeIf entries pointing to credentials config files
+2026-03-24T18:18:55.8981997Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-03-24T18:18:55.9011987Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-03-24T18:18:55.9299015Z Cleaning up orphan processes
+2026-03-24T18:18:55.9512433Z ##[warning]Node.js 20 actions are deprecated. The following actions are running on Node.js 20 and may not work as expected: dart-lang/setup-dart@v1.7.1. Actions will be forced to run with Node.js 24 by default starting June 2nd, 2026. Please check if updated versions of these actions are available that support Node.js 24. To opt into Node.js 24 now, set the FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true environment variable on the runner or in your workflow file. Once Node.js 24 becomes the default, you can temporarily opt out by setting ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
