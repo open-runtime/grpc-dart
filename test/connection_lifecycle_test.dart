@@ -307,7 +307,7 @@ void main() {
               '(received ${result.length}/100 items)',
         );
         for (var i = 0; i < result.length; i++) {
-          expect(result[i], equals(i + 1), reason: 'item $i should equal ${i + 1}');
+          expect(result[i], equals(i), reason: 'item $i should equal $i');
         }
       }
 
@@ -353,7 +353,7 @@ void main() {
               '(received ${result.length}/100 items)',
         );
         for (var i = 0; i < result.length; i++) {
-          expect(result[i], equals(i + 1), reason: 'item $i should equal ${i + 1}');
+          expect(result[i], equals(i), reason: 'item $i should equal $i');
         }
       }
 

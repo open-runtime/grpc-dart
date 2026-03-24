@@ -180,6 +180,8 @@ class NamedPipeServer extends ConnectionServer {
     );
   }
 
+  ServerSettings? _http2ServerSettings;
+
   /// Starts the named pipe server.
   ///
   /// [pipeName] is the name of the pipe (e.g., 'my-service-12345').
@@ -187,10 +189,14 @@ class NamedPipeServer extends ConnectionServer {
   ///
   /// [maxInstances] controls the maximum number of simultaneous named-pipe
   /// instances created by the server accept loop. Defaults to
-  /// [PIPE_UNLIMITED_INSTANCES].
+  /// [PIPE_UNLIMITED_INSTANCES]. Primarily useful in tests that need to
+  /// force `ERROR_PIPE_BUSY` conditions.
   ///
-  /// This is primarily useful in tests that need to force
-  /// `ERROR_PIPE_BUSY` conditions.
+  /// [http2ServerSettings] configures the HTTP/2 transport for each
+  /// connection. If `null`, uses the default (65 535-byte stream window,
+  /// 1 000 max concurrent streams). For high-concurrency workloads,
+  /// increase [ServerSettings.streamWindowSize] to avoid flow-control
+  /// stalls — production gRPC implementations typically use 1 MB+ windows.
   ///
   /// This method returns only after the pipe has been created in the Windows
   /// namespace and is ready to accept client connections. This eliminates
@@ -198,7 +204,12 @@ class NamedPipeServer extends ConnectionServer {
   ///
   /// Throws [UnsupportedError] if not running on Windows.
   /// Throws [StateError] if the server is already running.
-  Future<void> serve({required String pipeName, int maxInstances = PIPE_UNLIMITED_INSTANCES}) async {
+  Future<void> serve({
+    required String pipeName,
+    int maxInstances = PIPE_UNLIMITED_INSTANCES,
+    ServerSettings? http2ServerSettings,
+  }) async {
+    _http2ServerSettings = http2ServerSettings;
     if (!isWindowsPlatform) {
       throw UnsupportedError(
         'Named pipes are only supported on Windows. '
@@ -417,7 +428,11 @@ class NamedPipeServer extends ConnectionServer {
 
     try {
       // Create HTTP/2 connection and serve it
-      final transportConnection = ServerTransportConnection.viaStreams(stream.incoming, stream.outgoingSink);
+      final transportConnection = ServerTransportConnection.viaStreams(
+        stream.incoming,
+        stream.outgoingSink,
+        settings: _http2ServerSettings ?? const ServerSettings(concurrentStreamLimit: 1000),
+      );
       serveConnection(connection: transportConnection);
     } catch (e) {
       // HTTP/2 initialization failure — clean up the pipe handle.
@@ -804,13 +819,19 @@ class _ServerPipeStream {
 
   /// Asynchronously drains [_writeQueue], yielding to the event loop
   /// between writes so the read loop can progress.
+  ///
+  /// Coalesces multiple small queue entries into a single [WriteFile] call
+  /// (up to [kNamedPipeWriteChunkSize] bytes per batch). Without batching,
+  /// each entry triggers a separate WriteFile + event-loop yield, which
+  /// lets producers (HTTP/2 stream handlers) add entries faster than the
+  /// drain loop can remove them — unbounded queue growth under concurrency.
   Future<void> _drainWriteQueue() async {
     try {
       while (_writeQueue.isNotEmpty) {
         if (_handleClosed) break;
 
-        final data = _writeQueue.removeAt(0);
-        if (!_writeChunk(data)) break;
+        final batch = _coalesceWriteQueue();
+        if (!await _writeChunk(batch)) break;
 
         // Yield to the event loop so the read loop (and other async
         // work) can run between write operations. Duration.zero timers
@@ -828,6 +849,35 @@ class _ServerPipeStream {
         _finalizeNormalCloseIfReady();
       }
     }
+  }
+
+  /// Removes entries from [_writeQueue] and coalesces them into a single
+  /// buffer up to [kNamedPipeWriteChunkSize] bytes. If the first entry
+  /// alone exceeds the limit, it is returned as-is (already bounded by
+  /// [_enqueueWriteChunks]).
+  List<int> _coalesceWriteQueue() {
+    final first = _writeQueue.removeAt(0);
+    if (_writeQueue.isEmpty || first.length >= kNamedPipeWriteChunkSize) {
+      return first;
+    }
+
+    var totalLength = first.length;
+    final parts = <List<int>>[first];
+    while (_writeQueue.isNotEmpty && totalLength + _writeQueue.first.length <= kNamedPipeWriteChunkSize) {
+      final next = _writeQueue.removeAt(0);
+      parts.add(next);
+      totalLength += next.length;
+    }
+
+    if (parts.length == 1) return first;
+
+    final merged = List<int>.filled(totalLength, 0);
+    var offset = 0;
+    for (final part in parts) {
+      merged.setRange(offset, offset + part.length, part);
+      offset += part.length;
+    }
+    return merged;
   }
 
   /// Writes a single chunk to the pipe. Returns `false` on error.

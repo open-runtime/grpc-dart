@@ -47,8 +47,13 @@ int _waitNamedPipe(Pointer<Utf16> pipeName, int timeoutMs) {
 /// Uses exponential backoff starting at 100ms: 100ms, 200ms, 400ms.
 /// This is a defense-in-depth measure for production scenarios where all pipe
 /// instances are briefly in use (between the server accepting one connection
-/// and creating the next pipe instance). The server's serve() method
-/// guarantees the pipe exists, so ERROR_FILE_NOT_FOUND is NOT retried.
+/// and creating the next pipe instance).
+///
+/// ERROR_FILE_NOT_FOUND (2) is also retried: with bounded maxInstances (or
+/// under heavy load with PIPE_UNLIMITED_INSTANCES), all existing instances
+/// can be connected simultaneously. Windows returns FILE_NOT_FOUND rather
+/// than PIPE_BUSY when there are zero unconnected instances in the namespace,
+/// even though the pipe name is valid and the server is running.
 const int _kMaxPipeBusyRetries = 3;
 
 /// Computes the backoff delay for a PIPE_BUSY retry attempt.
@@ -137,15 +142,11 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
       // namespace before returning, so CreateFile should succeed immediately
       // in the common case.
       //
-      // Defense-in-depth: In production under load, ERROR_PIPE_BUSY (231) can
-      // legitimately occur when all pipe instances are briefly in use — the
-      // window between the server accepting one connection and creating the
-      // next pipe instance. We retry with exponential backoff for this
-      // specific error only.
-      //
-      // ERROR_FILE_NOT_FOUND is NOT retried because serve() guarantees the
-      // pipe exists. If the pipe doesn't exist, that indicates a real problem
-      // (server crashed, wrong pipe name, etc.) and should fail immediately.
+      // Defense-in-depth: In production under load, ERROR_PIPE_BUSY (231) or
+      // ERROR_FILE_NOT_FOUND (2) can legitimately occur when all pipe
+      // instances are briefly in use — the window between the server
+      // accepting one connection and creating the next pipe instance. We
+      // retry with exponential backoff for these transient errors.
       final hPipe = await _openPipeWithRetry(pipePathPtr);
 
       // First shutdown race guard: connect() yields in _openPipeWithRetry (retry
@@ -211,14 +212,14 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
     }
   }
 
-  /// Opens the named pipe, retrying only on ERROR_PIPE_BUSY.
+  /// Opens the named pipe, retrying on transient pipe-availability errors.
   ///
-  /// This is a defense-in-depth retry for production scenarios where all
-  /// server pipe instances are transiently occupied. The server creates
-  /// PIPE_UNLIMITED_INSTANCES, so busy is always a transient condition
-  /// that resolves once the server's accept loop creates the next instance.
+  /// Retries on ERROR_PIPE_BUSY (231), ERROR_FILE_NOT_FOUND (2), and
+  /// error 0 (WaitNamedPipe-succeeded-but-CreateFile-failed race).
   ///
-  /// All other errors (including ERROR_FILE_NOT_FOUND) fail immediately.
+  /// All three are transient when the server is running: the window between
+  /// accepting one connection and creating the next pipe instance can
+  /// surface any of these depending on Windows internals and maxInstances.
   Future<int> _openPipeWithRetry(Pointer<Utf16> pipePathPtr) async {
     final startedAt = DateTime.now();
 
@@ -273,13 +274,15 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
 
       final error = GetLastError();
 
-      // Retry on ERROR_PIPE_BUSY (231) — all pipe instances are temporarily
-      // in use. Also retry on error 0 — WaitNamedPipe succeeded (pipe exists
-      // in namespace) but CreateFile failed because the server's accept loop
-      // hasn't called ConnectNamedPipe on a fresh instance yet. This race is
-      // common on Windows arm64 under x64 emulation where event loop ticks
-      // are ~15.6ms and the accept loop yields between iterations.
-      if ((error == ERROR_PIPE_BUSY || error == 0) && attempt < _kMaxPipeBusyRetries) {
+      // Retry on transient pipe-availability errors:
+      //  - ERROR_PIPE_BUSY (231): all instances are connected.
+      //  - ERROR_FILE_NOT_FOUND (2): zero unconnected instances in the
+      //    namespace (common with bounded maxInstances; also possible
+      //    with PIPE_UNLIMITED_INSTANCES during accept-loop yield).
+      //  - Error 0: WaitNamedPipe succeeded but CreateFile failed because
+      //    the accept loop hasn't called ConnectNamedPipe yet. Common on
+      //    Windows arm64 under x64 emulation (~15.6ms event loop ticks).
+      if ((error == ERROR_PIPE_BUSY || error == ERROR_FILE_NOT_FOUND || error == 0) && attempt < _kMaxPipeBusyRetries) {
         final retryDelay = _pipeBusyRetryDelay(attempt);
         final remaining = remainingTimeout();
         if (remaining == null) {
@@ -293,12 +296,14 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
         continue;
       }
 
-      // All other errors fail immediately. ERROR_FILE_NOT_FOUND means
-      // the pipe doesn't exist (server not running or wrong name).
-      // ERROR_PIPE_BUSY after all retries exhausted also fails here.
+      // All other errors (invalid pipe name, access denied, etc.) fail
+      // immediately. Retryable errors also fall through here after all
+      // retry attempts are exhausted.
+      final retriesExhausted =
+          (error == ERROR_PIPE_BUSY || error == ERROR_FILE_NOT_FOUND || error == 0) && attempt >= _kMaxPipeBusyRetries;
       throw NamedPipeException(
         'Failed to connect to named pipe "$pipePath"'
-        '${error == ERROR_PIPE_BUSY ? " (all $_kMaxPipeBusyRetries retries exhausted)" : ""}'
+        '${retriesExhausted ? " (all $_kMaxPipeBusyRetries retries exhausted)" : ""}'
         ': Win32 error $error',
         error,
       );
@@ -571,13 +576,19 @@ class _NamedPipeStream {
 
   /// Asynchronously drains [_writeQueue], yielding to the event loop
   /// between writes so the read loop can progress.
+  ///
+  /// Coalesces multiple small queue entries into a single [WriteFile] call
+  /// (up to [kNamedPipeWriteChunkSize] bytes per batch). Without batching,
+  /// each entry triggers a separate WriteFile + event-loop yield, which
+  /// lets producers (HTTP/2 stream handlers) add entries faster than the
+  /// drain loop can remove them — unbounded queue growth under concurrency.
   Future<void> _drainWriteQueue() async {
     try {
       while (_writeQueue.isNotEmpty) {
         if (_writesClosed) break;
 
-        final data = _writeQueue.removeAt(0);
-        if (!_writeChunk(data)) break;
+        final batch = _coalesceWriteQueue();
+        if (!await _writeChunk(batch)) break;
 
         // Yield to the event loop so the read loop (and other async
         // work) can run between write operations. Duration.zero timers
@@ -595,6 +606,35 @@ class _NamedPipeStream {
         _finalizeCloseIfReady();
       }
     }
+  }
+
+  /// Removes entries from [_writeQueue] and coalesces them into a single
+  /// buffer up to [kNamedPipeWriteChunkSize] bytes. If the first entry
+  /// alone exceeds the limit, it is returned as-is (already bounded by
+  /// [_enqueueWriteChunks]).
+  List<int> _coalesceWriteQueue() {
+    final first = _writeQueue.removeAt(0);
+    if (_writeQueue.isEmpty || first.length >= kNamedPipeWriteChunkSize) {
+      return first;
+    }
+
+    var totalLength = first.length;
+    final parts = <List<int>>[first];
+    while (_writeQueue.isNotEmpty && totalLength + _writeQueue.first.length <= kNamedPipeWriteChunkSize) {
+      final next = _writeQueue.removeAt(0);
+      parts.add(next);
+      totalLength += next.length;
+    }
+
+    if (parts.length == 1) return first;
+
+    final merged = List<int>.filled(totalLength, 0);
+    var offset = 0;
+    for (final part in parts) {
+      merged.setRange(offset, offset + part.length, part);
+      offset += part.length;
+    }
+    return merged;
   }
 
   /// Writes a single chunk to the pipe. Returns `false` on error.

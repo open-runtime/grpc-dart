@@ -30,6 +30,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
+import 'package:grpc/src/http2/transport.dart';
 import 'package:grpc/src/shared/named_pipe_io.dart';
 import 'package:test/test.dart';
 
@@ -713,6 +714,110 @@ void main() {
       }
       await server.shutdown();
     });
+
+    // 25 concurrent server-streaming RPCs through a single connection.
+    // Exercises the write queue coalescing path: without batching, the
+    // drain loop processes one small HTTP/2 frame per event-loop turn,
+    // which lets producers add entries faster than the drain removes
+    // them — unbounded queue growth, stalling first-item delivery.
+    // With coalescing, the drain batches many frames into a single
+    // WriteFile call, keeping the queue bounded.
+    testNamedPipe('25 concurrent server-streaming RPCs with data integrity', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      const streamCount = 25;
+      const itemsPerStream = 50;
+      final futures = <Future<List<int>>>[];
+
+      for (var i = 0; i < streamCount; i++) {
+        futures.add(client.serverStream(itemsPerStream).toList());
+      }
+
+      final allResults = await Future.wait(futures).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => fail(
+          '25 concurrent server-streaming RPCs did not complete '
+          'within 30s — write queue coalescing may not be working',
+        ),
+      );
+
+      expect(allResults, hasLength(streamCount));
+      final expected = List.generate(itemsPerStream, (i) => i);
+      for (var i = 0; i < streamCount; i++) {
+        expect(
+          allResults[i],
+          equals(expected),
+          reason: 'Stream $i data integrity: expected [0..${itemsPerStream - 1}]',
+        );
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // Same as above but with serverStreamBytes (identity serialization,
+    // larger payloads) to stress HTTP/2 flow control + write coalescing
+    // under realistic production-like data volumes.
+    testNamedPipe('25 concurrent serverStreamBytes RPCs deliver first items', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      const streamCount = 25;
+      const streamItems = 500;
+      const chunkSize = 64;
+      final request = encodeStreamBytesRequest(streamItems, chunkSize);
+      final firstItemCompleters = List.generate(streamCount, (_) => Completer<void>());
+      final doneCompleters = <Completer<void>>[];
+
+      for (var i = 0; i < streamCount; i++) {
+        final done = Completer<void>();
+        doneCompleters.add(done);
+        final idx = i;
+
+        client
+            .serverStreamBytes(request)
+            .listen(
+              (chunk) {
+                if (!firstItemCompleters[idx].isCompleted) {
+                  firstItemCompleters[idx].complete();
+                }
+              },
+              onError: (e) {
+                if (!done.isCompleted) done.complete();
+              },
+              onDone: () {
+                if (!done.isCompleted) done.complete();
+              },
+            );
+      }
+
+      await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => fail(
+          'Not all 25 streams received first item — '
+          '${firstItemCompleters.where((c) => c.isCompleted).length}/'
+          '$streamCount started. Write coalescing or flow control stall.',
+        ),
+      );
+
+      await server.shutdown();
+      await Future.wait(
+        doneCompleters.map((c) => c.future),
+      ).timeout(const Duration(seconds: 10), onTimeout: () => fail('Streams did not terminate after shutdown'));
+
+      await channel.terminate();
+    });
   });
 
   // ===========================================================================
@@ -1250,6 +1355,40 @@ void main() {
       );
 
       await channel2.shutdown();
+      await server.shutdown();
+    });
+
+    // 24. Verify http2ServerSettings are wired through to the HTTP/2 transport.
+    //     NamedPipeServer.serve(http2ServerSettings: ...) must pass those
+    //     settings to ServerTransportConnection.viaStreams(). Without wiring,
+    //     custom flow-control windows and concurrency limits are silently
+    //     ignored — discovered as an unused-field analyzer warning.
+    testNamedPipe('http2ServerSettings are applied to named pipe connections', (pipeName) async {
+      // Pass custom ServerSettings with a larger stream window to verify
+      // the parameter is accepted and wired through without error.
+      // The default stream window is 65535; a larger window improves
+      // throughput for high-concurrency named pipe workloads.
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(
+        pipeName: pipeName,
+        http2ServerSettings: const ServerSettings(concurrentStreamLimit: 100, streamWindowSize: 1024 * 1024),
+      );
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      // Basic round-trip: if the settings caused a protocol error or
+      // misconfiguration, this RPC would fail.
+      expect(await client.echo(42), equals(42));
+
+      // Server-stream with custom settings: larger window should allow
+      // more data in flight without stalling on WINDOW_UPDATE.
+      final items = await client.serverStream(50).toList();
+      expect(items, equals(List.generate(50, (i) => i)));
+
+      await channel.shutdown();
       await server.shutdown();
     });
   });

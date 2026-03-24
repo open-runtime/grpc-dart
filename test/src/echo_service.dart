@@ -189,7 +189,7 @@ class EchoService extends Service {
 
   Stream<int> _serverStream(ServiceCall call, Future<int> request) async* {
     final count = await request;
-    for (var i = 1; i <= count; i++) {
+    for (var i = 0; i < count; i++) {
       yield i;
       await Future.delayed(const Duration(milliseconds: 1));
     }

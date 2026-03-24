@@ -74,7 +74,7 @@ void main() {
 
       final client = EchoClient(channel);
       final results = await client.serverStream(5).toList();
-      expect(results, equals([1, 2, 3, 4, 5]));
+      expect(results, equals([0, 1, 2, 3, 4]));
 
       await channel.shutdown();
       await server.shutdown();
@@ -328,7 +328,7 @@ void main() {
       final client = EchoClient(channel);
       final results = await client.serverStream(100, options: CallOptions(compression: const GzipCodec())).toList();
       expect(results.length, equals(100));
-      expect(results, equals(List.generate(100, (i) => i + 1)));
+      expect(results, equals(List.generate(100, (i) => i)));
 
       await channel.shutdown();
       await server.shutdown();
@@ -771,6 +771,7 @@ void main() {
 
       final client = EchoClient(channel);
       expect(await client.echo(42), equals(42));
+      expect(await client.echo(100), equals(100));
 
       await channel.shutdown();
       await server.shutdown();
@@ -786,7 +787,7 @@ void main() {
 
       final client = EchoClient(channel);
       final results = await client.serverStream(5).toList();
-      expect(results, equals([1, 2, 3, 4, 5]));
+      expect(results, equals([0, 1, 2, 3, 4]));
 
       await channel.shutdown();
       await server.shutdown();
@@ -885,6 +886,360 @@ void main() {
       await channel.shutdown();
       await server.shutdown();
     });
+
+    testNamedPipe('connection state transitions', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final states = <ConnectionState>[];
+      channel.onConnectionStateChanged.listen(states.add);
+
+      final client = EchoClient(channel);
+      await client.echo(1);
+
+      expect(states, contains(ConnectionState.connecting));
+      expect(states, contains(ConnectionState.ready));
+
+      final connectingIdx = states.indexOf(ConnectionState.connecting);
+      final readyIdx = states.indexOf(ConnectionState.ready);
+      expect(connectingIdx, lessThan(readyIdx), reason: 'connecting must occur before ready');
+
+      await channel.shutdown();
+      await server.shutdown();
+
+      expect(states, contains(ConnectionState.shutdown));
+      final shutdownIdx = states.indexOf(ConnectionState.shutdown);
+      expect(readyIdx, lessThan(shutdownIdx), reason: 'ready must occur before shutdown');
+    });
+
+    testNamedPipe('RPC with compression', (pipeName) async {
+      final server = NamedPipeServer.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: NamedPipeChannelOptions(codecRegistry: CodecRegistry(codecs: const [GzipCodec()])),
+      );
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final result = await client.echo(42, options: CallOptions(compression: const GzipCodec()));
+      expect(result, equals(42));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('server streaming with compression', (pipeName) async {
+      final server = NamedPipeServer.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: NamedPipeChannelOptions(codecRegistry: CodecRegistry(codecs: const [GzipCodec()])),
+      );
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final results = await client.serverStream(100, options: CallOptions(compression: const GzipCodec())).toList();
+      expect(results.length, equals(100));
+      expect(results, equals(List.generate(100, (i) => i)));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('client streaming with compression', (pipeName) async {
+      final server = NamedPipeServer.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: NamedPipeChannelOptions(codecRegistry: CodecRegistry(codecs: const [GzipCodec()])),
+      );
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final result = await client.clientStream(
+        pacedStream(List<int>.generate(50, (i) => (i % 5) + 1), yieldEvery: 1),
+        options: CallOptions(compression: const GzipCodec()),
+      );
+      expect(result, equals(150));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('bidi streaming with compression', (pipeName) async {
+      final server = NamedPipeServer.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: NamedPipeChannelOptions(codecRegistry: CodecRegistry(codecs: const [GzipCodec()])),
+      );
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final results = await client
+          .bidiStream(
+            pacedStream(List<int>.generate(100, (i) => i % 128), yieldEvery: 1),
+            options: CallOptions(compression: const GzipCodec()),
+          )
+          .toList();
+      expect(results.length, equals(100));
+      for (var i = 0; i < 100; i++) {
+        expect(results[i], equals((i % 128) * 2), reason: 'bidi item $i');
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('100KB compressed unary payload with gzip', (pipeName) async {
+      final server = NamedPipeServer.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: NamedPipeChannelOptions(codecRegistry: CodecRegistry(codecs: const [GzipCodec()])),
+      );
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final payload = Uint8List(100 * 1024);
+      for (var i = 0; i < payload.length; i++) {
+        payload[i] = i & 0xFF;
+      }
+
+      final result = await client.echoBytes(payload, options: CallOptions(compression: const GzipCodec()));
+      expect(result.length, equals(payload.length));
+      expect(result, equals(payload));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('500 rapid sequential RPCs with compression', (pipeName) async {
+      final server = NamedPipeServer.create(
+        services: [EchoService()],
+        codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
+      );
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(
+        pipeName,
+        options: NamedPipeChannelOptions(codecRegistry: CodecRegistry(codecs: const [GzipCodec()])),
+      );
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final payload = Uint8List(1024);
+      for (var j = 0; j < payload.length; j++) {
+        payload[j] = j & 0xFF;
+      }
+      for (var i = 0; i < 500; i++) {
+        final result = await client.echoBytes(payload, options: CallOptions(compression: const GzipCodec()));
+        expect(result, equals(payload), reason: 'RPC $i');
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('large payload exceeding typical buffer sizes', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final payload = Uint8List(100 * 1024);
+      for (var i = 0; i < payload.length; i++) {
+        payload[i] = i & 0xFF;
+      }
+
+      final response = await client.echoBytes(payload);
+      expect(response, equals(payload));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('server shutdown during active bidi stream', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final controller = StreamController<int>();
+      final collected = <int>[];
+      final streamErrors = <Object>[];
+      final streamDone = client
+          .bidiStream(controller.stream)
+          .listen((v) => collected.add(v), onError: (Object e) => streamErrors.add(e), cancelOnError: false)
+          .asFuture()
+          .then<Object?>((_) => collected, onError: (Object e) => e);
+
+      for (var i = 0; i < 20; i++) {
+        controller.add(i);
+        await Future.delayed(const Duration(milliseconds: 5));
+      }
+
+      await server.shutdown();
+      await controller.close();
+
+      final streamResult = await streamDone.timeout(const Duration(seconds: 10));
+      expect(
+        streamResult,
+        anyOf(isA<List<int>>(), isA<GrpcError>(), isA<NamedPipeException>(), isA<StateError>()),
+        reason: 'bidi shutdown stream must settle to data or explicit error',
+      );
+      for (final e in streamErrors) {
+        expect(e, isA<GrpcError>(), reason: 'Only GrpcError expected from shutdown, got: $e');
+      }
+      final results = streamResult is List<int> ? streamResult : collected;
+      expect(results.length, greaterThanOrEqualTo(1));
+      expect(results.length, lessThanOrEqualTo(20));
+
+      await channel.shutdown();
+    });
+
+    testNamedPipe('500 rapid sequential RPCs', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      for (var i = 0; i < 500; i++) {
+        final result = await client.echo(i % 256);
+        expect(result, equals(i % 256));
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('graceful server shutdown during streaming', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final streamFuture = client
+          .serverStream(100)
+          .toList()
+          .then<Object?>((results) => results, onError: (Object e) => e);
+
+      await waitForHandlers(server, reason: 'Handler must be active before graceful shutdown test');
+      await server.shutdown();
+
+      final streamResult = await streamFuture;
+      expect(
+        streamResult,
+        anyOf(isA<List<int>>(), isA<GrpcError>(), isA<NamedPipeException>(), isA<StateError>()),
+        reason: 'graceful shutdown stream must settle to data or explicit error',
+      );
+      if (streamResult is List<int>) {
+        expect(streamResult.length, lessThanOrEqualTo(100));
+      }
+
+      await channel.shutdown();
+    });
+
+    testNamedPipe('server shutdown with multiple active streaming RPCs', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final streams = List.generate(
+        5,
+        (_) => client.serverStream(100).toList().then<Object?>((r) => r, onError: (Object e) => e),
+      );
+
+      await waitForHandlers(server, reason: 'Handlers must be active before multi-stream shutdown test');
+      await server.shutdown();
+
+      final results = await Future.wait(streams);
+      for (final result in results) {
+        expect(
+          result,
+          anyOf(isA<List<int>>(), isA<GrpcError>(), isA<NamedPipeException>(), isA<StateError>()),
+          reason: 'multi-stream shutdown must settle to data or explicit error',
+        );
+        if (result is List<int>) {
+          expect(result.length, lessThanOrEqualTo(100));
+        }
+      }
+
+      await channel.shutdown();
+    });
+
+    testNamedPipe('client shutdown during active server stream', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final streamFuture = client.serverStream(100).toList().then<Object?>((r) => r, onError: (Object e) => e);
+
+      await channel.shutdown();
+
+      final streamResult = await streamFuture;
+      expect(
+        streamResult,
+        anyOf(isA<List<int>>(), isA<GrpcError>(), isA<NamedPipeException>(), isA<StateError>()),
+        reason: 'client shutdown stream must settle to data or explicit error',
+      );
+      if (streamResult is List<int>) {
+        expect(streamResult.length, lessThanOrEqualTo(100));
+      }
+
+      await server.shutdown();
+    });
   });
 
   // =============================================================================
@@ -927,6 +1282,85 @@ void main() {
         await server.shutdown();
         await tempDir.delete(recursive: true);
       }
+    });
+  });
+
+  // ===========================================================================
+  // Concurrent stream delivery — cross-transport
+  // ===========================================================================
+  //
+  // Verifies that 25 concurrent server-streaming RPCs deliver correct data on
+  // every transport. This exercises HTTP/2 frame multiplexing and, on named
+  // pipes, the write queue coalescing path that prevents unbounded queue growth
+  // when many small frames are produced concurrently.
+
+  group('Concurrent stream delivery — cross-transport', timeout: const Timeout(Duration(seconds: 60)), () {
+    testTcpAndUds('25 concurrent server-streaming RPCs with data integrity', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+
+      final channel = createTestChannel(address, server.port!);
+      final client = EchoClient(channel);
+
+      const streamCount = 25;
+      const itemsPerStream = 50;
+      final futures = <Future<List<int>>>[];
+
+      for (var i = 0; i < streamCount; i++) {
+        futures.add(client.serverStream(itemsPerStream).toList());
+      }
+
+      final allResults = await Future.wait(futures).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => fail(
+          '25 concurrent server-streaming RPCs did not complete '
+          'within 30s over TCP/UDS',
+        ),
+      );
+
+      expect(allResults, hasLength(streamCount));
+      final expected = List.generate(itemsPerStream, (i) => i);
+      for (var i = 0; i < streamCount; i++) {
+        expect(allResults[i], equals(expected), reason: 'Stream $i data integrity');
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('25 concurrent server-streaming RPCs with data integrity', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      const streamCount = 25;
+      const itemsPerStream = 50;
+      final futures = <Future<List<int>>>[];
+
+      for (var i = 0; i < streamCount; i++) {
+        futures.add(client.serverStream(itemsPerStream).toList());
+      }
+
+      final allResults = await Future.wait(futures).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => fail(
+          '25 concurrent server-streaming RPCs did not complete '
+          'within 30s over named pipe',
+        ),
+      );
+
+      expect(allResults, hasLength(streamCount));
+      final expected = List.generate(itemsPerStream, (i) => i);
+      for (var i = 0; i < streamCount; i++) {
+        expect(allResults[i], equals(expected), reason: 'Stream $i data integrity');
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
     });
   });
 
