@@ -453,11 +453,14 @@ class Http2ClientConnection implements connection.ClientConnection {
     // so we don't call it here to avoid double-call.
     _disconnect();
     _setState(ConnectionState.idle);
-    // Release Win32 pipe/socket OS handles. Without this, idle timeout could
-    // leave a named pipe handle open until the next connect() (or indefinitely
-    // if the channel never reconnects). shutdown()/terminate() already call
-    // this connector; idle and abandon-to-idle paths must too.
-    _releaseTransportConnectorOsResources();
+    // Do NOT call _releaseTransportConnectorOsResources() here. An orphaned
+    // transport's onActiveStateChanged callback can fire _handleIdleTimeout
+    // while a newer connection is active. The connector is shared across
+    // generations, so destroying it here could kill the current generation's
+    // resources. The next connect() disposes old resources (named pipe) or
+    // creates a fresh socket (TCP). shutdown()/terminate() handles final
+    // cleanup. Named pipe handles are closed by _disposeCurrentPipeResources()
+    // at the top of NamedPipeTransportConnector.connect().
   }
 
   void _cancelTimer() {
@@ -507,17 +510,6 @@ class Http2ClientConnection implements connection.ClientConnection {
     if (_timer == null || _state != ConnectionState.transientFailure) return;
     _cancelTimer();
     _connect();
-  }
-
-  /// Releases OS resources held by [_transportConnector] (socket destroy,
-  /// named pipe [CloseHandle]).
-  ///
-  /// [shutdown] and [terminate] already invoke this; idle, connection-failure,
-  /// and abandon-to-idle paths must too, or a Windows named pipe handle can
-  /// remain open until the next [connect] (or indefinitely if no reconnect).
-  /// Idempotent: safe to call when the connector is already torn down.
-  void _releaseTransportConnectorOsResources() {
-    _transportConnector.shutdown();
   }
 
   void _disconnect() {
@@ -580,9 +572,15 @@ class Http2ClientConnection implements connection.ClientConnection {
     if (!_hasPendingCalls()) {
       // No pending calls. Just hop to idle, and wait for a new RPC.
       _setState(ConnectionState.idle);
-      // Close pipe/socket at the connector; next connect() also disposes first,
-      // but without this the OS handle can stay open until then.
-      _releaseTransportConnectorOsResources();
+      // Do NOT call _releaseTransportConnectorOsResources() here. Active
+      // (dispatched) streams may still be in flight on the old HTTP/2
+      // transport, reading from the connector's byte stream (socket / pipe).
+      // _hasPendingCalls() only checks _pendingCalls (queued, not yet
+      // dispatched), so "no pending" does not mean "no active streams."
+      // Destroying the connector here kills those streams prematurely
+      // (regression: "client reconnects when stream limit is used").
+      // The next connect() disposes old resources; shutdown()/terminate()
+      // handles final cleanup.
       return;
     }
 
