@@ -130,7 +130,8 @@
       "managed_analyze": true,
       "managed_test": true,
       "build_runner": false,
-      "web_test": false
+      "web_test": false,
+      "autodoc": true
     },
     "platforms": [
       "ubuntu",
