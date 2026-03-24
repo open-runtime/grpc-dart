@@ -208,6 +208,21 @@ abstract class Connection {
 
     var connectionWindowUpdater = IncomingWindowHandler.connection(_frameWriter, _localWindow);
 
+    // Proactive connection-level WINDOW_UPDATE: the spec-mandated initial
+    // connection window is 65,535 bytes, shared across ALL streams. For
+    // high-concurrency workloads (many streams on one connection), this is
+    // a throughput bottleneck. Send a WINDOW_UPDATE on stream 0 to expand
+    // the receive window, matching what gRPC-C-core does (1 MiB default).
+    final connectionWindowSize = settingsObject.connectionWindowSize;
+    if (connectionWindowSize != null) {
+      final defaultWindow = (1 << 16) - 1; // 65,535
+      final increment = connectionWindowSize - defaultWindow;
+      if (increment > 0) {
+        _localWindow.modify(increment);
+        _frameWriter.writeWindowUpdate(increment, streamId: 0);
+      }
+    }
+
     // Setup queues for outgoing/incoming messages on the connection level.
     _outgoingQueue = ConnectionMessageQueueOut(_connectionWindowHandler, _frameWriter);
     _incomingQueue = ConnectionMessageQueueIn(connectionWindowUpdater, _catchProtocolErrors);

@@ -222,16 +222,19 @@ class EchoService extends Service {
     final bd = ByteData.sublistView(Uint8List.fromList(req));
     final chunkCount = bd.getUint32(0);
     final chunkSize = bd.getUint32(4);
-    const yieldEvery = 200;
+    // Yield every 10 chunks to prevent microtask starvation. With N
+    // concurrent async* generators, each round of yields creates 3N
+    // microtasks. At yieldEvery=200, 25 generators produce 15,000
+    // microtasks before any event-queue work (pipe I/O, WINDOW_UPDATE
+    // processing) can run. yieldEvery=10 keeps bursts to ~750
+    // microtasks, giving the event loop regular I/O opportunities.
+    const yieldEvery = 10;
     for (var i = 0; i < chunkCount; i++) {
       final chunk = Uint8List(chunkSize);
-      // Fill with repeating pattern for integrity verification.
       for (var j = 0; j < chunkSize; j++) {
         chunk[j] = (i + j) & 0xFF;
       }
       yield chunk;
-      // Cooperative yield: high-concurrency bytes streams can otherwise
-      // starve the event loop and delay shutdown/cancel processing.
       if ((i + 1) % yieldEvery == 0) {
         await Future<void>.delayed(Duration.zero);
       }
