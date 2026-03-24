@@ -575,9 +575,9 @@ class NamedPipeServer extends ConnectionServer {
 /// the server isolate, `await Future.delayed(...)` in the PeekNamedPipe
 /// polling loop could never resume, deadlocking all data transfer.
 ///
-/// The main isolate's event loop is never blocked by FFI calls (PeekNamedPipe
-/// returns immediately, ReadFile only runs when data is confirmed available),
-/// so polling, timeouts, and concurrent connections all work correctly.
+/// [PeekNamedPipe] returns immediately; [ReadFile] runs only when data is
+/// available. [WriteFile] can still block when the pipe buffer is full; partial
+/// writes yield between iterations so [_readLoop] can drain the peer direction.
 class _ServerPipeStream {
   static const Duration _deferredCloseTimeout = Duration(seconds: 5);
 
@@ -810,7 +810,7 @@ class _ServerPipeStream {
         if (_handleClosed) break;
 
         final data = _writeQueue.removeAt(0);
-        if (!_writeChunk(data)) break;
+        if (!await _writeChunk(data)) break;
 
         // Yield to the event loop so the read loop (and other async
         // work) can run between write operations.
@@ -829,7 +829,11 @@ class _ServerPipeStream {
   }
 
   /// Writes a single chunk to the pipe. Returns `false` on error.
-  bool _writeChunk(List<int> data) {
+  ///
+  /// Yields between partial writes so [_readLoop] can run on this isolate.
+  /// Without that, a blocking [WriteFile] on a full buffer starves reads and
+  /// can deadlock duplex HTTP/2 traffic with the peer.
+  Future<bool> _writeChunk(List<int> data) async {
     if (data.isEmpty) return true;
 
     final buffer = calloc<Uint8>(data.length);
@@ -869,6 +873,9 @@ class _ServerPipeStream {
         }
 
         offset += bytesWritten.value;
+        if (offset < data.length) {
+          await Future<void>.delayed(Duration.zero);
+        }
       }
       return true;
     } finally {

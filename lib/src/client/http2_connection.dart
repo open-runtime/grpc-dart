@@ -453,6 +453,11 @@ class Http2ClientConnection implements connection.ClientConnection {
     // so we don't call it here to avoid double-call.
     _disconnect();
     _setState(ConnectionState.idle);
+    // Release Win32 pipe/socket OS handles. Without this, idle timeout could
+    // leave a named pipe handle open until the next connect() (or indefinitely
+    // if the channel never reconnects). shutdown()/terminate() already call
+    // this connector; idle and abandon-to-idle paths must too.
+    _releaseTransportConnectorOsResources();
   }
 
   void _cancelTimer() {
@@ -490,12 +495,24 @@ class Http2ClientConnection implements connection.ClientConnection {
     }
     _pendingCalls.clear();
     _setState(ConnectionState.idle);
+    _releaseTransportConnectorOsResources();
   }
 
   void _handleReconnect() {
     if (_timer == null || _state != ConnectionState.transientFailure) return;
     _cancelTimer();
     _connect();
+  }
+
+  /// Releases OS resources held by [_transportConnector] (socket destroy,
+  /// named pipe [CloseHandle]).
+  ///
+  /// [shutdown] and [terminate] already invoke this; idle, connection-failure,
+  /// and abandon-to-idle paths must too, or a Windows named pipe handle can
+  /// remain open until the next [connect] (or indefinitely if no reconnect).
+  /// Idempotent: safe to call when the connector is already torn down.
+  void _releaseTransportConnectorOsResources() {
+    _transportConnector.shutdown();
   }
 
   void _disconnect() {
@@ -558,6 +575,9 @@ class Http2ClientConnection implements connection.ClientConnection {
     if (!_hasPendingCalls()) {
       // No pending calls. Just hop to idle, and wait for a new RPC.
       _setState(ConnectionState.idle);
+      // Close pipe/socket at the connector; next connect() also disposes first,
+      // but without this the OS handle can stay open until then.
+      _releaseTransportConnectorOsResources();
       return;
     }
 
