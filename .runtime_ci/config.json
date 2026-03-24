@@ -152,7 +152,7 @@
       "ubuntu-arm64": "warp-ubuntu-latest-arm64-8x",
       "macos-arm64": "warp-macos-15-arm64-6x",
       "windows": "warp-windows-latest-x64-8x",
-      "windows-arm64": "runtime-windows-11-arm64-208gb-64core"
+      "windows-arm64": "windows-11-arm"
     },
     "artifact_retention_days": 7,
     "git_orgs": [
