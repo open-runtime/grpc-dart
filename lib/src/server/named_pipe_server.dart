@@ -875,6 +875,7 @@ class _ServerPipeStream {
         offset += bytesWritten.value;
         if (offset < data.length) {
           await Future<void>.delayed(Duration.zero);
+          if (_handleClosed) return false;
         }
       }
       return true;

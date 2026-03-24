@@ -642,6 +642,7 @@ class _NamedPipeStream {
         offset += bytesWritten.value;
         if (offset < data.length) {
           await Future<void>.delayed(Duration.zero);
+          if (_writesClosed) return false;
         }
       }
       return true;
