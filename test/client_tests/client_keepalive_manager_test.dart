@@ -51,21 +51,12 @@ void main() {
   void initKeepAliveManager([ClientKeepAliveOptions? opt]) {
     reset(pinger);
     final options =
-        opt ??
-        ClientKeepAliveOptions(
-          pingInterval: pingInterval,
-          timeout: timeout,
-          permitWithoutCalls: false,
-        );
+        opt ?? ClientKeepAliveOptions(pingInterval: pingInterval, timeout: timeout, permitWithoutCalls: false);
 
     when(pinger.ping()).thenAnswer((_) async => transportOpen = true);
     when(pinger.onPingTimeout()).thenAnswer((_) async => transportOpen = false);
 
-    keepAliveManager = ClientKeepAlive(
-      options: options,
-      ping: pinger.ping,
-      onPingTimeout: pinger.onPingTimeout,
-    );
+    keepAliveManager = ClientKeepAlive(options: options, ping: pinger.ping, onPingTimeout: pinger.onPingTimeout);
     transportOpen = true;
   }
 
@@ -174,11 +165,7 @@ void main() {
     FakeAsync().run((async) {
       keepAliveManager.onTransportTermination();
       initKeepAliveManager(
-        ClientKeepAliveOptions(
-          pingInterval: pingInterval,
-          timeout: timeout,
-          permitWithoutCalls: true,
-        ),
+        ClientKeepAliveOptions(pingInterval: pingInterval, timeout: timeout, permitWithoutCalls: true),
       );
       keepAliveManager.onTransportStarted();
 

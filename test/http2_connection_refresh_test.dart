@@ -91,9 +91,7 @@ void main() {
       // Make finish() return a failed Future (simulates
       // calling finish() on an already-terminated
       // transport).
-      when(harness.transport.finish()).thenAnswer(
-        (_) => Future.error(StateError('Transport already terminated')),
-      );
+      when(harness.transport.finish()).thenAnswer((_) => Future.error(StateError('Transport already terminated')));
 
       // Block reconnection.
       harness.connection!.connectionError = 'Blocked for test';
@@ -124,9 +122,7 @@ void main() {
       harness.channelOptions.connectionTimeout = Duration.zero;
 
       // Make finish() throw synchronously.
-      when(
-        harness.transport.finish(),
-      ).thenThrow(StateError('Already terminated'));
+      when(harness.transport.finish()).thenThrow(StateError('Already terminated'));
 
       // Block reconnection.
       harness.connection!.connectionError = 'Blocked for test';
@@ -150,9 +146,7 @@ void main() {
       // timeout has elapsed.
       harness.channelOptions.connectionTimeout = Duration.zero;
       when(harness.transport.isOpen).thenReturn(false);
-      when(harness.transport.finish()).thenAnswer(
-        (_) => Future.error(StateError('Transport already terminated')),
-      );
+      when(harness.transport.finish()).thenAnswer((_) => Future.error(StateError('Transport already terminated')));
 
       // Block reconnection.
       harness.connection!.connectionError = 'Blocked for test';
@@ -162,10 +156,7 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 200));
 
       // Connection should have been abandoned.
-      expect(
-        harness.connection!.state,
-        anyOf(ConnectionState.idle, ConnectionState.transientFailure),
-      );
+      expect(harness.connection!.state, anyOf(ConnectionState.idle, ConnectionState.transientFailure));
 
       await call2Future;
 
@@ -290,11 +281,7 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 200));
 
       // Should have transitioned away from ready.
-      expect(
-        connectionStates,
-        isNotEmpty,
-        reason: 'Expected state transition after transport died',
-      );
+      expect(connectionStates, isNotEmpty, reason: 'Expected state transition after transport died');
       // First new state should be idle (from
       // _abandonConnection, no pending calls at that
       // point).

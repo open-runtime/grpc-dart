@@ -48,9 +48,7 @@ void main() {
   // Server.shutdown() with concurrent active handlers
   // ---------------------------------------------------------------------------
   group('Server.shutdown() with active handlers', () {
-    testTcpAndUds('shutdown cancels 25 concurrent server-streaming handlers', (
-      address,
-    ) async {
+    testTcpAndUds('shutdown cancels 25 concurrent server-streaming handlers', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -114,8 +112,7 @@ void main() {
       // Shutdown must cancel all 25 handlers and complete.
       await server.shutdown().timeout(
         const Duration(seconds: 10),
-        onTimeout: () =>
-            fail('server.shutdown() hung with 25 active streaming handlers'),
+        onTimeout: () => fail('server.shutdown() hung with 25 active streaming handlers'),
       );
 
       // All 25 streams must have terminated (not hung).
@@ -124,15 +121,10 @@ void main() {
       // outgoing queue time to flush RST_STREAM frames before GOAWAY
       // closes the socket. This should be sufficient — no client-side
       // channel.shutdown() crutch needed.
-      await Future.wait(doneCompleters.map((c) => c.future)).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => fail('streams still active after shutdown'),
-      );
-      expect(
-        unexpectedErrors,
-        isEmpty,
-        reason: 'Expected stream termination errors to be GrpcError only',
-      );
+      await Future.wait(
+        doneCompleters.map((c) => c.future),
+      ).timeout(const Duration(seconds: 5), onTimeout: () => fail('streams still active after shutdown'));
+      expect(unexpectedErrors, isEmpty, reason: 'Expected stream termination errors to be GrpcError only');
 
       // Each stream MUST have received at least 1 item (first-item
       // gate already proved this, but assert per-stream as well).
@@ -140,17 +132,12 @@ void main() {
       // hardware where the server delivers all items before shutdown
       // propagates — this is a valid outcome (not a hang).
       for (var i = 0; i < itemCounts.length; i++) {
-        expect(
-          itemCounts[i],
-          greaterThan(0),
-          reason: 'stream $i received 0 items despite first-item gate',
-        );
+        expect(itemCounts[i], greaterThan(0), reason: 'stream $i received 0 items despite first-item gate');
       }
 
       // At least 1 stream MUST have been truncated — otherwise
       // shutdown had no observable effect on active streams.
-      final truncatedStreams =
-          itemCounts.where((c) => c < streamItems).length;
+      final truncatedStreams = itemCounts.where((c) => c < streamItems).length;
       expect(
         truncatedStreams,
         greaterThan(0),
@@ -171,9 +158,7 @@ void main() {
       );
     });
 
-    testTcpAndUds('shutdown verifies handler map is fully emptied', (
-      address,
-    ) async {
+    testTcpAndUds('shutdown verifies handler map is fully emptied', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
       addTearDown(() => server.shutdown());
@@ -196,10 +181,7 @@ void main() {
             '(otherwise the test proves nothing)',
       );
 
-      await server.shutdown().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => fail('shutdown hung'),
-      );
+      await server.shutdown().timeout(const Duration(seconds: 10), onTimeout: () => fail('shutdown hung'));
 
       // Verify handler map is completely empty — no leaked
       // references. We already proved the map was non-empty
@@ -210,10 +192,9 @@ void main() {
         reason: 'All handler lists should be empty after shutdown',
       );
 
-      final settled = await Future.wait(streamFutures).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => fail('streams hung'),
-      );
+      final settled = await Future.wait(
+        streamFutures,
+      ).timeout(const Duration(seconds: 5), onTimeout: () => fail('streams hung'));
       for (final result in settled) {
         expectExpectedRpcSettlement(
           result,
@@ -225,193 +206,159 @@ void main() {
       await channel.shutdown();
     });
 
-    testTcpAndUds(
-      'stress: repeated shutdown cycles cancel active handlers cleanly',
-      (address) async {
-        const cycles = 16;
-        const streamCount = 12;
-        final shutdownRaceTimeout = address.type == InternetAddressType.unix
-            ? const Duration(seconds: 20)
-            : const Duration(seconds: 10);
+    testTcpAndUds('stress: repeated shutdown cycles cancel active handlers cleanly', (address) async {
+      const cycles = 16;
+      const streamCount = 12;
+      final shutdownRaceTimeout = address.type == InternetAddressType.unix
+          ? const Duration(seconds: 20)
+          : const Duration(seconds: 10);
 
-        for (var cycle = 0; cycle < cycles; cycle++) {
-          final server = Server.create(services: [EchoService()]);
-          await server.serve(address: address, port: 0);
-
-          final channel = createTestChannel(address, server.port!);
-          final client = EchoClient(channel);
-
-          final firstItems = List.generate(
-            streamCount,
-            (_) => Completer<void>(),
-          );
-          final doneCompleters = List.generate(
-            streamCount,
-            (_) => Completer<void>(),
-          );
-          final unexpectedErrors = <Object>[];
-
-          try {
-            for (var i = 0; i < streamCount; i++) {
-              client
-                  .serverStream(255)
-                  .listen(
-                    (value) {
-                      if (!firstItems[i].isCompleted) firstItems[i].complete();
-                    },
-                    onError: (e) {
-                      if (e is! GrpcError) unexpectedErrors.add(e);
-                      if (!doneCompleters[i].isCompleted) {
-                        doneCompleters[i].complete();
-                      }
-                    },
-                    onDone: () {
-                      if (!doneCompleters[i].isCompleted) {
-                        doneCompleters[i].complete();
-                      }
-                    },
-                  );
-            }
-
-            await Future.wait(firstItems.map((c) => c.future)).timeout(
-              const Duration(seconds: 8),
-              onTimeout: () =>
-                  fail('Cycle $cycle: not all streams started before shutdown'),
-            );
-
-            if (cycle.isEven) {
-              await server.shutdown().timeout(
-                shutdownRaceTimeout,
-                onTimeout: () =>
-                    fail('Cycle $cycle: server.shutdown() did not settle'),
-              );
-              await channel.shutdown().timeout(
-                const Duration(seconds: 10),
-                onTimeout: () =>
-                    fail('Cycle $cycle: channel.shutdown() did not settle'),
-              );
-            } else {
-              await channel.shutdown().timeout(
-                const Duration(seconds: 10),
-                onTimeout: () =>
-                    fail('Cycle $cycle: channel.shutdown() did not settle'),
-              );
-              await server.shutdown().timeout(
-                shutdownRaceTimeout,
-                onTimeout: () =>
-                    fail('Cycle $cycle: server.shutdown() did not settle'),
-              );
-            }
-
-            await Future.wait(doneCompleters.map((c) => c.future)).timeout(
-              const Duration(seconds: 5),
-              onTimeout: () =>
-                  fail('Cycle $cycle: streams still active after shutdown'),
-            );
-
-            expect(
-              unexpectedErrors,
-              isEmpty,
-              reason:
-                  'Cycle $cycle: expected stream termination errors '
-                  'to be GrpcError only',
-            );
-            expect(
-              server.handlers.values.every((list) => list.isEmpty),
-              isTrue,
-              reason: 'Cycle $cycle: handlers leaked after shutdown',
-            );
-          } finally {
-            await channel.shutdown();
-            await server.shutdown();
-          }
-        }
-      },
-    );
-
-    testTcpAndUds(
-      'handlers at various lifecycle stages all terminate on shutdown',
-      (address) async {
+      for (var cycle = 0; cycle < cycles; cycle++) {
         final server = Server.create(services: [EchoService()]);
         await server.serve(address: address, port: 0);
-        addTearDown(() => server.shutdown());
 
         final channel = createTestChannel(address, server.port!);
-        addTearDown(() => channel.shutdown());
         final client = EchoClient(channel);
 
-        // (1) Completed unary — already done by the time we shutdown.
-        final unaryResult = await client.echo(42);
-        expect(unaryResult, equals(42));
+        final firstItems = List.generate(streamCount, (_) => Completer<void>());
+        final doneCompleters = List.generate(streamCount, (_) => Completer<void>());
+        final unexpectedErrors = <Object>[];
 
-        // (2) Server-stream mid-yield — streaming 255 items at 1ms each.
-        final serverStreamFuture = settleRpc(client.serverStream(255).toList());
+        try {
+          for (var i = 0; i < streamCount; i++) {
+            client
+                .serverStream(255)
+                .listen(
+                  (value) {
+                    if (!firstItems[i].isCompleted) firstItems[i].complete();
+                  },
+                  onError: (e) {
+                    if (e is! GrpcError) unexpectedErrors.add(e);
+                    if (!doneCompleters[i].isCompleted) {
+                      doneCompleters[i].complete();
+                    }
+                  },
+                  onDone: () {
+                    if (!doneCompleters[i].isCompleted) {
+                      doneCompleters[i].complete();
+                    }
+                  },
+                );
+          }
 
-        // (3) Bidi stream — handler blocks in await-for after first item.
-        final bidiController = StreamController<int>();
-        final bidiStreamFuture = settleRpc(
-          client.bidiStream(bidiController.stream).toList(),
-        );
-        bidiController.add(1); // send one item, handler processes it
-
-        // (4) Client-stream — still accumulating.
-        final clientStreamController = StreamController<int>();
-        final clientStreamFuture = settleRpc(
-          client.clientStream(clientStreamController.stream),
-        );
-        clientStreamController.add(10);
-        clientStreamController.add(20);
-
-        // Wait for handlers to be registered (deterministic signal).
-        await waitForHandlers(
-          server,
-          reason:
-              'Handlers must be active before shutdown '
-              '(mixed lifecycle test)',
-        );
-
-        // Shutdown — must cancel all active handlers.
-        await server.shutdown().timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => fail('shutdown hung with mixed lifecycle handlers'),
-        );
-
-        // Close client-side streams.
-        await bidiController.close();
-        await clientStreamController.close();
-
-        // All RPCs must settle (succeed or error, but not hang).
-        final settled =
-            await Future.wait([
-              serverStreamFuture,
-              bidiStreamFuture,
-              clientStreamFuture,
-            ]).timeout(
-              const Duration(seconds: 5),
-              onTimeout: () => fail('RPCs still active after shutdown'),
-            );
-        for (final result in settled) {
-          expectExpectedRpcSettlement(
-            result,
-            reason: 'mixed lifecycle RPC should settle with known result/error',
+          await Future.wait(firstItems.map((c) => c.future)).timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => fail('Cycle $cycle: not all streams started before shutdown'),
           );
+
+          if (cycle.isEven) {
+            await server.shutdown().timeout(
+              shutdownRaceTimeout,
+              onTimeout: () => fail('Cycle $cycle: server.shutdown() did not settle'),
+            );
+            await channel.shutdown().timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => fail('Cycle $cycle: channel.shutdown() did not settle'),
+            );
+          } else {
+            await channel.shutdown().timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => fail('Cycle $cycle: channel.shutdown() did not settle'),
+            );
+            await server.shutdown().timeout(
+              shutdownRaceTimeout,
+              onTimeout: () => fail('Cycle $cycle: server.shutdown() did not settle'),
+            );
+          }
+
+          await Future.wait(doneCompleters.map((c) => c.future)).timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => fail('Cycle $cycle: streams still active after shutdown'),
+          );
+
+          expect(
+            unexpectedErrors,
+            isEmpty,
+            reason:
+                'Cycle $cycle: expected stream termination errors '
+                'to be GrpcError only',
+          );
+          expect(
+            server.handlers.values.every((list) => list.isEmpty),
+            isTrue,
+            reason: 'Cycle $cycle: handlers leaked after shutdown',
+          );
+        } finally {
+          await channel.shutdown();
+          await server.shutdown();
         }
+      }
+    });
 
-        await channel.shutdown();
-      },
-    );
+    testTcpAndUds('handlers at various lifecycle stages all terminate on shutdown', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
-    testNamedPipe('shutdown cancels 25 concurrent server-streaming handlers', (
-      pipeName,
-    ) async {
+      final channel = createTestChannel(address, server.port!);
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      // (1) Completed unary — already done by the time we shutdown.
+      final unaryResult = await client.echo(42);
+      expect(unaryResult, equals(42));
+
+      // (2) Server-stream mid-yield — streaming 255 items at 1ms each.
+      final serverStreamFuture = settleRpc(client.serverStream(255).toList());
+
+      // (3) Bidi stream — handler blocks in await-for after first item.
+      final bidiController = StreamController<int>();
+      final bidiStreamFuture = settleRpc(client.bidiStream(bidiController.stream).toList());
+      bidiController.add(1); // send one item, handler processes it
+
+      // (4) Client-stream — still accumulating.
+      final clientStreamController = StreamController<int>();
+      final clientStreamFuture = settleRpc(client.clientStream(clientStreamController.stream));
+      clientStreamController.add(10);
+      clientStreamController.add(20);
+
+      // Wait for handlers to be registered (deterministic signal).
+      await waitForHandlers(
+        server,
+        reason:
+            'Handlers must be active before shutdown '
+            '(mixed lifecycle test)',
+      );
+
+      // Shutdown — must cancel all active handlers.
+      await server.shutdown().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail('shutdown hung with mixed lifecycle handlers'),
+      );
+
+      // Close client-side streams.
+      await bidiController.close();
+      await clientStreamController.close();
+
+      // All RPCs must settle (succeed or error, but not hang).
+      final settled = await Future.wait([
+        serverStreamFuture,
+        bidiStreamFuture,
+        clientStreamFuture,
+      ]).timeout(const Duration(seconds: 5), onTimeout: () => fail('RPCs still active after shutdown'));
+      for (final result in settled) {
+        expectExpectedRpcSettlement(result, reason: 'mixed lifecycle RPC should settle with known result/error');
+      }
+
+      await channel.shutdown();
+    });
+
+    testNamedPipe('shutdown cancels 25 concurrent server-streaming handlers', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       await server.serve(pipeName: pipeName);
       addTearDown(() => server.shutdown());
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
@@ -425,10 +372,7 @@ void main() {
       final request = encodeStreamBytesRequest(streamItems, chunkSize);
       final itemCounts = List<int>.filled(streamCount, 0);
       final doneCompleters = <Completer<void>>[];
-      final firstItemCompleters = List.generate(
-        streamCount,
-        (_) => Completer<void>(),
-      );
+      final firstItemCompleters = List.generate(streamCount, (_) => Completer<void>());
       final unexpectedErrors = <Object>[];
 
       for (var i = 0; i < streamCount; i++) {
@@ -477,15 +421,10 @@ void main() {
       );
 
       // All 25 streams must have terminated (not hung).
-      await Future.wait(doneCompleters.map((c) => c.future)).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => fail('streams still active after shutdown'),
-      );
-      expect(
-        unexpectedErrors,
-        isEmpty,
-        reason: 'Expected stream termination errors to be GrpcError only',
-      );
+      await Future.wait(
+        doneCompleters.map((c) => c.future),
+      ).timeout(const Duration(seconds: 5), onTimeout: () => fail('streams still active after shutdown'));
+      expect(unexpectedErrors, isEmpty, reason: 'Expected stream termination errors to be GrpcError only');
 
       // TIGHT: each stream MUST have been truncated — 20000 chunks is
       // far more than can complete before shutdown fires.
@@ -498,11 +437,7 @@ void main() {
               'shutdown failed to truncate',
         );
         // Each stream must have received at least 1 item.
-        expect(
-          itemCounts[i],
-          greaterThan(0),
-          reason: 'stream $i received 0 items despite first-item gate',
-        );
+        expect(itemCounts[i], greaterThan(0), reason: 'stream $i received 0 items despite first-item gate');
       }
 
       // TIGHT: total items must be >= streamCount (each stream
@@ -515,17 +450,12 @@ void main() {
       );
     });
 
-    testNamedPipe('shutdown verifies handler map is fully emptied', (
-      pipeName,
-    ) async {
+    testNamedPipe('shutdown verifies handler map is fully emptied', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
       await server.serve(pipeName: pipeName);
       addTearDown(() => server.shutdown());
 
-      final channel = NamedPipeClientChannel(
-        pipeName,
-        options: const NamedPipeChannelOptions(),
-      );
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
       addTearDown(() => channel.shutdown());
       final client = EchoClient(channel);
 
@@ -542,10 +472,7 @@ void main() {
             '(otherwise the test proves nothing)',
       );
 
-      await server.shutdown().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => fail('shutdown hung'),
-      );
+      await server.shutdown().timeout(const Duration(seconds: 10), onTimeout: () => fail('shutdown hung'));
 
       expect(
         server.handlers.values.every((list) => list.isEmpty),
@@ -553,10 +480,9 @@ void main() {
         reason: 'All handler lists should be empty after shutdown',
       );
 
-      final settled = await Future.wait(streamFutures).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => fail('streams hung'),
-      );
+      final settled = await Future.wait(
+        streamFutures,
+      ).timeout(const Duration(seconds: 5), onTimeout: () => fail('streams hung'));
       for (final result in settled) {
         expectExpectedRpcSettlement(
           result,
@@ -568,167 +494,131 @@ void main() {
       await channel.shutdown();
     });
 
-    testNamedPipe(
-      'handlers at various lifecycle stages all terminate on shutdown',
-      (pipeName) async {
+    testNamedPipe('handlers at various lifecycle stages all terminate on shutdown', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      final unaryResult = await client.echo(42);
+      expect(unaryResult, equals(42));
+
+      final serverStreamFuture = settleRpc(client.serverStream(255).toList());
+
+      final bidiController = StreamController<int>();
+      final bidiStreamFuture = settleRpc(client.bidiStream(bidiController.stream).toList());
+      bidiController.add(1);
+
+      final clientStreamController = StreamController<int>();
+      final clientStreamFuture = settleRpc(client.clientStream(clientStreamController.stream));
+      clientStreamController.add(10);
+      clientStreamController.add(20);
+
+      // Wait for handlers to be registered (deterministic signal).
+      await waitForHandlers(
+        server,
+        reason:
+            'Handlers must be active before shutdown '
+            '(named pipe mixed lifecycle test)',
+      );
+
+      await server.shutdown().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail('shutdown hung with mixed lifecycle handlers'),
+      );
+
+      await bidiController.close();
+      await clientStreamController.close();
+
+      final settled = await Future.wait([
+        serverStreamFuture,
+        bidiStreamFuture,
+        clientStreamFuture,
+      ]).timeout(const Duration(seconds: 5), onTimeout: () => fail('RPCs still active after shutdown'));
+      for (final result in settled) {
+        expectExpectedRpcSettlement(
+          result,
+          reason: 'named-pipe mixed lifecycle RPC should settle with known result/error',
+        );
+      }
+
+      await channel.shutdown();
+    });
+
+    testNamedPipe('stress: repeated shutdown cycles cancel active handlers cleanly', (pipeName) async {
+      const cycles = 16;
+      const streamCount = 12;
+
+      for (var cycle = 0; cycle < cycles; cycle++) {
         final server = NamedPipeServer.create(services: [EchoService()]);
         await server.serve(pipeName: pipeName);
-        addTearDown(() => server.shutdown());
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        addTearDown(() => channel.shutdown());
+        final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
         final client = EchoClient(channel);
 
-        final unaryResult = await client.echo(42);
-        expect(unaryResult, equals(42));
+        final firstItems = List.generate(streamCount, (_) => Completer<void>());
+        final doneCompleters = List.generate(streamCount, (_) => Completer<void>());
+        final unexpectedErrors = <Object>[];
 
-        final serverStreamFuture = settleRpc(client.serverStream(255).toList());
-
-        final bidiController = StreamController<int>();
-        final bidiStreamFuture = settleRpc(
-          client.bidiStream(bidiController.stream).toList(),
-        );
-        bidiController.add(1);
-
-        final clientStreamController = StreamController<int>();
-        final clientStreamFuture = settleRpc(
-          client.clientStream(clientStreamController.stream),
-        );
-        clientStreamController.add(10);
-        clientStreamController.add(20);
-
-        // Wait for handlers to be registered (deterministic signal).
-        await waitForHandlers(
-          server,
-          reason:
-              'Handlers must be active before shutdown '
-              '(named pipe mixed lifecycle test)',
-        );
-
-        await server.shutdown().timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => fail('shutdown hung with mixed lifecycle handlers'),
-        );
-
-        await bidiController.close();
-        await clientStreamController.close();
-
-        final settled =
-            await Future.wait([
-              serverStreamFuture,
-              bidiStreamFuture,
-              clientStreamFuture,
-            ]).timeout(
-              const Duration(seconds: 5),
-              onTimeout: () => fail('RPCs still active after shutdown'),
-            );
-        for (final result in settled) {
-          expectExpectedRpcSettlement(
-            result,
-            reason:
-                'named-pipe mixed lifecycle RPC should settle with known result/error',
-          );
-        }
-
-        await channel.shutdown();
-      },
-    );
-
-    testNamedPipe(
-      'stress: repeated shutdown cycles cancel active handlers cleanly',
-      (pipeName) async {
-        const cycles = 16;
-        const streamCount = 12;
-
-        for (var cycle = 0; cycle < cycles; cycle++) {
-          final server = NamedPipeServer.create(services: [EchoService()]);
-          await server.serve(pipeName: pipeName);
-
-          final channel = NamedPipeClientChannel(
-            pipeName,
-            options: const NamedPipeChannelOptions(),
-          );
-          final client = EchoClient(channel);
-
-          final firstItems = List.generate(
-            streamCount,
-            (_) => Completer<void>(),
-          );
-          final doneCompleters = List.generate(
-            streamCount,
-            (_) => Completer<void>(),
-          );
-          final unexpectedErrors = <Object>[];
-
-          try {
-            for (var i = 0; i < streamCount; i++) {
-              client
-                  .serverStream(255)
-                  .listen(
-                    (value) {
-                      if (!firstItems[i].isCompleted) firstItems[i].complete();
-                    },
-                    onError: (e) {
-                      if (e is! GrpcError) unexpectedErrors.add(e);
-                      if (!doneCompleters[i].isCompleted) {
-                        doneCompleters[i].complete();
-                      }
-                    },
-                    onDone: () {
-                      if (!doneCompleters[i].isCompleted) {
-                        doneCompleters[i].complete();
-                      }
-                    },
-                  );
-            }
-
-            await Future.wait(firstItems.map((c) => c.future)).timeout(
-              const Duration(seconds: 8),
-              onTimeout: () =>
-                  fail('Cycle $cycle: not all streams started before shutdown'),
-            );
-
-            final channelDelayMs = (cycle % 3) * 2;
-            await Future.wait([
-              server.shutdown(),
-              Future<void>.delayed(
-                Duration(milliseconds: channelDelayMs),
-                () => channel.shutdown(),
-              ),
-            ]).timeout(
-              const Duration(seconds: 10),
-              onTimeout: () =>
-                  fail('Cycle $cycle: shutdown race did not settle'),
-            );
-
-            await Future.wait(doneCompleters.map((c) => c.future)).timeout(
-              const Duration(seconds: 5),
-              onTimeout: () =>
-                  fail('Cycle $cycle: streams still active after shutdown'),
-            );
-
-            expect(
-              unexpectedErrors,
-              isEmpty,
-              reason:
-                  'Cycle $cycle: expected stream termination errors '
-                  'to be GrpcError only',
-            );
-            expect(
-              server.handlers.values.every((list) => list.isEmpty),
-              isTrue,
-              reason: 'Cycle $cycle: handlers leaked after shutdown',
-            );
-          } finally {
-            await channel.shutdown();
-            await server.shutdown();
+        try {
+          for (var i = 0; i < streamCount; i++) {
+            client
+                .serverStream(255)
+                .listen(
+                  (value) {
+                    if (!firstItems[i].isCompleted) firstItems[i].complete();
+                  },
+                  onError: (e) {
+                    if (e is! GrpcError) unexpectedErrors.add(e);
+                    if (!doneCompleters[i].isCompleted) {
+                      doneCompleters[i].complete();
+                    }
+                  },
+                  onDone: () {
+                    if (!doneCompleters[i].isCompleted) {
+                      doneCompleters[i].complete();
+                    }
+                  },
+                );
           }
+
+          await Future.wait(firstItems.map((c) => c.future)).timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => fail('Cycle $cycle: not all streams started before shutdown'),
+          );
+
+          final channelDelayMs = (cycle % 3) * 2;
+          await Future.wait([
+            server.shutdown(),
+            Future<void>.delayed(Duration(milliseconds: channelDelayMs), () => channel.shutdown()),
+          ]).timeout(const Duration(seconds: 10), onTimeout: () => fail('Cycle $cycle: shutdown race did not settle'));
+
+          await Future.wait(doneCompleters.map((c) => c.future)).timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => fail('Cycle $cycle: streams still active after shutdown'),
+          );
+
+          expect(
+            unexpectedErrors,
+            isEmpty,
+            reason:
+                'Cycle $cycle: expected stream termination errors '
+                'to be GrpcError only',
+          );
+          expect(
+            server.handlers.values.every((list) => list.isEmpty),
+            isTrue,
+            reason: 'Cycle $cycle: handlers leaked after shutdown',
+          );
+        } finally {
+          await channel.shutdown();
+          await server.shutdown();
         }
-      },
-    );
+      }
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -745,10 +635,7 @@ void main() {
 
         final result = await client
             .echo(cycle)
-            .timeout(
-              const Duration(seconds: 5),
-              onTimeout: () => fail('echo hung on cycle $cycle'),
-            );
+            .timeout(const Duration(seconds: 5), onTimeout: () => fail('echo hung on cycle $cycle'));
         expect(result, equals(cycle));
 
         await channel.shutdown();
@@ -765,9 +652,7 @@ void main() {
   // Concurrent shutdown safety
   // ---------------------------------------------------------------------------
   group('Concurrent shutdown safety', () {
-    testTcpAndUds('concurrent server.shutdown() calls are safe', (
-      address,
-    ) async {
+    testTcpAndUds('concurrent server.shutdown() calls are safe', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
@@ -778,10 +663,7 @@ void main() {
       final streamFuture = settleRpc(client.serverStream(255).toList());
 
       // Wait for handlers to be registered (deterministic signal).
-      await waitForHandlers(
-        server,
-        reason: 'Handler must be active before concurrent shutdown test',
-      );
+      await waitForHandlers(server, reason: 'Handler must be active before concurrent shutdown test');
 
       // Call shutdown() 5 times concurrently — all must complete.
       await Future.wait([
@@ -790,20 +672,13 @@ void main() {
         server.shutdown(),
         server.shutdown(),
         server.shutdown(),
-      ]).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => fail('concurrent shutdown() calls hung or deadlocked'),
-      );
+      ]).timeout(const Duration(seconds: 10), onTimeout: () => fail('concurrent shutdown() calls hung or deadlocked'));
 
       final settled = await streamFuture.timeout(
         const Duration(seconds: 5),
         onTimeout: () => fail('stream hung after shutdown'),
       );
-      expectExpectedRpcSettlement(
-        settled,
-        reason:
-            'concurrent shutdown stream should settle with known result/error',
-      );
+      expectExpectedRpcSettlement(settled, reason: 'concurrent shutdown stream should settle with known result/error');
       await channel.shutdown();
     });
   });
@@ -812,74 +687,70 @@ void main() {
   // Extreme concurrency
   // -------------------------------------------------------------------
   group('Extreme concurrency', () {
-    testTcpAndUds(
-      '50 concurrent bidi streams with shutdown',
-      (address) async {
-        final server = Server.create(services: [EchoService()]);
-        await server.serve(address: address, port: 0);
-        addTearDown(() => server.shutdown());
+    testTcpAndUds('50 concurrent bidi streams with shutdown', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
 
-        final channel = createTestChannel(address, server.port!);
-        addTearDown(() => channel.shutdown());
-        final client = EchoClient(channel);
+      final channel = createTestChannel(address, server.port!);
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
 
-        // 50 bidi streams, each with its own controller.
-        // Each handler blocks in await-for after the first
-        // item, so all 50 are alive concurrently.
-        const streamCount = 50;
-        final controllers = <StreamController<int>>[];
-        final streamFutures = <Future<Object?>>[];
+      // 50 bidi streams, each with its own controller.
+      // Each handler blocks in await-for after the first
+      // item, so all 50 are alive concurrently.
+      const streamCount = 50;
+      final controllers = <StreamController<int>>[];
+      final streamFutures = <Future<Object?>>[];
 
-        for (var i = 0; i < streamCount; i++) {
-          final ctrl = StreamController<int>();
-          controllers.add(ctrl);
-          streamFutures.add(settleRpc(client.bidiStream(ctrl.stream).toList()));
-          // Send one item so the handler starts processing.
-          ctrl.add(i);
-        }
+      for (var i = 0; i < streamCount; i++) {
+        final ctrl = StreamController<int>();
+        controllers.add(ctrl);
+        streamFutures.add(settleRpc(client.bidiStream(ctrl.stream).toList()));
+        // Send one item so the handler starts processing.
+        ctrl.add(i);
+      }
 
-        // Wait for handlers to be registered.
-        await waitForHandlers(
-          server,
-          minCount: streamCount,
-          timeout: const Duration(seconds: 15),
+      // Wait for handlers to be registered.
+      await waitForHandlers(
+        server,
+        minCount: streamCount,
+        timeout: const Duration(seconds: 15),
+        reason:
+            '50 bidi handlers must be registered '
+            'before shutdown',
+      );
+
+      // Shutdown must cancel all 50 handlers.
+      await server.shutdown().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => fail('server.shutdown() hung with 50 bidi streams'),
+      );
+
+      // Close all client-side controllers.
+      for (final ctrl in controllers) {
+        await ctrl.close();
+      }
+
+      // All 50 must settle without hanging.
+      final settled = await Future.wait(streamFutures).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail(
+          '50 bidi streams did not settle after '
+          'shutdown',
+        ),
+      );
+      for (final result in settled) {
+        expectExpectedRpcSettlement(
+          result,
           reason:
-              '50 bidi handlers must be registered '
-              'before shutdown',
+              '50-bidi shutdown should settle with '
+              'known result/error',
         );
+      }
 
-        // Shutdown must cancel all 50 handlers.
-        await server.shutdown().timeout(
-          const Duration(seconds: 15),
-          onTimeout: () => fail('server.shutdown() hung with 50 bidi streams'),
-        );
-
-        // Close all client-side controllers.
-        for (final ctrl in controllers) {
-          await ctrl.close();
-        }
-
-        // All 50 must settle without hanging.
-        final settled = await Future.wait(streamFutures).timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => fail(
-            '50 bidi streams did not settle after '
-            'shutdown',
-          ),
-        );
-        for (final result in settled) {
-          expectExpectedRpcSettlement(
-            result,
-            reason:
-                '50-bidi shutdown should settle with '
-                'known result/error',
-          );
-        }
-
-        await channel.shutdown();
-      },
-      udsTimeout: const Timeout(Duration(seconds: 90)),
-    );
+      await channel.shutdown();
+    }, udsTimeout: const Timeout(Duration(seconds: 90)));
 
     testTcpAndUds('20 clients x 5 streams = 100 concurrent streams '
         'under shutdown', (address) async {
@@ -924,10 +795,9 @@ void main() {
       );
 
       // All 100 must settle.
-      final settled = await Future.wait(allStreamFutures).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => fail('100 streams did not settle after shutdown'),
-      );
+      final settled = await Future.wait(
+        allStreamFutures,
+      ).timeout(const Duration(seconds: 10), onTimeout: () => fail('100 streams did not settle after shutdown'));
       for (final result in settled) {
         expectExpectedRpcSettlement(
           result,
@@ -938,10 +808,9 @@ void main() {
       }
 
       // All 20 channels must shutdown cleanly.
-      await Future.wait(channels.map((ch) => ch.shutdown())).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => fail('channel shutdown hung after server shutdown'),
-      );
+      await Future.wait(
+        channels.map((ch) => ch.shutdown()),
+      ).timeout(const Duration(seconds: 10), onTimeout: () => fail('channel shutdown hung after server shutdown'));
     }, udsTimeout: const Timeout(Duration(seconds: 90)));
   });
 }

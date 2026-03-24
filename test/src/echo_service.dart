@@ -78,22 +78,11 @@ class EchoClient extends Client {
   }
 
   ResponseStream<int> serverStream(int request, {CallOptions? options}) {
-    return $createStreamingCall(
-      _$serverStream,
-      Stream.value(request),
-      options: options,
-    );
+    return $createStreamingCall(_$serverStream, Stream.value(request), options: options);
   }
 
-  ResponseFuture<int> clientStream(
-    Stream<int> requests, {
-    CallOptions? options,
-  }) {
-    return $createStreamingCall(
-      _$clientStream,
-      requests,
-      options: options,
-    ).single;
+  ResponseFuture<int> clientStream(Stream<int> requests, {CallOptions? options}) {
+    return $createStreamingCall(_$clientStream, requests, options: options).single;
   }
 
   ResponseStream<int> bidiStream(Stream<int> requests, {CallOptions? options}) {
@@ -101,32 +90,19 @@ class EchoClient extends Client {
   }
 
   /// Echoes raw bytes back. Use for large payload testing (>64KB).
-  ResponseFuture<List<int>> echoBytes(
-    List<int> request, {
-    CallOptions? options,
-  }) {
+  ResponseFuture<List<int>> echoBytes(List<int> request, {CallOptions? options}) {
     return $createUnaryCall(_$echoBytes, request, options: options);
   }
 
   /// Server-streams byte chunks. Request: 8 bytes big-endian
   /// [chunkCount(4), chunkSize(4)]. Each response is chunkSize bytes
   /// filled with (chunkIndex & 0xFF).
-  ResponseStream<List<int>> serverStreamBytes(
-    List<int> request, {
-    CallOptions? options,
-  }) {
-    return $createStreamingCall(
-      _$serverStreamBytes,
-      Stream.value(request),
-      options: options,
-    );
+  ResponseStream<List<int>> serverStreamBytes(List<int> request, {CallOptions? options}) {
+    return $createStreamingCall(_$serverStreamBytes, Stream.value(request), options: options);
   }
 
   /// Bidirectional byte echo — each received chunk is echoed back.
-  ResponseStream<List<int>> bidiStreamBytes(
-    Stream<List<int>> requests, {
-    CallOptions? options,
-  }) {
+  ResponseStream<List<int>> bidiStreamBytes(Stream<List<int>> requests, {CallOptions? options}) {
     return $createStreamingCall(_$bidiStreamBytes, requests, options: options);
   }
 }
@@ -141,14 +117,7 @@ class EchoService extends Service {
 
   EchoService() {
     $addMethod(
-      ServiceMethod<int, int>(
-        'Echo',
-        _echo,
-        false,
-        false,
-        (List<int> value) => value[0],
-        (int value) => [value],
-      ),
+      ServiceMethod<int, int>('Echo', _echo, false, false, (List<int> value) => value[0], (int value) => [value]),
     );
     $addMethod(
       ServiceMethod<int, int>(
@@ -241,20 +210,14 @@ class EchoService extends Service {
   }
 
   /// Echoes raw bytes back unchanged.
-  Future<List<int>> _echoBytes(
-    ServiceCall call,
-    Future<List<int>> request,
-  ) async {
+  Future<List<int>> _echoBytes(ServiceCall call, Future<List<int>> request) async {
     return await request;
   }
 
   /// Server-streams byte chunks. Request: 8 bytes big-endian
   /// [chunkCount(4), chunkSize(4)]. Each response chunk is chunkSize bytes
   /// filled with (chunkIndex & 0xFF) for integrity verification.
-  Stream<List<int>> _serverStreamBytes(
-    ServiceCall call,
-    Future<List<int>> request,
-  ) async* {
+  Stream<List<int>> _serverStreamBytes(ServiceCall call, Future<List<int>> request) async* {
     final req = await request;
     final bd = ByteData.sublistView(Uint8List.fromList(req));
     final chunkCount = bd.getUint32(0);
@@ -276,10 +239,7 @@ class EchoService extends Service {
   }
 
   /// Bidirectional byte echo — returns each received chunk unchanged.
-  Stream<List<int>> _bidiStreamBytes(
-    ServiceCall call,
-    Stream<List<int>> requests,
-  ) async* {
+  Stream<List<int>> _bidiStreamBytes(ServiceCall call, Stream<List<int>> requests) async* {
     await for (final chunk in requests) {
       yield chunk;
     }

@@ -53,11 +53,7 @@ void main() {
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -73,11 +69,7 @@ void main() {
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -93,17 +85,11 @@ void main() {
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
-      final result = await client.clientStream(
-        pacedStream([1, 2, 3, 4, 5], yieldEvery: 1),
-      );
+      final result = await client.clientStream(pacedStream([1, 2, 3, 4, 5], yieldEvery: 1));
       expect(result, equals(15)); // Sum of 1+2+3+4+5
 
       await channel.shutdown();
@@ -111,12 +97,9 @@ void main() {
     });
 
     testTcpAndUds('bidirectional streaming RPC', (address) async {
-      final transport = address.type == InternetAddressType.unix
-          ? 'UDS'
-          : 'TCP';
+      final transport = address.type == InternetAddressType.unix ? 'UDS' : 'TCP';
       final sw = Stopwatch()..start();
-      void log(String msg) =>
-          print('[bidi/$transport ${sw.elapsedMilliseconds}ms] $msg');
+      void log(String msg) => print('[bidi/$transport ${sw.elapsedMilliseconds}ms] $msg');
 
       log('starting server...');
       final server = Server.create(services: [EchoService()]);
@@ -124,11 +107,7 @@ void main() {
       log('server listening on port ${server.port}');
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -167,125 +146,97 @@ void main() {
       log('done');
     });
 
-    testTcpAndUds(
-      'flow-control producer comparison (fromIterable vs yielded controller)',
-      (address) async {
-        final transport = address.type == InternetAddressType.unix
-            ? 'UDS'
-            : 'TCP';
-        final server = Server.create(services: [EchoService()]);
-        await server.serve(address: address, port: 0);
+    testTcpAndUds('flow-control producer comparison (fromIterable vs yielded controller)', (address) async {
+      final transport = address.type == InternetAddressType.unix ? 'UDS' : 'TCP';
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
 
-        final channel = TestClientChannel(
-          Http2ClientConnection(
-            address,
-            server.port!,
-            ChannelOptions(credentials: ChannelCredentials.insecure()),
-          ),
-        );
-        final client = EchoClient(channel);
+      final channel = TestClientChannel(
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
+      );
+      final client = EchoClient(channel);
 
-        Future<({bool completed, int count, int elapsedMs})> runCase(
-          String label,
-          Stream<int> requests, {
-          Duration timeout = const Duration(seconds: 5),
-        }) async {
-          final sw = Stopwatch()..start();
-          try {
-            final results = await client
-                .bidiStream(requests)
-                .toList()
-                .timeout(timeout);
-            sw.stop();
-            print(
-              '[flow-control/$transport] $label completed in '
-              '${sw.elapsedMilliseconds}ms (${results.length} items)',
-            );
-            return (
-              completed: true,
-              count: results.length,
-              elapsedMs: sw.elapsedMilliseconds,
-            );
-          } on TimeoutException {
-            sw.stop();
-            print(
-              '[flow-control/$transport] $label timed out after '
-              '${sw.elapsedMilliseconds}ms (informational only)',
-            );
-            return (
-              completed: false,
-              count: 0,
-              elapsedMs: sw.elapsedMilliseconds,
-            );
-          }
-        }
-
-        const itemCount = 200;
-
-        // GUARANTEED: Yielded producer path — must always succeed on all
-        // transports. This is the flow-control-safe baseline we assert.
-        final yieldedController = StreamController<int>();
-        unawaited(() async {
-          for (var i = 1; i <= itemCount; i++) {
-            yieldedController.add(i);
-            if (i % 10 == 0) {
-              await Future.delayed(Duration.zero);
-            }
-          }
-          await yieldedController.close();
-        }());
-        final yieldedResult = await runCase(
-          'yieldedController',
-          yieldedController.stream,
-        );
-
-        // GUARANTEED: Paced/yielded producer must complete with full count.
-        expect(
-          yieldedResult.completed,
-          isTrue,
-          reason:
-              'GUARANTEED: Yielded producer must always complete — '
-              'flow-control-safe baseline for all transports',
-        );
-        expect(
-          yieldedResult.count,
-          equals(itemCount),
-          reason:
-              'GUARANTEED: Yielded producer must deliver all $itemCount items',
-        );
-
-        // INFORMATIONAL: fromIterable can stall on UDS or timeout on slow CI.
-        // We do NOT assert on fromIterable — a timeout is expected behavior,
-        // not a test failure. The test signal is solely that yielded succeeds.
-        final fromIterableResult = await runCase(
-          'fromIterable',
-          Stream<int>.fromIterable(List<int>.generate(itemCount, (i) => i + 1)),
-          timeout: const Duration(seconds: 5),
-        );
-        if (fromIterableResult.completed) {
-          expect(
-            fromIterableResult.count,
-            equals(itemCount),
-            reason: 'INFORMATIONAL: fromIterable completed — verify count',
+      Future<({bool completed, int count, int elapsedMs})> runCase(
+        String label,
+        Stream<int> requests, {
+        Duration timeout = const Duration(seconds: 5),
+      }) async {
+        final sw = Stopwatch()..start();
+        try {
+          final results = await client.bidiStream(requests).toList().timeout(timeout);
+          sw.stop();
+          print(
+            '[flow-control/$transport] $label completed in '
+            '${sw.elapsedMilliseconds}ms (${results.length} items)',
           );
+          return (completed: true, count: results.length, elapsedMs: sw.elapsedMilliseconds);
+        } on TimeoutException {
+          sw.stop();
+          print(
+            '[flow-control/$transport] $label timed out after '
+            '${sw.elapsedMilliseconds}ms (informational only)',
+          );
+          return (completed: false, count: 0, elapsedMs: sw.elapsedMilliseconds);
         }
-        // fromIterable timeout: pass. Informational only; no assertion.
+      }
 
-        await channel.shutdown();
-        await server.shutdown();
-      },
-    );
+      const itemCount = 200;
+
+      // GUARANTEED: Yielded producer path — must always succeed on all
+      // transports. This is the flow-control-safe baseline we assert.
+      final yieldedController = StreamController<int>();
+      unawaited(() async {
+        for (var i = 1; i <= itemCount; i++) {
+          yieldedController.add(i);
+          if (i % 10 == 0) {
+            await Future.delayed(Duration.zero);
+          }
+        }
+        await yieldedController.close();
+      }());
+      final yieldedResult = await runCase('yieldedController', yieldedController.stream);
+
+      // GUARANTEED: Paced/yielded producer must complete with full count.
+      expect(
+        yieldedResult.completed,
+        isTrue,
+        reason:
+            'GUARANTEED: Yielded producer must always complete — '
+            'flow-control-safe baseline for all transports',
+      );
+      expect(
+        yieldedResult.count,
+        equals(itemCount),
+        reason: 'GUARANTEED: Yielded producer must deliver all $itemCount items',
+      );
+
+      // INFORMATIONAL: fromIterable can stall on UDS or timeout on slow CI.
+      // We do NOT assert on fromIterable — a timeout is expected behavior,
+      // not a test failure. The test signal is solely that yielded succeeds.
+      final fromIterableResult = await runCase(
+        'fromIterable',
+        Stream<int>.fromIterable(List<int>.generate(itemCount, (i) => i + 1)),
+        timeout: const Duration(seconds: 5),
+      );
+      if (fromIterableResult.completed) {
+        expect(
+          fromIterableResult.count,
+          equals(itemCount),
+          reason: 'INFORMATIONAL: fromIterable completed — verify count',
+        );
+      }
+      // fromIterable timeout: pass. Informational only; no assertion.
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
 
     testTcpAndUds('multiple concurrent RPCs', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -304,11 +255,7 @@ void main() {
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -323,11 +270,7 @@ void main() {
       // Verify EXACT ordering: connecting must precede ready
       final connectingIdx = channel.states.indexOf(ConnectionState.connecting);
       final readyIdx = channel.states.indexOf(ConnectionState.ready);
-      expect(
-        connectingIdx,
-        lessThan(readyIdx),
-        reason: 'connecting must occur before ready',
-      );
+      expect(connectingIdx, lessThan(readyIdx), reason: 'connecting must occur before ready');
 
       await channel.shutdown();
       await server.shutdown();
@@ -335,11 +278,7 @@ void main() {
       // Verify shutdown state and ordering: ready must precede shutdown
       expect(channel.states, contains(ConnectionState.shutdown));
       final shutdownIdx = channel.states.indexOf(ConnectionState.shutdown);
-      expect(
-        readyIdx,
-        lessThan(shutdownIdx),
-        reason: 'ready must occur before shutdown',
-      );
+      expect(readyIdx, lessThan(shutdownIdx), reason: 'ready must occur before shutdown');
     });
 
     testTcpAndUds('RPC with compression', (address) async {
@@ -361,10 +300,7 @@ void main() {
       );
 
       final client = EchoClient(channel);
-      final result = await client.echo(
-        42,
-        options: CallOptions(compression: const GzipCodec()),
-      );
+      final result = await client.echo(42, options: CallOptions(compression: const GzipCodec()));
       expect(result, equals(42));
 
       await channel.shutdown();
@@ -390,12 +326,7 @@ void main() {
       );
 
       final client = EchoClient(channel);
-      final results = await client
-          .serverStream(
-            100,
-            options: CallOptions(compression: const GzipCodec()),
-          )
-          .toList();
+      final results = await client.serverStream(100, options: CallOptions(compression: const GzipCodec())).toList();
       expect(results.length, equals(100));
       expect(results, equals(List.generate(100, (i) => i + 1)));
 
@@ -499,10 +430,7 @@ void main() {
         payload[i] = i & 0xFF;
       }
 
-      final result = await client.echoBytes(
-        payload,
-        options: CallOptions(compression: const GzipCodec()),
-      );
+      final result = await client.echoBytes(payload, options: CallOptions(compression: const GzipCodec()));
       expect(result.length, equals(payload.length));
       expect(result, equals(payload));
 
@@ -510,9 +438,7 @@ void main() {
       await server.shutdown();
     });
 
-    testTcpAndUds('500 rapid sequential RPCs with compression', (
-      address,
-    ) async {
+    testTcpAndUds('500 rapid sequential RPCs with compression', (address) async {
       final server = Server.create(
         services: [EchoService()],
         codecRegistry: CodecRegistry(codecs: const [GzipCodec()]),
@@ -539,10 +465,7 @@ void main() {
         payload[j] = j & 0xFF;
       }
       for (var i = 0; i < 500; i++) {
-        final result = await client.echoBytes(
-          payload,
-          options: CallOptions(compression: const GzipCodec()),
-        );
+        final result = await client.echoBytes(payload, options: CallOptions(compression: const GzipCodec()));
         expect(result, equals(payload), reason: 'RPC $i');
       }
 
@@ -550,18 +473,12 @@ void main() {
       await server.shutdown();
     });
 
-    testTcpAndUds('large payload exceeding typical buffer sizes', (
-      address,
-    ) async {
+    testTcpAndUds('large payload exceeding typical buffer sizes', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -580,9 +497,7 @@ void main() {
     });
 
     testTcpAndUds('server shutdown during active bidi stream', (address) async {
-      final transport = address.type == InternetAddressType.unix
-          ? 'UDS'
-          : 'TCP';
+      final transport = address.type == InternetAddressType.unix ? 'UDS' : 'TCP';
       final sw = Stopwatch()..start();
       void log(String msg) => print(
         '[bidi-shutdown/$transport '
@@ -594,11 +509,7 @@ void main() {
       log('server listening on port ${server.port}');
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -636,9 +547,7 @@ void main() {
 
       // Stream must terminate (not hang) within 10 seconds
       log('waiting for stream to terminate...');
-      final streamResult = await streamDone.timeout(
-        const Duration(seconds: 10),
-      );
+      final streamResult = await streamDone.timeout(const Duration(seconds: 10));
       expect(
         streamResult,
         anyOf(
@@ -657,16 +566,8 @@ void main() {
       // Soft: shutdown races the bidi stream; the exact count is
       // nondeterministic but at least 1 must arrive, no more
       // than 20 (total sent).
-      expect(
-        results.length,
-        greaterThanOrEqualTo(1),
-        reason: 'Should have received at least 1 echoed item',
-      );
-      expect(
-        results.length,
-        lessThanOrEqualTo(20),
-        reason: 'Should not exceed the 20 items sent',
-      );
+      expect(results.length, greaterThanOrEqualTo(1), reason: 'Should have received at least 1 echoed item');
+      expect(results.length, lessThanOrEqualTo(20), reason: 'Should not exceed the 20 items sent');
 
       await channel.shutdown();
       log('done');
@@ -677,11 +578,7 @@ void main() {
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -701,11 +598,7 @@ void main() {
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -718,10 +611,7 @@ void main() {
           .then<Object?>((results) => results, onError: (Object e) => e);
 
       // Wait for the handler to be registered (deterministic signal).
-      await waitForHandlers(
-        server,
-        reason: 'Handler must be active before graceful shutdown test',
-      );
+      await waitForHandlers(server, reason: 'Handler must be active before graceful shutdown test');
       await server.shutdown();
 
       // Stream should either complete partially or have been caught above
@@ -736,8 +626,7 @@ void main() {
           isA<TimeoutException>(),
           isA<StateError>(),
         ),
-        reason:
-            'graceful shutdown stream must settle to data or explicit error',
+        reason: 'graceful shutdown stream must settle to data or explicit error',
       );
       if (streamResult is List<int>) {
         expect(streamResult.length, lessThanOrEqualTo(100));
@@ -746,18 +635,12 @@ void main() {
       await channel.shutdown();
     });
 
-    testTcpAndUds('server shutdown with multiple active streaming RPCs', (
-      address,
-    ) async {
+    testTcpAndUds('server shutdown with multiple active streaming RPCs', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
@@ -765,17 +648,11 @@ void main() {
       // Start multiple long-running server streams concurrently
       final streams = List.generate(
         5,
-        (_) => client
-            .serverStream(100)
-            .toList()
-            .then<Object?>((r) => r, onError: (Object e) => e),
+        (_) => client.serverStream(100).toList().then<Object?>((r) => r, onError: (Object e) => e),
       );
 
       // Wait for handlers to be registered (deterministic signal).
-      await waitForHandlers(
-        server,
-        reason: 'Handlers must be active before multi-stream shutdown test',
-      );
+      await waitForHandlers(server, reason: 'Handlers must be active before multi-stream shutdown test');
 
       // Shutdown should not hang even with 5 active streams
       await server.shutdown();
@@ -803,27 +680,18 @@ void main() {
       await channel.shutdown();
     });
 
-    testTcpAndUds('client shutdown during active server stream', (
-      address,
-    ) async {
+    testTcpAndUds('client shutdown during active server stream', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
 
       final client = EchoClient(channel);
 
       // Start a long server stream
-      final streamFuture = client
-          .serverStream(100)
-          .toList()
-          .then<Object?>((r) => r, onError: (Object e) => e);
+      final streamFuture = client.serverStream(100).toList().then<Object?>((r) => r, onError: (Object e) => e);
 
       // Client shuts down immediately
       await channel.shutdown();
@@ -855,60 +723,184 @@ void main() {
   // Secure TCP Transport Tests
   // =============================================================================
 
-  group(
-    'Secure TCP Transport',
-    timeout: const Timeout(Duration(seconds: 30)),
-    () {
-      test('TLS connection', () async {
-        final server = Server.create(services: [EchoService()]);
-        await server.serve(
-          address: 'localhost',
-          port: 0,
-          security: ServerTlsCredentials(
-            certificate: File('test/data/localhost.crt').readAsBytesSync(),
-            privateKey: File('test/data/localhost.key').readAsBytesSync(),
-          ),
-        );
+  group('Secure TCP Transport', timeout: const Timeout(Duration(seconds: 30)), () {
+    test('TLS connection', () async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(
+        address: 'localhost',
+        port: 0,
+        security: ServerTlsCredentials(
+          certificate: File('test/data/localhost.crt').readAsBytesSync(),
+          privateKey: File('test/data/localhost.key').readAsBytesSync(),
+        ),
+      );
 
-        final channel = TestClientChannel(
-          Http2ClientConnection(
-            'localhost',
-            server.port!,
-            ChannelOptions(
-              credentials: ChannelCredentials.secure(
-                certificates: File('test/data/localhost.crt').readAsBytesSync(),
-                authority: 'localhost',
-              ),
+      final channel = TestClientChannel(
+        Http2ClientConnection(
+          'localhost',
+          server.port!,
+          ChannelOptions(
+            credentials: ChannelCredentials.secure(
+              certificates: File('test/data/localhost.crt').readAsBytesSync(),
+              authority: 'localhost',
             ),
           ),
-        );
+        ),
+      );
 
-        final client = EchoClient(channel);
-        expect(await client.echo(42), equals(42));
+      final client = EchoClient(channel);
+      expect(await client.echo(42), equals(42));
 
-        await channel.shutdown();
-        await server.shutdown();
-      });
-    },
-  );
+      await channel.shutdown();
+      await server.shutdown();
+    });
+  });
 
   // =============================================================================
   // Named Pipe Transport Tests (Windows only)
   // =============================================================================
 
-  group(
-    'Named Pipe Transport',
-    timeout: const Timeout(Duration(seconds: 30)),
-    () {
-      testNamedPipe('basic unary RPC', (pipeName) async {
+  group('Named Pipe Transport', timeout: const Timeout(Duration(seconds: 30)), () {
+    testNamedPipe('basic unary RPC', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      expect(await client.echo(42), equals(42));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('server streaming RPC', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final results = await client.serverStream(5).toList();
+      expect(results, equals([1, 2, 3, 4, 5]));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('client streaming RPC', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      final result = await client.clientStream(pacedStream([1, 2, 3, 4, 5], yieldEvery: 1));
+      expect(result, equals(15));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('bidirectional streaming RPC', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+      // Use a controller with event-loop yields to prevent flow-control
+      // deadlock (same pattern as TCP/UDS bidi tests).
+      final ctrl = StreamController<int>();
+      unawaited(() async {
+        for (var i = 0; i < 50; i++) {
+          ctrl.add(i + 1);
+          if (i % 10 == 0) await Future.delayed(Duration.zero);
+        }
+        await ctrl.close();
+      }());
+      final results = await client.bidiStream(ctrl.stream).toList();
+      expect(results, equals(List.generate(50, (i) => (i + 1) * 2)));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('flow-control producer comparison (yielded path must succeed)', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      const itemCount = 100;
+      final yieldedController = StreamController<int>();
+      unawaited(() async {
+        for (var i = 1; i <= itemCount; i++) {
+          yieldedController.add(i);
+          if (i % 10 == 0) await Future.delayed(Duration.zero);
+        }
+        await yieldedController.close();
+      }());
+
+      final results = await client.bidiStream(yieldedController.stream).toList().timeout(const Duration(seconds: 15));
+
+      expect(
+        results.length,
+        equals(itemCount),
+        reason:
+            'Paced/yielded producer must complete on named pipes — '
+            'flow-control baseline for Windows transport',
+      );
+      expect(results, equals(List.generate(itemCount, (i) => (i + 1) * 2)));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    testNamedPipe('multiple concurrent RPCs', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+
+      final client = EchoClient(channel);
+
+      final futures = List.generate(100, (i) => client.echo(i));
+      final results = await Future.wait(futures);
+      expect(results, equals(List.generate(100, (i) => i)));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+  });
+
+  // =============================================================================
+  // Cross-Platform Transport Selection Tests
+  // =============================================================================
+
+  group('Transport Selection', timeout: const Timeout(Duration(seconds: 30)), () {
+    test('platform-appropriate transport works', timeout: const Timeout(Duration(seconds: 30)), () async {
+      if (Platform.isWindows) {
+        // On Windows, test named pipe
+        final pipeName = 'grpc-platform-test-${DateTime.now().millisecondsSinceEpoch}';
         final server = NamedPipeServer.create(services: [EchoService()]);
         addTearDown(() => server.shutdown());
         await server.serve(pipeName: pipeName);
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
+        final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
         addTearDown(() => channel.terminate());
 
         final client = EchoClient(channel);
@@ -916,204 +908,27 @@ void main() {
 
         await channel.shutdown();
         await server.shutdown();
-      });
+      } else {
+        // On Unix, test UDS
+        final tempDir = await Directory.systemTemp.createTemp();
+        final address = InternetAddress('${tempDir.path}/socket', type: InternetAddressType.unix);
 
-      testNamedPipe('server streaming RPC', (pipeName) async {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        addTearDown(() => server.shutdown());
-        await server.serve(pipeName: pipeName);
+        final server = Server.create(services: [EchoService()]);
+        await server.serve(address: address, port: 0);
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
+        final channel = TestClientChannel(
+          Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
         );
-        addTearDown(() => channel.terminate());
 
         final client = EchoClient(channel);
-        final results = await client.serverStream(5).toList();
-        expect(results, equals([1, 2, 3, 4, 5]));
+        expect(await client.echo(42), equals(42));
 
         await channel.shutdown();
         await server.shutdown();
-      });
-
-      testNamedPipe('client streaming RPC', (pipeName) async {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        addTearDown(() => server.shutdown());
-        await server.serve(pipeName: pipeName);
-
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        addTearDown(() => channel.terminate());
-
-        final client = EchoClient(channel);
-        final result = await client.clientStream(
-          pacedStream([1, 2, 3, 4, 5], yieldEvery: 1),
-        );
-        expect(result, equals(15));
-
-        await channel.shutdown();
-        await server.shutdown();
-      });
-
-      testNamedPipe('bidirectional streaming RPC', (pipeName) async {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        addTearDown(() => server.shutdown());
-        await server.serve(pipeName: pipeName);
-
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        addTearDown(() => channel.terminate());
-
-        final client = EchoClient(channel);
-        // Use a controller with event-loop yields to prevent flow-control
-        // deadlock (same pattern as TCP/UDS bidi tests).
-        final ctrl = StreamController<int>();
-        unawaited(() async {
-          for (var i = 0; i < 50; i++) {
-            ctrl.add(i + 1);
-            if (i % 10 == 0) await Future.delayed(Duration.zero);
-          }
-          await ctrl.close();
-        }());
-        final results = await client.bidiStream(ctrl.stream).toList();
-        expect(results, equals(List.generate(50, (i) => (i + 1) * 2)));
-
-        await channel.shutdown();
-        await server.shutdown();
-      });
-
-      testNamedPipe(
-        'flow-control producer comparison (yielded path must succeed)',
-        (pipeName) async {
-          final server = NamedPipeServer.create(services: [EchoService()]);
-          addTearDown(() => server.shutdown());
-          await server.serve(pipeName: pipeName);
-
-          final channel = NamedPipeClientChannel(
-            pipeName,
-            options: const NamedPipeChannelOptions(),
-          );
-          addTearDown(() => channel.terminate());
-          final client = EchoClient(channel);
-
-          const itemCount = 100;
-          final yieldedController = StreamController<int>();
-          unawaited(() async {
-            for (var i = 1; i <= itemCount; i++) {
-              yieldedController.add(i);
-              if (i % 10 == 0) await Future.delayed(Duration.zero);
-            }
-            await yieldedController.close();
-          }());
-
-          final results = await client
-              .bidiStream(yieldedController.stream)
-              .toList()
-              .timeout(const Duration(seconds: 15));
-
-          expect(
-            results.length,
-            equals(itemCount),
-            reason:
-                'Paced/yielded producer must complete on named pipes — '
-                'flow-control baseline for Windows transport',
-          );
-          expect(results, equals(List.generate(itemCount, (i) => (i + 1) * 2)));
-
-          await channel.shutdown();
-          await server.shutdown();
-        },
-      );
-
-      testNamedPipe('multiple concurrent RPCs', (pipeName) async {
-        final server = NamedPipeServer.create(services: [EchoService()]);
-        addTearDown(() => server.shutdown());
-        await server.serve(pipeName: pipeName);
-
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        addTearDown(() => channel.terminate());
-
-        final client = EchoClient(channel);
-
-        final futures = List.generate(100, (i) => client.echo(i));
-        final results = await Future.wait(futures);
-        expect(results, equals(List.generate(100, (i) => i)));
-
-        await channel.shutdown();
-        await server.shutdown();
-      });
-    },
-  );
-
-  // =============================================================================
-  // Cross-Platform Transport Selection Tests
-  // =============================================================================
-
-  group(
-    'Transport Selection',
-    timeout: const Timeout(Duration(seconds: 30)),
-    () {
-      test(
-        'platform-appropriate transport works',
-        timeout: const Timeout(Duration(seconds: 30)),
-        () async {
-          if (Platform.isWindows) {
-            // On Windows, test named pipe
-            final pipeName =
-                'grpc-platform-test-${DateTime.now().millisecondsSinceEpoch}';
-            final server = NamedPipeServer.create(services: [EchoService()]);
-            addTearDown(() => server.shutdown());
-            await server.serve(pipeName: pipeName);
-
-            final channel = NamedPipeClientChannel(
-              pipeName,
-              options: const NamedPipeChannelOptions(),
-            );
-            addTearDown(() => channel.terminate());
-
-            final client = EchoClient(channel);
-            expect(await client.echo(42), equals(42));
-
-            await channel.shutdown();
-            await server.shutdown();
-          } else {
-            // On Unix, test UDS
-            final tempDir = await Directory.systemTemp.createTemp();
-            final address = InternetAddress(
-              '${tempDir.path}/socket',
-              type: InternetAddressType.unix,
-            );
-
-            final server = Server.create(services: [EchoService()]);
-            await server.serve(address: address, port: 0);
-
-            final channel = TestClientChannel(
-              Http2ClientConnection(
-                address,
-                server.port!,
-                ChannelOptions(credentials: ChannelCredentials.insecure()),
-              ),
-            );
-
-            final client = EchoClient(channel);
-            expect(await client.echo(42), equals(42));
-
-            await channel.shutdown();
-            await server.shutdown();
-            await tempDir.delete(recursive: true);
-          }
-        },
-      );
-    },
-  );
+        await tempDir.delete(recursive: true);
+      }
+    });
+  });
 
   // ===========================================================================
   // sendTrailers idempotency — cross-transport verification
@@ -1127,110 +942,80 @@ void main() {
   // attempt to write to an already-closed HTTP/2 stream, corrupting the
   // connection or crashing the server.
 
-  group(
-    'sendTrailers idempotency — cross-transport',
-    timeout: const Timeout(Duration(seconds: 30)),
-    () {
-      testTcpAndUds('streaming handler error delivers exactly one trailer', (
-        address,
-      ) async {
-        final server = Server.create(services: [_ThrowingStreamService()]);
-        await server.serve(address: address, port: 0);
+  group('sendTrailers idempotency — cross-transport', timeout: const Timeout(Duration(seconds: 30)), () {
+    testTcpAndUds('streaming handler error delivers exactly one trailer', (address) async {
+      final server = Server.create(services: [_ThrowingStreamService()]);
+      await server.serve(address: address, port: 0);
 
-        final channel = TestClientChannel(
-          Http2ClientConnection(
-            address,
-            server.port!,
-            ChannelOptions(credentials: ChannelCredentials.insecure()),
-          ),
-        );
+      final channel = TestClientChannel(
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
+      );
 
-        final client = _ThrowingStreamClient(channel);
+      final client = _ThrowingStreamClient(channel);
 
-        // Call the streaming method that yields values then throws.
-        // The client should receive some values and then a GrpcError.
-        final received = <int>[];
-        GrpcError? caughtError;
-        try {
-          await for (final value in client.throwAfterYields(1)) {
-            received.add(value);
-          }
-        } on GrpcError catch (e) {
-          caughtError = e;
+      // Call the streaming method that yields values then throws.
+      // The client should receive some values and then a GrpcError.
+      final received = <int>[];
+      GrpcError? caughtError;
+      try {
+        await for (final value in client.throwAfterYields(1)) {
+          received.add(value);
         }
+      } on GrpcError catch (e) {
+        caughtError = e;
+      }
 
-        // The server yielded values before throwing — we may have received some.
-        // The critical assertion: the client got a proper GrpcError (not a
-        // crash, hang, or protocol error from duplicate trailers).
-        expect(
-          caughtError,
-          isNotNull,
-          reason:
-              'Client should have received a GrpcError from the handler throw',
-        );
+      // The server yielded values before throwing — we may have received some.
+      // The critical assertion: the client got a proper GrpcError (not a
+      // crash, hang, or protocol error from duplicate trailers).
+      expect(caughtError, isNotNull, reason: 'Client should have received a GrpcError from the handler throw');
 
-        // Shut down the throwing service, then verify a fresh server on the
-        // same address works. This proves the error didn't corrupt anything
-        // at the OS transport level. (We must shut down first because UDS
-        // doesn't allow two servers on the same path.)
-        await channel.shutdown();
-        await server.shutdown();
+      // Shut down the throwing service, then verify a fresh server on the
+      // same address works. This proves the error didn't corrupt anything
+      // at the OS transport level. (We must shut down first because UDS
+      // doesn't allow two servers on the same path.)
+      await channel.shutdown();
+      await server.shutdown();
 
-        final echoServer = Server.create(services: [EchoService()]);
-        await echoServer.serve(address: address, port: 0);
-        final echoChannel = TestClientChannel(
-          Http2ClientConnection(
-            address,
-            echoServer.port!,
-            ChannelOptions(credentials: ChannelCredentials.insecure()),
-          ),
-        );
-        final echoClient = EchoClient(echoChannel);
-        expect(await echoClient.echo(99), equals(99));
+      final echoServer = Server.create(services: [EchoService()]);
+      await echoServer.serve(address: address, port: 0);
+      final echoChannel = TestClientChannel(
+        Http2ClientConnection(address, echoServer.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
+      );
+      final echoClient = EchoClient(echoChannel);
+      expect(await echoClient.echo(99), equals(99));
 
-        await echoChannel.shutdown();
-        await echoServer.shutdown();
-      });
+      await echoChannel.shutdown();
+      await echoServer.shutdown();
+    });
 
-      testNamedPipe('streaming handler error delivers exactly one trailer', (
-        pipeName,
-      ) async {
-        final server = NamedPipeServer.create(
-          services: [_ThrowingStreamService()],
-        );
-        addTearDown(() => server.shutdown());
-        await server.serve(pipeName: pipeName);
+    testNamedPipe('streaming handler error delivers exactly one trailer', (pipeName) async {
+      final server = NamedPipeServer.create(services: [_ThrowingStreamService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(pipeName: pipeName);
 
-        final channel = NamedPipeClientChannel(
-          pipeName,
-          options: const NamedPipeChannelOptions(),
-        );
-        addTearDown(() => channel.terminate());
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
 
-        final client = _ThrowingStreamClient(channel);
+      final client = _ThrowingStreamClient(channel);
 
-        // Call the streaming method that yields values then throws.
-        final received = <int>[];
-        GrpcError? caughtError;
-        try {
-          await for (final value in client.throwAfterYields(1)) {
-            received.add(value);
-          }
-        } on GrpcError catch (e) {
-          caughtError = e;
+      // Call the streaming method that yields values then throws.
+      final received = <int>[];
+      GrpcError? caughtError;
+      try {
+        await for (final value in client.throwAfterYields(1)) {
+          received.add(value);
         }
+      } on GrpcError catch (e) {
+        caughtError = e;
+      }
 
-        expect(
-          caughtError,
-          isNotNull,
-          reason: 'Client should have received a GrpcError',
-        );
+      expect(caughtError, isNotNull, reason: 'Client should have received a GrpcError');
 
-        await channel.shutdown();
-        await server.shutdown();
-      });
-    },
-  );
+      await channel.shutdown();
+      await server.shutdown();
+    });
+  });
 }
 
 // =============================================================================
@@ -1277,10 +1062,6 @@ class _ThrowingStreamClient extends Client {
   _ThrowingStreamClient(super.channel);
 
   ResponseStream<int> throwAfterYields(int request, {CallOptions? options}) {
-    return $createStreamingCall(
-      _$throwAfterYields,
-      Stream.value(request),
-      options: options,
-    );
+    return $createStreamingCall(_$throwAfterYields, Stream.value(request), options: options);
   }
 }

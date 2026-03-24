@@ -17,31 +17,25 @@ import 'package:protobuf/protobuf.dart' as $pb;
 /// Value types that can be used as label values.
 class LabelDescriptor_ValueType extends $pb.ProtobufEnum {
   /// A variable-length string. This is the default.
-  static const LabelDescriptor_ValueType STRING =
-      LabelDescriptor_ValueType._(0, _omitEnumNames ? '' : 'STRING');
+  static const LabelDescriptor_ValueType STRING = LabelDescriptor_ValueType._(0, _omitEnumNames ? '' : 'STRING');
 
   /// Boolean; true or false.
-  static const LabelDescriptor_ValueType BOOL =
-      LabelDescriptor_ValueType._(1, _omitEnumNames ? '' : 'BOOL');
+  static const LabelDescriptor_ValueType BOOL = LabelDescriptor_ValueType._(1, _omitEnumNames ? '' : 'BOOL');
 
   /// A 64-bit signed integer.
-  static const LabelDescriptor_ValueType INT64 =
-      LabelDescriptor_ValueType._(2, _omitEnumNames ? '' : 'INT64');
+  static const LabelDescriptor_ValueType INT64 = LabelDescriptor_ValueType._(2, _omitEnumNames ? '' : 'INT64');
 
-  static const $core.List<LabelDescriptor_ValueType> values =
-      <LabelDescriptor_ValueType>[
+  static const $core.List<LabelDescriptor_ValueType> values = <LabelDescriptor_ValueType>[
     STRING,
     BOOL,
     INT64,
   ];
 
-  static final $core.List<LabelDescriptor_ValueType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 2);
+  static final $core.List<LabelDescriptor_ValueType?> _byValue = $pb.ProtobufEnum.$_initByValueList(values, 2);
   static LabelDescriptor_ValueType? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
   const LabelDescriptor_ValueType._(super.value, super.name);
 }
 
-const $core.bool _omitEnumNames =
-    $core.bool.fromEnvironment('protobuf.omit_enum_names');
+const $core.bool _omitEnumNames = $core.bool.fromEnvironment('protobuf.omit_enum_names');

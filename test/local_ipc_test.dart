@@ -316,9 +316,7 @@ void main() {
 
       final channel = LocalGrpcChannel(
         'local-ipc-test-reconnect',
-        options: LocalChannelOptions(
-          backoffStrategy: (_) => Duration(milliseconds: 100),
-        ),
+        options: LocalChannelOptions(backoffStrategy: (_) => Duration(milliseconds: 100)),
       );
       addTearDown(() => channel.terminate());
 

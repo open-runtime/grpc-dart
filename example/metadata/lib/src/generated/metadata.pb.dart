@@ -31,22 +31,18 @@ class Record extends $pb.GeneratedMessage {
   factory Record.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Record.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Record.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Record',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Record',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'value')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   Record clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Record copyWith(void Function(Record) updates) =>
-      super.copyWith((message) => updates(message as Record)) as Record;
+  Record copyWith(void Function(Record) updates) => super.copyWith((message) => updates(message as Record)) as Record;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -56,8 +52,7 @@ class Record extends $pb.GeneratedMessage {
   @$core.override
   Record createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Record getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Record>(create);
+  static Record getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Record>(create);
   static Record? _defaultInstance;
 
   @$pb.TagNumber(1)
@@ -85,22 +80,18 @@ class Number extends $pb.GeneratedMessage {
   factory Number.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Number.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Number.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Number',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Number',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'), createEmptyInstance: create)
     ..aI(1, _omitFieldNames ? '' : 'value')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   Number clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Number copyWith(void Function(Number) updates) =>
-      super.copyWith((message) => updates(message as Number)) as Number;
+  Number copyWith(void Function(Number) updates) => super.copyWith((message) => updates(message as Number)) as Number;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -110,8 +101,7 @@ class Number extends $pb.GeneratedMessage {
   @$core.override
   Number createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Number getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Number>(create);
+  static Number getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Number>(create);
   static Number? _defaultInstance;
 
   @$pb.TagNumber(1)
@@ -133,21 +123,17 @@ class Empty extends $pb.GeneratedMessage {
   factory Empty.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Empty.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Empty.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Empty',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Empty',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'grpc'), createEmptyInstance: create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   Empty clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Empty copyWith(void Function(Empty) updates) =>
-      super.copyWith((message) => updates(message as Empty)) as Empty;
+  Empty copyWith(void Function(Empty) updates) => super.copyWith((message) => updates(message as Empty)) as Empty;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -157,12 +143,9 @@ class Empty extends $pb.GeneratedMessage {
   @$core.override
   Empty createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Empty getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Empty>(create);
+  static Empty getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Empty>(create);
   static Empty? _defaultInstance;
 }
 
-const $core.bool _omitFieldNames =
-    $core.bool.fromEnvironment('protobuf.omit_field_names');
-const $core.bool _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const $core.bool _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
+const $core.bool _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

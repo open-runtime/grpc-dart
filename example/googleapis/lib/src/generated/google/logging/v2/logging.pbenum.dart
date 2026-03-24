@@ -17,40 +17,34 @@ import 'package:protobuf/protobuf.dart' as $pb;
 /// An indicator of why entries were omitted.
 class TailLogEntriesResponse_SuppressionInfo_Reason extends $pb.ProtobufEnum {
   /// Unexpected default.
-  static const TailLogEntriesResponse_SuppressionInfo_Reason
-      REASON_UNSPECIFIED = TailLogEntriesResponse_SuppressionInfo_Reason._(
-          0, _omitEnumNames ? '' : 'REASON_UNSPECIFIED');
+  static const TailLogEntriesResponse_SuppressionInfo_Reason REASON_UNSPECIFIED =
+      TailLogEntriesResponse_SuppressionInfo_Reason._(0, _omitEnumNames ? '' : 'REASON_UNSPECIFIED');
 
   /// Indicates suppression occurred due to relevant entries being
   /// received in excess of rate limits. For quotas and limits, see
   /// [Logging API quotas and
   /// limits](https://cloud.google.com/logging/quotas#api-limits).
   static const TailLogEntriesResponse_SuppressionInfo_Reason RATE_LIMIT =
-      TailLogEntriesResponse_SuppressionInfo_Reason._(
-          1, _omitEnumNames ? '' : 'RATE_LIMIT');
+      TailLogEntriesResponse_SuppressionInfo_Reason._(1, _omitEnumNames ? '' : 'RATE_LIMIT');
 
   /// Indicates suppression occurred due to the client not consuming
   /// responses quickly enough.
   static const TailLogEntriesResponse_SuppressionInfo_Reason NOT_CONSUMED =
-      TailLogEntriesResponse_SuppressionInfo_Reason._(
-          2, _omitEnumNames ? '' : 'NOT_CONSUMED');
+      TailLogEntriesResponse_SuppressionInfo_Reason._(2, _omitEnumNames ? '' : 'NOT_CONSUMED');
 
-  static const $core.List<TailLogEntriesResponse_SuppressionInfo_Reason>
-      values = <TailLogEntriesResponse_SuppressionInfo_Reason>[
+  static const $core.List<TailLogEntriesResponse_SuppressionInfo_Reason> values =
+      <TailLogEntriesResponse_SuppressionInfo_Reason>[
     REASON_UNSPECIFIED,
     RATE_LIMIT,
     NOT_CONSUMED,
   ];
 
-  static final $core.List<TailLogEntriesResponse_SuppressionInfo_Reason?>
-      _byValue = $pb.ProtobufEnum.$_initByValueList(values, 2);
-  static TailLogEntriesResponse_SuppressionInfo_Reason? valueOf(
-          $core.int value) =>
+  static final $core.List<TailLogEntriesResponse_SuppressionInfo_Reason?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 2);
+  static TailLogEntriesResponse_SuppressionInfo_Reason? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
-  const TailLogEntriesResponse_SuppressionInfo_Reason._(
-      super.value, super.name);
+  const TailLogEntriesResponse_SuppressionInfo_Reason._(super.value, super.name);
 }
 
-const $core.bool _omitEnumNames =
-    $core.bool.fromEnvironment('protobuf.omit_enum_names');
+const $core.bool _omitEnumNames = $core.bool.fromEnvironment('protobuf.omit_enum_names');

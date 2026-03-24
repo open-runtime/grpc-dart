@@ -43,25 +43,20 @@ class Status extends $pb.GeneratedMessage {
   factory Status.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Status.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Status.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Status',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Status',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.rpc'), createEmptyInstance: create)
     ..aI(1, _omitFieldNames ? '' : 'code')
     ..aOS(2, _omitFieldNames ? '' : 'message')
-    ..pPM<$0.Any>(3, _omitFieldNames ? '' : 'details',
-        subBuilder: $0.Any.create)
+    ..pPM<$0.Any>(3, _omitFieldNames ? '' : 'details', subBuilder: $0.Any.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   Status clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Status copyWith(void Function(Status) updates) =>
-      super.copyWith((message) => updates(message as Status)) as Status;
+  Status copyWith(void Function(Status) updates) => super.copyWith((message) => updates(message as Status)) as Status;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -71,8 +66,7 @@ class Status extends $pb.GeneratedMessage {
   @$core.override
   Status createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Status getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Status>(create);
+  static Status getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Status>(create);
   static Status? _defaultInstance;
 
   /// The status code, which should be an enum value of
@@ -105,7 +99,5 @@ class Status extends $pb.GeneratedMessage {
   $pb.PbList<$0.Any> get details => $_getList(2);
 }
 
-const $core.bool _omitFieldNames =
-    $core.bool.fromEnvironment('protobuf.omit_field_names');
-const $core.bool _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const $core.bool _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
+const $core.bool _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

@@ -22,8 +22,7 @@ import 'package:mockito/mockito.dart' as _i1;
 // ignore_for_file: camel_case_types
 // ignore_for_file: subtype_of_sealed_class
 
-class _FakeClientTransportStream_0 extends _i1.SmartFake
-    implements _i2.ClientTransportStream {
+class _FakeClientTransportStream_0 extends _i1.SmartFake implements _i2.ClientTransportStream {
   _FakeClientTransportStream_0(
     Object parent,
     Invocation parentInvocation,
@@ -46,8 +45,7 @@ class _FakeStreamSink_1<S> extends _i1.SmartFake implements _i3.StreamSink<S> {
 /// A class which mocks [ClientTransportConnection].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockClientTransportConnection extends _i1.Mock
-    implements _i2.ClientTransportConnection {
+class MockClientTransportConnection extends _i1.Mock implements _i2.ClientTransportConnection {
   MockClientTransportConnection() {
     _i1.throwOnMissingStub(this);
   }
@@ -58,8 +56,7 @@ class MockClientTransportConnection extends _i1.Mock
         returnValue: false,
       ) as bool);
   @override
-  set onActiveStateChanged(_i2.ActiveStateHandler? callback) =>
-      super.noSuchMethod(
+  set onActiveStateChanged(_i2.ActiveStateHandler? callback) => super.noSuchMethod(
         Invocation.setter(
           #onActiveStateChanged,
           callback,
@@ -130,8 +127,7 @@ class MockClientTransportConnection extends _i1.Mock
 /// A class which mocks [ClientTransportStream].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockClientTransportStream extends _i1.Mock
-    implements _i2.ClientTransportStream {
+class MockClientTransportStream extends _i1.Mock implements _i2.ClientTransportStream {
   MockClientTransportStream() {
     _i1.throwOnMissingStub(this);
   }

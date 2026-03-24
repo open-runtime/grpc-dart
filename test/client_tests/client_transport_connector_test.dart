@@ -129,9 +129,7 @@ void main() {
     }
 
     await harness.runTest(
-      clientCall: harness.client
-          .bidirectional(Stream.fromIterable(requests))
-          .toList(),
+      clientCall: harness.client.bidirectional(Stream.fromIterable(requests)).toList(),
       expectedResult: responses,
       expectedPath: '/Test/Bidirectional',
       serverHandlers: [handleRequest, handleRequest, handleRequest],
@@ -162,9 +160,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.unimplemented(
-        'More than one response received',
-      ),
+      expectedException: GrpcError.unimplemented('More than one response received'),
       serverHandlers: [handleRequest],
     );
   });
@@ -203,9 +199,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.unimplemented(
-        'Received data before headers',
-      ),
+      expectedException: GrpcError.unimplemented('Received data before headers'),
       serverHandlers: [handleRequest],
     );
   });
@@ -220,9 +214,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.unimplemented(
-        'Received data after trailers',
-      ),
+      expectedException: GrpcError.unimplemented('Received data after trailers'),
       serverHandlers: [handleRequest],
     );
   });
@@ -260,10 +252,7 @@ void main() {
 
     await harness.runFailureTest(
       clientCall: harness.client.unary(dummyValue),
-      expectedException: GrpcError.custom(
-        customStatusCode,
-        customStatusMessage,
-      ),
+      expectedException: GrpcError.custom(customStatusCode, customStatusMessage),
       serverHandlers: [handleRequest],
     );
   });
@@ -363,24 +352,16 @@ void main() {
 
   test('Connection errors are reported', () async {
     final connectionStates = <ConnectionState>[];
-    final expectedException = GrpcError.unavailable(
-      'Error connecting: Connection error',
-    );
+    final expectedException = GrpcError.unavailable('Error connecting: Connection error');
     harness.connection!.connectionError = 'Connection error';
     harness.channel.onConnectionStateChanged.listen(
       (state) {
         connectionStates.add(state);
       },
       onDone: () async {
-        await harness.expectThrows(
-          harness.client.unary(dummyValue),
-          expectedException,
-        );
+        await harness.expectThrows(harness.client.unary(dummyValue), expectedException);
 
-        expect(connectionStates, [
-          ConnectionState.connecting,
-          ConnectionState.idle,
-        ]);
+        expect(connectionStates, [ConnectionState.connecting, ConnectionState.idle]);
       },
     );
   });
@@ -394,16 +375,9 @@ void main() {
         if (state == ConnectionState.idle) done.complete();
       },
       onDone: () async {
-        expect(connectionStates, [
-          ConnectionState.connecting,
-          ConnectionState.ready,
-        ]);
+        expect(connectionStates, [ConnectionState.connecting, ConnectionState.ready]);
         await done.future;
-        expect(connectionStates, [
-          ConnectionState.connecting,
-          ConnectionState.ready,
-          ConnectionState.idle,
-        ]);
+        expect(connectionStates, [ConnectionState.connecting, ConnectionState.ready, ConnectionState.idle]);
       },
     );
 
@@ -432,81 +406,59 @@ void main() {
   // M4: Exercises _abandonConnection during pending-dispatch yield window.
   // Fires one RPC so it queues as pending; on first dispatch, schedules
   // connector.done to complete during the yield, triggering _abandonConnection.
-  test(
-    '_abandonConnection during pending-dispatch yield (connector.done)',
-    () async {
-      final connector = harness.connector as FakeClientTransportConnector;
-      when(
-        harness.transport.makeRequest(any, endStream: anyNamed('endStream')),
-      ).thenAnswer((_) {
-        Timer(Duration.zero, () => connector.completer.complete());
-        return harness.stream;
-      });
+  test('_abandonConnection during pending-dispatch yield (connector.done)', () async {
+    final connector = harness.connector as FakeClientTransportConnector;
+    when(harness.transport.makeRequest(any, endStream: anyNamed('endStream'))).thenAnswer((_) {
+      Timer(Duration.zero, () => connector.completer.complete());
+      return harness.stream;
+    });
 
-      void handleRequest(StreamMessage message) {
-        validateDataMessage(message);
-        harness
-          ..sendResponseHeader()
-          ..sendResponseValue(19)
-          ..sendResponseTrailer();
-      }
+    void handleRequest(StreamMessage message) {
+      validateDataMessage(message);
+      harness
+        ..sendResponseHeader()
+        ..sendResponseValue(19)
+        ..sendResponseTrailer();
+    }
 
-      await harness.runTest(
-        clientCall: harness.client.unary(dummyValue),
-        expectedResult: 19,
-        expectedPath: '/Test/Unary',
-        serverHandlers: [handleRequest],
-      );
-    },
-  );
+    await harness.runTest(
+      clientCall: harness.client.unary(dummyValue),
+      expectedResult: 19,
+      expectedPath: '/Test/Unary',
+      serverHandlers: [handleRequest],
+    );
+  });
 
   // M5: Exercises !isOpen path in _refreshConnectionIfUnhealthy.
-  test(
-    '_refreshConnectionIfUnhealthy abandons when transport !isOpen',
-    () async {
-      var isOpenCallCount = 0;
-      when(harness.transport.isOpen).thenAnswer((_) {
-        isOpenCallCount++;
-        return isOpenCallCount == 1 ? false : true;
-      });
+  test('_refreshConnectionIfUnhealthy abandons when transport !isOpen', () async {
+    var isOpenCallCount = 0;
+    when(harness.transport.isOpen).thenAnswer((_) {
+      isOpenCallCount++;
+      return isOpenCallCount == 1 ? false : true;
+    });
 
-      void handleRequest(StreamMessage message) {
-        validateDataMessage(message);
-        harness
-          ..sendResponseHeader()
-          ..sendResponseValue(19)
-          ..sendResponseTrailer();
-      }
+    void handleRequest(StreamMessage message) {
+      validateDataMessage(message);
+      harness
+        ..sendResponseHeader()
+        ..sendResponseValue(19)
+        ..sendResponseTrailer();
+    }
 
-      await harness.runTest(
-        clientCall: harness.client.unary(dummyValue),
-        expectedResult: 19,
-        expectedPath: '/Test/Unary',
-        serverHandlers: [handleRequest],
-      );
-    },
-  );
+    await harness.runTest(
+      clientCall: harness.client.unary(dummyValue),
+      expectedResult: 19,
+      expectedPath: '/Test/Unary',
+      serverHandlers: [handleRequest],
+    );
+  });
 
   test('authority is computed correctly', () {
     final emptyOptions = ChannelOptions();
-    expect(
-      Http2ClientConnection('localhost', 8080, emptyOptions).authority,
-      'localhost:8080',
-    );
-    expect(
-      Http2ClientConnection('localhost', 443, emptyOptions).authority,
-      'localhost',
-    );
-    final channelOptions = ChannelOptions(
-      credentials: ChannelCredentials.insecure(authority: 'myauthority.com'),
-    );
-    expect(
-      Http2ClientConnection('localhost', 8080, channelOptions).authority,
-      'myauthority.com',
-    );
-    expect(
-      Http2ClientConnection('localhost', 443, channelOptions).authority,
-      'myauthority.com',
-    );
+    expect(Http2ClientConnection('localhost', 8080, emptyOptions).authority, 'localhost:8080');
+    expect(Http2ClientConnection('localhost', 443, emptyOptions).authority, 'localhost');
+    final channelOptions = ChannelOptions(credentials: ChannelCredentials.insecure(authority: 'myauthority.com'));
+    expect(Http2ClientConnection('localhost', 8080, channelOptions).authority, 'myauthority.com');
+    expect(Http2ClientConnection('localhost', 443, channelOptions).authority, 'myauthority.com');
   });
 }
