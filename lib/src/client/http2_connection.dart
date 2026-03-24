@@ -495,7 +495,12 @@ class Http2ClientConnection implements connection.ClientConnection {
     }
     _pendingCalls.clear();
     _setState(ConnectionState.idle);
-    _releaseTransportConnectorOsResources();
+    // Do NOT call _releaseTransportConnectorOsResources() here. The failed
+    // calls may still be reading error responses from in-flight HTTP/2 streams
+    // that flow through the connector's byte stream. The next connect() call
+    // will dispose old resources via _disposeCurrentPipeResources() (named
+    // pipe) or overwrite the socket (TCP). If no reconnect ever happens,
+    // channel.shutdown()/terminate() handles final cleanup.
   }
 
   void _handleReconnect() {
