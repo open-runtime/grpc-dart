@@ -222,22 +222,22 @@ class EchoService extends Service {
     final bd = ByteData.sublistView(Uint8List.fromList(req));
     final chunkCount = bd.getUint32(0);
     final chunkSize = bd.getUint32(4);
-    // Yield every 10 chunks to prevent microtask starvation. With N
-    // concurrent async* generators, each round of yields creates 3N
-    // microtasks. At yieldEvery=200, 25 generators produce 15,000
-    // microtasks before any event-queue work (pipe I/O, WINDOW_UPDATE
-    // processing) can run. yieldEvery=10 keeps bursts to ~750
-    // microtasks, giving the event loop regular I/O opportunities.
-    const yieldEvery = 10;
     for (var i = 0; i < chunkCount; i++) {
       final chunk = Uint8List(chunkSize);
       for (var j = 0; j < chunkSize; j++) {
         chunk[j] = (i + j) & 0xFF;
       }
       yield chunk;
-      if ((i + 1) % yieldEvery == 0) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      // Yield to the EVENT QUEUE (not just the microtask queue) after
+      // every chunk. Dart async* generators schedule continuations as
+      // microtasks, and the microtask queue drains completely before any
+      // event-queue item runs. With N concurrent generators, each yield
+      // adds a microtask continuation that triggers the next yield — the
+      // queue never empties, starving pipe I/O and WINDOW_UPDATE
+      // processing indefinitely. Future.delayed(Duration.zero) schedules
+      // on the event queue via Timer.run, guaranteeing that pipe reads/
+      // writes get event-loop time between chunks.
+      await Future<void>.delayed(Duration.zero);
     }
   }
 

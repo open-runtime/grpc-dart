@@ -31,7 +31,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc/src/http2/transport.dart';
 import 'package:test/test.dart';
 
 import 'common.dart';
@@ -356,10 +355,7 @@ void main() {
 
     testNamedPipe('shutdown cancels 25 concurrent server-streaming handlers', (pipeName) async {
       final server = NamedPipeServer.create(services: [EchoService()]);
-      await server.serve(
-        pipeName: pipeName,
-        http2ServerSettings: const ServerSettings(connectionWindowSize: 1024 * 1024),
-      );
+      await server.serve(pipeName: pipeName);
       addTearDown(() => server.shutdown());
 
       final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());

@@ -23,27 +23,12 @@ abstract class Settings {
   /// streams (defaults to 65535 bytes).
   final int? streamWindowSize;
 
-  /// The connection-level flow control window size in bytes.
-  ///
-  /// HTTP/2 defines two independent windows: per-stream (controlled by
-  /// [streamWindowSize] / SETTINGS_INITIAL_WINDOW_SIZE) and connection-level
-  /// (controlled by WINDOW_UPDATE on stream 0). The spec-mandated initial
-  /// connection window is 65,535 bytes and cannot be changed via SETTINGS.
-  ///
-  /// When set, a proactive WINDOW_UPDATE is sent on stream 0 during
-  /// connection setup to increase the receive window. Production gRPC
-  /// implementations (e.g., gRPC-C-core) typically use 1 MiB (1,048,576).
-  ///
-  /// If `null`, the default 65,535-byte window is used. This can bottleneck
-  /// high-concurrency workloads where many streams share the connection.
-  final int? connectionWindowSize;
-
-  const Settings({this.concurrentStreamLimit, this.streamWindowSize, this.connectionWindowSize});
+  const Settings({this.concurrentStreamLimit, this.streamWindowSize});
 }
 
 /// Settings for a [TransportConnection] a server can make.
 class ServerSettings extends Settings {
-  const ServerSettings({super.concurrentStreamLimit, super.streamWindowSize, super.connectionWindowSize});
+  const ServerSettings({super.concurrentStreamLimit, super.streamWindowSize});
 }
 
 /// Settings for a [TransportConnection] a client can make.
@@ -51,12 +36,7 @@ class ClientSettings extends Settings {
   /// Whether the client allows pushes from the server (defaults to false).
   final bool allowServerPushes;
 
-  const ClientSettings({
-    super.concurrentStreamLimit,
-    super.streamWindowSize,
-    super.connectionWindowSize,
-    this.allowServerPushes = false,
-  });
+  const ClientSettings({super.concurrentStreamLimit, super.streamWindowSize, this.allowServerPushes = false});
 }
 
 /// Represents a HTTP/2 connection.
