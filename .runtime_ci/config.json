@@ -128,7 +128,9 @@
       "format_check": true,
       "analysis_cache": true,
       "managed_analyze": true,
-      "managed_test": true
+      "managed_test": true,
+      "build_runner": false,
+      "web_test": false
     },
     "platforms": [
       "ubuntu",
@@ -147,6 +149,11 @@
       "ubuntu-arm64": "runtime-ubuntu-24.04-arm64-208gb-64core",
       "windows": "windows-latest",
       "windows-arm64": "runtime-windows-11-arm64-208gb-64core"
-    }
+    },
+    "artifact_retention_days": 7,
+    "git_orgs": [
+      "open-runtime",
+      "pieces-app"
+    ]
   }
 }

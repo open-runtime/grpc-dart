@@ -118,6 +118,23 @@
       ],
       "hash": "8a7171317993bb4cc23ffc831e44ed8db2cb7bd4add39a57cc7d446353aff0a4",
       "last_updated": "2026-03-19T15:01:44.994116Z"
+    },
+    {
+      "id": "http2",
+      "name": "Http2",
+      "source_paths": [
+        "lib/src/http2/"
+      ],
+      "lib_paths": [
+        "lib/src/http2/"
+      ],
+      "output_path": "docs/http2/",
+      "generate": [
+        "quickstart",
+        "api_reference"
+      ],
+      "hash": "",
+      "last_updated": null
     }
   ],
   "templates": {
