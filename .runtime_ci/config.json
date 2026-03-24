@@ -1,6 +1,6 @@
 {
   "repository": {
-    "name": "grpc",
+    "name": "grpc-dart",
     "owner": "open-runtime",
     "triaged_label": "triaged",
     "changelog_path": "CHANGELOG.md",
