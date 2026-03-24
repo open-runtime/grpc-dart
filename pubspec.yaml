@@ -29,14 +29,9 @@ dependencies:
   win32: ^5.10.0
 
 dev_dependencies:
-  # ==========================================================================
-  # GitHub releases versioned dependencies
-  # ==========================================================================
-  runtime_ci_tooling:
-    git:
-      url: git@github.com:open-runtime/runtime_ci_tooling.git
-      tag_pattern: v{{version}}
-    version: ^0.23.7
+  # runtime_ci_tooling — use global activation (do not add as a dev_dependency). Example:
+  #   dart pub global activate --source git https://github.com/open-runtime/runtime_ci_tooling.git --git-ref vX.Y.Z
+  #   dart pub global run runtime_ci_tooling:manage_cicd --help
 
   # ==========================================================================
   # Direct pub.dev dev dependencies

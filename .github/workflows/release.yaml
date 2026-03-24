@@ -19,7 +19,11 @@ permissions:
 
 # Gemini API key for release automation (version detection, changelog, release notes).
 # ML provider keys (OpenAI, Anthropic, Bedrock) are not needed for this package.
+# Opt into Node.js 24 for JavaScript-based actions (e.g. dart-lang/setup-dart) before the
+# GitHub-hosted runner default flips in mid-2026. See:
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   GEMINI_API_KEY: ${{ secrets.CICD_GEMINI_API_KEY_OPEN_RUNTIME }}
 
 jobs:
@@ -80,7 +84,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
           git config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
-      - uses: dart-lang/setup-dart@v1.7.1
+      - uses: dart-lang/setup-dart@v1.7.2
         with:
           sdk: "3.9.2"
 
@@ -155,7 +159,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
           git config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
-      - uses: dart-lang/setup-dart@v1.7.1
+      - uses: dart-lang/setup-dart@v1.7.2
         with:
           sdk: "3.9.2"
 
@@ -240,7 +244,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
           git config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
-      - uses: dart-lang/setup-dart@v1.7.1
+      - uses: dart-lang/setup-dart@v1.7.2
         with:
           sdk: "3.9.2"
 
@@ -332,7 +336,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
           git config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
-      - uses: dart-lang/setup-dart@v1.7.1
+      - uses: dart-lang/setup-dart@v1.7.2
         with:
           sdk: "3.9.2"
 
@@ -438,7 +442,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
       - name: Set up Dart
-        uses: dart-lang/setup-dart@v1.7.1
+        uses: dart-lang/setup-dart@v1.7.2
         with:
           sdk: "3.9.2"
 
@@ -545,7 +549,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
           git config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
-      - uses: dart-lang/setup-dart@v1.7.1
+      - uses: dart-lang/setup-dart@v1.7.2
         with:
           sdk: "3.9.2"
 
@@ -703,7 +707,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
           git config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
-      - uses: dart-lang/setup-dart@v1.7.1
+      - uses: dart-lang/setup-dart@v1.7.2
         with:
           sdk: "3.9.2"
 
@@ -854,7 +858,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_PAT}@github.com/open-runtime/".insteadOf "git@github.com:open-runtime/"
           git config --global url."https://x-access-token:${GH_PAT}@github.com/pieces-app/".insteadOf "git@github.com:pieces-app/"
 
-      - uses: dart-lang/setup-dart@v1.7.1
+      - uses: dart-lang/setup-dart@v1.7.2
         with:
           sdk: "3.9.2"
 
