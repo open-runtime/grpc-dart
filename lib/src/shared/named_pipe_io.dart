@@ -29,14 +29,18 @@ String namedPipePath(String pipeName) => r'\\.\pipe\' + pipeName;
 /// memory allocation reasonable for concurrent connections.
 const int kNamedPipeBufferSize = 65536;
 
-/// Maximum chunk size for a single [WriteFile] call on named pipes (64 KiB).
+/// Maximum chunk size for a single [WriteFile] call on named pipes (32 KiB).
 ///
-/// Matches [kNamedPipeBufferSize] so that a full-buffer write can complete in
-/// one FFI call when the pipe is empty. Writes larger than this are split
-/// and [_drainWriteQueue] yields between chunks so the read loop can progress.
-/// Previously 16 KiB, but each inter-chunk yield on Windows costs ~15 ms
-/// (OS timer resolution floor), making large transfers very slow.
-const int kNamedPipeWriteChunkSize = 64 * 1024;
+/// Must be strictly less than [kNamedPipeBufferSize] (64 KiB). If chunk size
+/// equals the buffer size, [WriteFile] on a PIPE_WAIT pipe blocks whenever the
+/// buffer has any unread data — deadlocking the single-isolate event loop
+/// because the read loop cannot drain while [WriteFile] is blocked in FFI.
+///
+/// 32 KiB (half the buffer) ensures [WriteFile] only blocks when the buffer
+/// is >50% full, giving the read loop headroom to drain between chunks.
+/// Previously 16 KiB; doubled to reduce inter-chunk yields while staying
+/// safely below the buffer size.
+const int kNamedPipeWriteChunkSize = 32 * 1024;
 
 /// Default maximum retries for transient ERROR_NO_DATA from PeekNamedPipe
 /// or ReadFile.

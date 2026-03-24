@@ -1290,12 +1290,11 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
       }
 
       // Poll for a client connection (non-blocking).
-      // Each iteration: ConnectNamedPipe returns immediately → check
-      // result → yield via Duration.zero. The isolate is never blocked
-      // in FFI, so stop signals and Isolate.kill fire within one event-
-      // loop iteration (~25 µs). Duration.zero uses the Dart VM's
-      // internal zero-timer fast path, avoiding the 15.6 ms Windows
-      // OS timer floor that a positive Duration would incur.
+      // ConnectNamedPipe in PIPE_NOWAIT mode returns immediately.
+      // A 1 ms yield keeps CPU usage near zero while waiting; the
+      // 15.6 ms Windows timer floor is acceptable here because
+      // connection setup latency is not performance-critical.
+      // Using Duration.zero would busy-spin at ~40K iterations/s.
       var connected = false;
       while (!shouldStop) {
         final result = ConnectNamedPipe(hPipe, nullptr);
@@ -1311,7 +1310,7 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         if (error != ERROR_PIPE_LISTENING) {
           break;
         }
-        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(const Duration(milliseconds: 1));
       }
 
       if (!connected) {

@@ -1310,7 +1310,7 @@ void main() {
 
     test('default zeroDelayCount uses the constant', () {
       final backoff = IdlePollBackoff(initialDelayMs: 1, maxDelayMs: 50);
-      // Default kNamedPipeIdlePollZeroDelayCount = 4
+      // Uses kNamedPipeIdlePollZeroDelayCount (currently 64).
       for (var i = 0; i < kNamedPipeIdlePollZeroDelayCount; i++) {
         expect(backoff.nextDelay(), equals(Duration.zero), reason: 'zero-delay phase at $i');
       }
