@@ -881,7 +881,12 @@ class _ServerPipeStream {
   }
 
   /// Writes a single chunk to the pipe. Returns `false` on error.
-  bool _writeChunk(List<int> data) {
+  ///
+  /// In PIPE_NOWAIT mode, WriteFile returns TRUE with bytesWritten=0 when
+  /// the pipe buffer is full. This method yields to the event loop on
+  /// zero-byte writes so the read loop can process WINDOW_UPDATE frames
+  /// that free buffer space, preventing deadlocks under concurrent streams.
+  Future<bool> _writeChunk(List<int> data) async {
     if (data.isEmpty) return true;
 
     final buffer = calloc<Uint8>(data.length);
@@ -891,7 +896,12 @@ class _ServerPipeStream {
       copyToNativeBuffer(buffer, data);
 
       var offset = 0;
+      final backoff = IdlePollBackoff();
+      var zeroByteRetries = 0;
+      const maxZeroByteRetries = 1000;
       while (offset < data.length) {
+        if (_handleClosed) return false;
+
         bytesWritten.value = 0;
         final remaining = data.length - offset;
         final success = WriteFile(_handle, buffer + offset, remaining, bytesWritten, nullptr);
@@ -910,16 +920,29 @@ class _ServerPipeStream {
         }
 
         if (bytesWritten.value == 0) {
-          logGrpcEvent(
-            '[gRPC] Server pipe write stalled: 0 bytes written',
-            component: 'NamedPipeServer',
-            event: 'pipe_write_stall',
-            context: '_writeToPipe',
-          );
-          close(force: true);
-          return false;
+          zeroByteRetries++;
+          if (zeroByteRetries >= maxZeroByteRetries) {
+            logGrpcEvent(
+              '[gRPC] Server pipe write stalled: '
+              '$maxZeroByteRetries consecutive zero-byte writes',
+              component: 'NamedPipeServer',
+              event: 'pipe_write_stall',
+              context: '_writeToPipe',
+            );
+            if (!_incomingController.isClosed) {
+              _incomingController.addError(
+                Exception('Write stalled: $maxZeroByteRetries consecutive zero-byte writes'),
+              );
+            }
+            close(force: true);
+            return false;
+          }
+          await Future<void>.delayed(backoff.nextDelay());
+          continue;
         }
 
+        zeroByteRetries = 0;
+        backoff.reset();
         offset += bytesWritten.value;
       }
       return true;
@@ -1252,9 +1275,11 @@ class _ServerError {
 /// via [SetNamedPipeHandleState]) so it returns immediately. The isolate
 /// polls for connections with 1ms yields, keeping the event loop responsive
 /// to stop signals and [Isolate.kill] messages. After a client connects,
-/// the pipe is switched back to `PIPE_WAIT` mode for synchronous data I/O
-/// in the main isolate. By running the accept poll in a separate isolate,
-/// the main isolate's event loop remains responsive for concurrent data I/O.
+/// the pipe handle is sent to the main isolate **still in PIPE_NOWAIT mode**
+/// so that WriteFile cannot block the event loop during data I/O. The read
+/// loop uses PeekNamedPipe before ReadFile, so PIPE_NOWAIT is safe for
+/// reads. By running the accept poll in a separate isolate, the main
+/// isolate's event loop remains responsive for concurrent data I/O.
 Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   final pipePath = namedPipePath(config.pipeName);
   // Use calloc allocator so the matching calloc.free() is correct.
@@ -1280,7 +1305,9 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   try {
     while (!shouldStop) {
       // Create a new pipe instance for each connection.
-      // Created in PIPE_WAIT mode (the default for data I/O).
+      // Created with PIPE_WAIT (CreateNamedPipe default); switched to
+      // PIPE_NOWAIT below for non-blocking ConnectNamedPipe polling and
+      // kept in PIPE_NOWAIT for data I/O to prevent event-loop stalls.
       final hPipe = CreateNamedPipe(
         pipePathPtr,
         PIPE_ACCESS_DUPLEX,
@@ -1378,17 +1405,11 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         break;
       }
 
-      // Switch back to PIPE_WAIT (blocking) mode for data I/O.
-      // The main isolate's _ServerPipeStream uses synchronous
-      // ReadFile/WriteFile which require PIPE_WAIT to function
-      // correctly. PIPE_NOWAIT ReadFile can falsely report
-      // completion with zero bytes when no data is available.
-      mode.value = PIPE_READMODE_BYTE | PIPE_WAIT;
-      if (SetNamedPipeHandleState(hPipe, mode, nullptr, nullptr) == 0) {
-        // Can't switch mode — close handle and retry.
-        CloseHandle(hPipe);
-        continue;
-      }
+      // Keep PIPE_NOWAIT mode for data I/O. Non-blocking WriteFile prevents
+      // the Dart event loop from stalling when the pipe buffer is full,
+      // allowing the read loop to process WINDOW_UPDATE frames between
+      // write retries. The read loop uses PeekNamedPipe before ReadFile,
+      // so PIPE_NOWAIT ReadFile is safe (it only runs when data is available).
 
       // Send the raw handle to the main isolate for data I/O.
       // The main isolate will handle all reads/writes using PeekNamedPipe

@@ -44,7 +44,7 @@ int _waitNamedPipe(Pointer<Utf16> pipeName, int timeoutMs) {
 
 /// Maximum number of retry attempts when the pipe is busy.
 ///
-/// Uses exponential backoff starting at 100ms: 100ms, 200ms, 400ms.
+/// Uses exponential backoff starting at 100ms: 100, 200, 400, 800, 1600ms.
 /// This is a defense-in-depth measure for production scenarios where all pipe
 /// instances are briefly in use (between the server accepting one connection
 /// and creating the next pipe instance).
@@ -54,12 +54,12 @@ int _waitNamedPipe(Pointer<Utf16> pipeName, int timeoutMs) {
 /// can be connected simultaneously. Windows returns FILE_NOT_FOUND rather
 /// than PIPE_BUSY when there are zero unconnected instances in the namespace,
 /// even though the pipe name is valid and the server is running.
-const int _kMaxPipeBusyRetries = 3;
+const int _kMaxPipeBusyRetries = 5;
 
 /// Computes the backoff delay for a PIPE_BUSY retry attempt.
 ///
 /// Uses simple exponential backoff: 100ms * 2^attempt.
-/// attempt 0 → 100ms, attempt 1 → 200ms, attempt 2 → 400ms.
+/// attempt 0 → 100ms, 1 → 200ms, 2 → 400ms, 3 → 800ms, 4 → 1600ms.
 Duration _pipeBusyRetryDelay(int attempt) => Duration(milliseconds: 100 * (1 << attempt));
 
 /// A [ClientTransportConnector] implementation for Windows named pipes.
@@ -256,6 +256,13 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
         if (waitResult == 0 && GetLastError() == ERROR_SEM_TIMEOUT) {
           throw timeoutException();
         }
+      } else if (attempt > 0) {
+        // No explicit connectTimeout — still exercise the OS-native wait so
+        // the kernel can wake us as soon as an instance is available rather
+        // than relying solely on the dart-level exponential backoff sleep.
+        // 100ms is brief enough to avoid starving the single-threaded event
+        // loop while still covering the common server accept-loop yield gap.
+        _waitNamedPipe(pipePathPtr, 100);
       }
 
       final hPipe = CreateFile(
@@ -639,13 +646,17 @@ class _NamedPipeStream {
 
   /// Writes a single chunk to the pipe. Returns `false` on error.
   ///
-  /// [WriteFile] can succeed but write fewer bytes than requested when the
-  /// pipe's internal buffer is nearly full. A partial write silently drops
-  /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
-  /// until all bytes are written or an error occurs.
-  bool _writeChunk(List<int> data) {
-    // Guard against zero-length writes: calloc<Uint8>(0) is undefined
-    // behavior (may return nullptr on some platforms).
+  /// The client pipe handle is in PIPE_WAIT mode. In this mode, WriteFile
+  /// blocks until all bytes are written. The 32 KiB chunk limit (enforced
+  /// by [_enqueueWriteChunks]) keeps each blocking window short: WriteFile
+  /// only blocks when the 64 KiB buffer is >50% full, giving the server's
+  /// read loop time to drain between chunks.
+  ///
+  /// The zero-byte retry path is defense-in-depth for edge cases where
+  /// WriteFile succeeds but writes zero bytes (e.g., handle invalidation
+  /// during shutdown). In normal PIPE_WAIT operation this path is not
+  /// expected to execute.
+  Future<bool> _writeChunk(List<int> data) async {
     if (data.isEmpty) return true;
 
     final buffer = calloc<Uint8>(data.length);
@@ -655,7 +666,12 @@ class _NamedPipeStream {
       copyToNativeBuffer(buffer, data);
 
       var offset = 0;
+      final backoff = IdlePollBackoff();
+      var zeroByteRetries = 0;
+      const maxZeroByteRetries = 1000;
       while (offset < data.length) {
+        if (_writesClosed) return false;
+
         bytesWritten.value = 0;
         final remaining = data.length - offset;
         final success = WriteFile(_handle, buffer + offset, remaining, bytesWritten, nullptr);
@@ -670,13 +686,26 @@ class _NamedPipeStream {
         }
 
         if (bytesWritten.value == 0) {
-          if (!_incomingController.isClosed) {
-            _incomingController.addError(NamedPipeException('Write stalled: 0 bytes written', 0));
+          zeroByteRetries++;
+          if (zeroByteRetries >= maxZeroByteRetries) {
+            if (!_incomingController.isClosed) {
+              _incomingController.addError(
+                NamedPipeException(
+                  'Write stalled: $maxZeroByteRetries '
+                  'consecutive zero-byte writes',
+                  0,
+                ),
+              );
+            }
+            close(force: true);
+            return false;
           }
-          close(force: true);
-          return false;
+          await Future<void>.delayed(backoff.nextDelay());
+          continue;
         }
 
+        zeroByteRetries = 0;
+        backoff.reset();
         offset += bytesWritten.value;
       }
       return true;
