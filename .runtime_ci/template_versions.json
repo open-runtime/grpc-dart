@@ -1,6 +1,6 @@
 {
-  "tooling_version": "0.23.8",
-  "updated_at": "2026-03-24T16:04:22.970705Z",
+  "tooling_version": "0.23.10",
+  "updated_at": "2026-03-24T18:03:04.806880Z",
   "templates": {
     "gemini_settings": {
       "hash": "d5782f9214896de2f5a78909aaf44e7cbf6f37cc2aa362350da6fc55a2b5ab23",
@@ -28,24 +28,24 @@
       "updated_at": "2026-03-24T16:00:32.325883Z"
     },
     "workflow_ci": {
-      "hash": "b551b0297ec4d5f7ced1d1f3a4c84729740c20a7111d9a816e30fc41cb67add7",
-      "consumer_hash": "71974e5a83626f66b07f951ba4f48b24608c5be04ee9c96323b9bff57bd379e0",
-      "updated_at": "2026-03-24T16:04:22.931467Z"
+      "hash": "d00326c808042d770df2ca58744c86482e5ec983241df1099a41fa36946e61f7",
+      "consumer_hash": "86331672ebce32b7bf4685b9fa7125e8cc5b2d41b096e1713156645bb3209dd6",
+      "updated_at": "2026-03-24T18:02:08.442022Z"
     },
     "workflow_release": {
-      "hash": "322f609f233dcc7c3cc98aa6ce59bb5abfbd25fa60afbcea0c357f300ddc503c",
-      "consumer_hash": "16a46acffeab833d47ee08602117d8c2852e5db5d1017abe61150b78c738033a",
-      "updated_at": "2026-03-24T16:04:22.963048Z"
+      "hash": "7d773915fbb40a1fdbb49722f31bbfa190b789c86ab3d15e6899fdc67063918b",
+      "consumer_hash": "369f0a2598c4c2835bb1f06b11ca7b1e1fb3af49880bd0e99341a2b42e2188d4",
+      "updated_at": "2026-03-24T18:02:08.452130Z"
     },
     "workflow_issue_triage": {
-      "hash": "a82fdfbb8b4c7eb39b22806946bec03b2bbc982e29023a6f3a350c5b8209eac2",
-      "consumer_hash": "612a76cb4c7638e1a8fc9eb8aaf8588077431a0698e29d1ed37e40c8ede426e2",
-      "updated_at": "2026-03-24T16:04:22.970727Z"
+      "hash": "68de3061ba1ba900053275dd8cc2a3b9dee0fc7c36f5f75f0f3a2dcc5bb04efd",
+      "consumer_hash": "186a2c64824bef06829921640ab0b495144a5af1f86ddc0f0f9cd8500def0c07",
+      "updated_at": "2026-03-24T18:02:08.455845Z"
     },
     "gemini_policy_autodoc_safety": {
-      "hash": "2358ad7b6322ddef774ac2ec52b07eea53b6a449968dc02b564a1f270a110385",
-      "consumer_hash": "2358ad7b6322ddef774ac2ec52b07eea53b6a449968dc02b564a1f270a110385",
-      "updated_at": "2026-03-24T16:00:32.413378Z"
+      "hash": "c28d04292ade13c13c16ceb5d2eff708c712cfffb6e568c7ecfb9f49628b9620",
+      "consumer_hash": "c28d04292ade13c13c16ceb5d2eff708c712cfffb6e568c7ecfb9f49628b9620",
+      "updated_at": "2026-03-24T18:03:04.807550Z"
     }
   }
 }

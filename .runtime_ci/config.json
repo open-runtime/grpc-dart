@@ -173,7 +173,8 @@
     },
     "rust": {
       "toolchain": "stable"
-    }
+    },
+    "activate_runtime_ci_tooling_from_path": false
   },
   "packages": []
 }
