@@ -813,12 +813,14 @@ class _ServerPipeStream {
         if (!_writeChunk(data)) break;
 
         // Yield to the event loop so the read loop (and other async
-        // work) can run between write operations.
+        // work) can run between write operations. Duration.zero timers
+        // use the Dart VM's internal zero-timer fast path (not the OS
+        // timer queue), so this does not incur the 15.6 ms Windows
+        // timer resolution floor.
         await Future<void>.delayed(Duration.zero);
       }
     } finally {
       _draining = false;
-      // If more data was enqueued while we yielded, restart the drain.
       if (_writeQueue.isNotEmpty && !_handleClosed) {
         _draining = true;
         Future.microtask(_drainWriteQueue);
@@ -1289,8 +1291,11 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
 
       // Poll for a client connection (non-blocking).
       // Each iteration: ConnectNamedPipe returns immediately → check
-      // result → yield 1ms. The isolate is never blocked in FFI,
-      // so stop signals and Isolate.kill fire within 1-2ms.
+      // result → yield via Duration.zero. The isolate is never blocked
+      // in FFI, so stop signals and Isolate.kill fire within one event-
+      // loop iteration (~25 µs). Duration.zero uses the Dart VM's
+      // internal zero-timer fast path, avoiding the 15.6 ms Windows
+      // OS timer floor that a positive Duration would incur.
       var connected = false;
       while (!shouldStop) {
         final result = ConnectNamedPipe(hPipe, nullptr);
@@ -1304,14 +1309,9 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
           break;
         }
         if (error != ERROR_PIPE_LISTENING) {
-          // Unexpected error (e.g. broken pipe, access denied).
-          // Close this instance and retry with a new pipe.
           break;
         }
-        // No client yet — yield to the event loop. This is the
-        // shutdown checkpoint: stop signals and kill messages are
-        // processed here, setting shouldStop = true.
-        await Future<void>.delayed(const Duration(milliseconds: 1));
+        await Future<void>.delayed(Duration.zero);
       }
 
       if (!connected) {

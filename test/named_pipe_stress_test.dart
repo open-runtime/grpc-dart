@@ -1300,24 +1300,43 @@ void main() {
   });
 
   group('Idle Poll Backoff', () {
-    test('nextDelay grows exponentially and caps at max delay', () {
-      final backoff = IdlePollBackoff(initialDelayMs: 1, maxDelayMs: 50);
-      final delays = List.generate(8, (_) => backoff.nextDelay().inMilliseconds);
-      expect(delays, equals([1, 2, 4, 8, 16, 32, 50, 50]));
+    test('nextDelay starts with zero-delay phase then grows exponentially', () {
+      final backoff = IdlePollBackoff(zeroDelayCount: 3, initialDelayMs: 1, maxDelayMs: 50);
+      final delays = List.generate(11, (_) => backoff.nextDelay().inMilliseconds);
+      // First 3: zero-delay phase (Duration.zero = 0ms)
+      // Then: 1, 2, 4, 8, 16, 32, 50, 50 (exponential with cap)
+      expect(delays, equals([0, 0, 0, 1, 2, 4, 8, 16, 32, 50, 50]));
     });
 
-    test('reset restores initial polling delay', () {
+    test('default zeroDelayCount uses the constant', () {
       final backoff = IdlePollBackoff(initialDelayMs: 1, maxDelayMs: 50);
-      backoff.nextDelay();
-      backoff.nextDelay();
-      backoff.nextDelay();
+      // Default kNamedPipeIdlePollZeroDelayCount = 4
+      for (var i = 0; i < kNamedPipeIdlePollZeroDelayCount; i++) {
+        expect(backoff.nextDelay(), equals(Duration.zero), reason: 'zero-delay phase at $i');
+      }
+      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)), reason: 'first ms delay');
+    });
+
+    test('reset restores zero-delay phase and initial ms delay', () {
+      final backoff = IdlePollBackoff(zeroDelayCount: 2, initialDelayMs: 1, maxDelayMs: 50);
+      backoff.nextDelay(); // zero
+      backoff.nextDelay(); // zero
+      backoff.nextDelay(); // 1ms
+      backoff.nextDelay(); // 2ms
       backoff.reset();
-      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)));
+      expect(backoff.nextDelay(), equals(Duration.zero), reason: 'zero-delay restored after reset');
+      expect(backoff.nextDelay(), equals(Duration.zero), reason: 'second zero-delay');
+      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)), reason: 'back to ms');
     });
 
     test('constructor rejects invalid delay bounds', () {
       expect(() => IdlePollBackoff(initialDelayMs: 0, maxDelayMs: 50), throwsA(isA<ArgumentError>()));
       expect(() => IdlePollBackoff(initialDelayMs: 5, maxDelayMs: 4), throwsA(isA<ArgumentError>()));
+    });
+
+    test('zeroDelayCount of 0 skips zero-delay phase entirely', () {
+      final backoff = IdlePollBackoff(zeroDelayCount: 0, initialDelayMs: 1, maxDelayMs: 50);
+      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)));
     });
   });
 
