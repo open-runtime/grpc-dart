@@ -577,7 +577,7 @@ class _NamedPipeStream {
         if (_writesClosed) break;
 
         final data = _writeQueue.removeAt(0);
-        if (!_writeChunk(data)) break;
+        if (!await _writeChunk(data)) break;
 
         // Yield to the event loop so the read loop (and other async
         // work) can run between write operations.
@@ -601,7 +601,11 @@ class _NamedPipeStream {
   /// pipe's internal buffer is nearly full. A partial write silently drops
   /// the remaining bytes, which corrupts HTTP/2 framing. This method loops
   /// until all bytes are written or an error occurs.
-  bool _writeChunk(List<int> data) {
+  ///
+  /// Yields between partial writes so [_readLoop] can run on this isolate.
+  /// A blocking [WriteFile] on a full buffer would otherwise starve reads and
+  /// can deadlock duplex HTTP/2 traffic with the peer.
+  Future<bool> _writeChunk(List<int> data) async {
     // Guard against zero-length writes: calloc<Uint8>(0) is undefined
     // behavior (may return nullptr on some platforms).
     if (data.isEmpty) return true;
@@ -636,6 +640,9 @@ class _NamedPipeStream {
         }
 
         offset += bytesWritten.value;
+        if (offset < data.length) {
+          await Future<void>.delayed(Duration.zero);
+        }
       }
       return true;
     } finally {
