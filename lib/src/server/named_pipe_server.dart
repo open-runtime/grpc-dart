@@ -897,8 +897,8 @@ class _ServerPipeStream {
 
       var offset = 0;
       final backoff = IdlePollBackoff();
-      var zeroByteRetries = 0;
-      const maxZeroByteRetries = 1000;
+      const stallTimeout = Duration(seconds: 10);
+      var stallDeadline = DateTime.now().add(stallTimeout);
       while (offset < data.length) {
         if (_handleClosed) return false;
 
@@ -920,19 +920,16 @@ class _ServerPipeStream {
         }
 
         if (bytesWritten.value == 0) {
-          zeroByteRetries++;
-          if (zeroByteRetries >= maxZeroByteRetries) {
+          if (DateTime.now().isAfter(stallDeadline)) {
             logGrpcEvent(
               '[gRPC] Server pipe write stalled: '
-              '$maxZeroByteRetries consecutive zero-byte writes',
+              'no bytes written for ${stallTimeout.inSeconds}s',
               component: 'NamedPipeServer',
               event: 'pipe_write_stall',
               context: '_writeToPipe',
             );
             if (!_incomingController.isClosed) {
-              _incomingController.addError(
-                Exception('Write stalled: $maxZeroByteRetries consecutive zero-byte writes'),
-              );
+              _incomingController.addError(Exception('Write stalled: no bytes written for ${stallTimeout.inSeconds}s'));
             }
             close(force: true);
             return false;
@@ -941,8 +938,8 @@ class _ServerPipeStream {
           continue;
         }
 
-        zeroByteRetries = 0;
         backoff.reset();
+        stallDeadline = DateTime.now().add(stallTimeout);
         offset += bytesWritten.value;
       }
       return true;

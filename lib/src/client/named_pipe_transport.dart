@@ -25,23 +25,6 @@ import '../shared/logging/logging.dart' show logGrpcEvent;
 import '../shared/named_pipe_io.dart';
 import 'client_transport_connector.dart';
 
-// WaitNamedPipeW is not exported by the win32 package (v5.15),
-// so we bind it directly from kernel32.dll.
-typedef _WaitNamedPipeWNative = Int32 Function(Pointer<Utf16> lpNamedPipeName, Uint32 nTimeOut);
-typedef _WaitNamedPipeWDart = int Function(Pointer<Utf16> lpNamedPipeName, int nTimeOut);
-
-/// Calls the Win32 `WaitNamedPipeW` function.
-///
-/// Returns non-zero if an instance of the pipe is available before the
-/// timeout elapses, or zero on failure (check `GetLastError()`).
-_WaitNamedPipeWDart? _waitNamedPipeFn;
-int _waitNamedPipe(Pointer<Utf16> pipeName, int timeoutMs) {
-  final waitFn = _waitNamedPipeFn ??= DynamicLibrary.open(
-    'kernel32.dll',
-  ).lookupFunction<_WaitNamedPipeWNative, _WaitNamedPipeWDart>('WaitNamedPipeW');
-  return waitFn(pipeName, timeoutMs);
-}
-
 /// Maximum number of retry attempts when the pipe is busy.
 ///
 /// Uses exponential backoff starting at 100ms: 100, 200, 400, 800, 1600ms.
@@ -247,22 +230,8 @@ class NamedPipeTransportConnector implements ClientTransportConnector {
       }
 
       final remaining = remainingTimeout();
-      if (remaining != null) {
-        if (remaining <= Duration.zero) {
-          throw timeoutException();
-        }
-        final waitMs = remaining.inMilliseconds.clamp(1, 0x7fffffff).toInt();
-        final waitResult = _waitNamedPipe(pipePathPtr, waitMs);
-        if (waitResult == 0 && GetLastError() == ERROR_SEM_TIMEOUT) {
-          throw timeoutException();
-        }
-      } else if (attempt > 0) {
-        // No explicit connectTimeout — still exercise the OS-native wait so
-        // the kernel can wake us as soon as an instance is available rather
-        // than relying solely on the dart-level exponential backoff sleep.
-        // 100ms is brief enough to avoid starving the single-threaded event
-        // loop while still covering the common server accept-loop yield gap.
-        _waitNamedPipe(pipePathPtr, 100);
+      if (remaining != null && remaining <= Duration.zero) {
+        throw timeoutException();
       }
 
       final hPipe = CreateFile(
@@ -667,8 +636,8 @@ class _NamedPipeStream {
 
       var offset = 0;
       final backoff = IdlePollBackoff();
-      var zeroByteRetries = 0;
-      const maxZeroByteRetries = 1000;
+      const stallTimeout = Duration(seconds: 10);
+      var stallDeadline = DateTime.now().add(stallTimeout);
       while (offset < data.length) {
         if (_writesClosed) return false;
 
@@ -686,15 +655,10 @@ class _NamedPipeStream {
         }
 
         if (bytesWritten.value == 0) {
-          zeroByteRetries++;
-          if (zeroByteRetries >= maxZeroByteRetries) {
+          if (DateTime.now().isAfter(stallDeadline)) {
             if (!_incomingController.isClosed) {
               _incomingController.addError(
-                NamedPipeException(
-                  'Write stalled: $maxZeroByteRetries '
-                  'consecutive zero-byte writes',
-                  0,
-                ),
+                NamedPipeException('Write stalled: no bytes written for ${stallTimeout.inSeconds}s', 0),
               );
             }
             close(force: true);
@@ -704,8 +668,8 @@ class _NamedPipeStream {
           continue;
         }
 
-        zeroByteRetries = 0;
         backoff.reset();
+        stallDeadline = DateTime.now().add(stallTimeout);
         offset += bytesWritten.value;
       }
       return true;
