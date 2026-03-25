@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.1] - 2026-03-25
+
+### Added
+- Enabled Windows long paths in the CI workflow (fixes #48)
+
+### Changed
+- Updated `runtime_ci_tooling` to `v0.23.13` in all GitHub Actions workflows
+- Updated CI workflow to always run on manual `workflow_dispatch` triggers
+- Updated release workflow to checkout the `main` branch instead of `workflow_run.head_sha`
+
+### Fixed
+- Fixed `create-release` push failure on detached HEAD
+
 ## [5.5.0] - 2026-03-25
 
 ### Added
@@ -570,6 +583,7 @@ The API is shaping up, but may still change as more advanced features are implem
 This package is in a very early and experimental state. We do not recommend
 using it for anything but experiments.
 
+[5.5.1]: https://github.com/open-runtime/grpc-dart/compare/v5.5.0...v5.5.1
 [5.5.0]: https://github.com/open-runtime/grpc-dart/compare/v5.4.0...v5.5.0
 [5.4.0]: https://github.com/open-runtime/grpc-dart/compare/v5.3.8...v5.4.0
 [5.3.8]: https://github.com/open-runtime/grpc-dart/compare/v5.3.0...v5.3.8
