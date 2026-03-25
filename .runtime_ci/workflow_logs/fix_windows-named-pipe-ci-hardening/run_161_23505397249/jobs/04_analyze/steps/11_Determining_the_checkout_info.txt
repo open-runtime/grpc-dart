@@ -1,2 +1,0 @@
-2026-03-24T18:18:39.6886081Z ##[group]Determining the checkout info
-2026-03-24T18:18:39.6887386Z ##[endgroup]

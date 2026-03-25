@@ -1,8 +1,0 @@
-2026-03-24T18:18:28.2385692Z ##[group]Run dart format --line-length 120 .
-2026-03-24T18:18:28.2386225Z [36;1mdart format --line-length 120 .[0m
-2026-03-24T18:18:28.2445064Z shell: /usr/bin/bash -e {0}
-2026-03-24T18:18:28.2445511Z env:
-2026-03-24T18:18:28.2445877Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-2026-03-24T18:18:28.2446436Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
-2026-03-24T18:18:28.2446984Z   PUB_CACHE: /home/runner/.pub-cache
-2026-03-24T18:18:28.2447440Z ##[endgroup]

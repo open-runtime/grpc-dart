@@ -1,9 +1,0 @@
-2026-03-24T18:19:38.1244996Z ##[group]Run dart test -p chrome --concurrency=1 test/client_tests/client_xhr_transport_test.dart
-2026-03-24T18:19:38.1246409Z [36;1mdart test -p chrome --concurrency=1 test/client_tests/client_xhr_transport_test.dart[0m
-2026-03-24T18:19:38.1295104Z shell: /usr/bin/bash -e {0}
-2026-03-24T18:19:38.1295552Z env:
-2026-03-24T18:19:38.1295777Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-2026-03-24T18:19:38.1296098Z   DART_HOME: /opt/hostedtoolcache/dart/3.9.2/x64
-2026-03-24T18:19:38.1296397Z   PUB_CACHE: /home/runner/.pub-cache
-2026-03-24T18:19:38.1296780Z   CHROME_EXECUTABLE: /opt/hostedtoolcache/setup-chrome/chrome/stable/x64/chrome
-2026-03-24T18:19:38.1297159Z ##[endgroup]

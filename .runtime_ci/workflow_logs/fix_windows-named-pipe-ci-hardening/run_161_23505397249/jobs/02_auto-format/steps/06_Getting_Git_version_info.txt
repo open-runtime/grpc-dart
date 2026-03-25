@@ -1,5 +1,0 @@
-2026-03-24T18:18:20.5718899Z ##[group]Getting Git version info
-2026-03-24T18:18:20.5719641Z Working directory is '/home/runner/work/grpc-dart/grpc-dart'
-2026-03-24T18:18:20.5720743Z [command]/usr/bin/git version
-2026-03-24T18:18:20.5771208Z git version 2.53.0
-2026-03-24T18:18:20.5797983Z ##[endgroup]
