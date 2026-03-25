@@ -294,20 +294,22 @@ void main() {
 
       final client = EchoClient(channel);
 
-      // Start a server-streaming RPC (255 items with delays)
       final stream = client.serverStream(255);
       final received = <int>[];
       final sub = stream.listen(received.add, onError: (_) {});
 
-      // Let a few items arrive
-      await Future.delayed(Duration(milliseconds: 50));
+      // Wait until at least one item arrives (deadline-bounded polling).
+      // Named pipe server startup on Windows can take hundreds of
+      // milliseconds due to isolate spawn + HTTP/2 handshake, so a
+      // fixed Future.delayed is insufficient.
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (received.isEmpty && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(received, isNotEmpty, reason: 'No items received before deadline');
 
-      // Shutdown server while stream is active
       await server.shutdown();
       await sub.cancel();
-
-      // We should have received some items before shutdown killed the stream
-      expect(received, isNotEmpty);
     });
 
     test('client reconnects after server restart', () async {

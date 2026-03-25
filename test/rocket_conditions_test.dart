@@ -173,7 +173,7 @@ void main() {
         ),
       );
 
-      final expected = List.generate(50, (i) => i + 1);
+      final expected = List.generate(50, (i) => i);
 
       for (var s = 0; s < 50; s++) {
         expect(
@@ -189,7 +189,7 @@ void main() {
           equals(expected),
           reason:
               'Server stream $s values '
-              'do not match 1..50',
+              'do not match 0..49',
         );
       }
     });
@@ -305,7 +305,7 @@ void main() {
       }
 
       // Verify server-stream results (next 10)
-      final expectedServerStream = List.generate(20, (i) => i + 1);
+      final expectedServerStream = List.generate(20, (i) => i);
       for (var i = 30; i < 40; i++) {
         expect(
           allSettled[i],
@@ -329,7 +329,7 @@ void main() {
           equals(expectedServerStream),
           reason:
               'Server-stream RPC ${i - 30} '
-              'values do not match 1..20',
+              'values do not match 0..19',
         );
       }
 
@@ -699,7 +699,7 @@ void main() {
         );
       }
 
-      final expectedServerStream = List.generate(streamItems, (i) => i + 1);
+      final expectedServerStream = List.generate(streamItems, (i) => i);
       for (var i = 0; i < serverStreamCount; i++) {
         final idx = unaryCount + i;
         expectHardcoreRpcSettlement(settled[idx], reason: 'Named-pipe server-stream RPC $i settled unexpectedly');

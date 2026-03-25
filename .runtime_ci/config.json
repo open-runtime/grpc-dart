@@ -1,6 +1,6 @@
 {
   "repository": {
-    "name": "grpc",
+    "name": "grpc-dart",
     "owner": "open-runtime",
     "triaged_label": "triaged",
     "changelog_path": "CHANGELOG.md",
@@ -146,13 +146,7 @@
     },
     "sub_packages": [],
     "_comment_platforms": "Optional: CI platform matrix. When 2+ entries are provided, CI splits into analyze + matrix test jobs.",
-    "_comment_runner_overrides": "Optional: override platform IDs to custom runs-on labels (e.g. org-managed GitHub-hosted runners). Keys must match ci.platforms entries.",
-    "runner_overrides": {
-      "ubuntu": "ubuntu-latest",
-      "ubuntu-arm64": "runtime-ubuntu-24.04-arm64-208gb-64core",
-      "windows": "windows-latest",
-      "windows-arm64": "runtime-windows-11-arm64-208gb-64core"
-    },
+    "_comment_runner_overrides": "Optional: override platform IDs to custom runs-on labels. Omit to use defaults (warp runners).",
     "artifact_retention_days": 7,
     "git_orgs": [
       "open-runtime",

@@ -180,6 +180,8 @@ class NamedPipeServer extends ConnectionServer {
     );
   }
 
+  ServerSettings? _http2ServerSettings;
+
   /// Starts the named pipe server.
   ///
   /// [pipeName] is the name of the pipe (e.g., 'my-service-12345').
@@ -187,10 +189,14 @@ class NamedPipeServer extends ConnectionServer {
   ///
   /// [maxInstances] controls the maximum number of simultaneous named-pipe
   /// instances created by the server accept loop. Defaults to
-  /// [PIPE_UNLIMITED_INSTANCES].
+  /// [PIPE_UNLIMITED_INSTANCES]. Primarily useful in tests that need to
+  /// force `ERROR_PIPE_BUSY` conditions.
   ///
-  /// This is primarily useful in tests that need to force
-  /// `ERROR_PIPE_BUSY` conditions.
+  /// [http2ServerSettings] configures the HTTP/2 transport for each
+  /// connection. If `null`, uses the default (65 535-byte stream window,
+  /// 1 000 max concurrent streams). For high-concurrency workloads,
+  /// increase [ServerSettings.streamWindowSize] to avoid flow-control
+  /// stalls — production gRPC implementations typically use 1 MB+ windows.
   ///
   /// This method returns only after the pipe has been created in the Windows
   /// namespace and is ready to accept client connections. This eliminates
@@ -198,7 +204,12 @@ class NamedPipeServer extends ConnectionServer {
   ///
   /// Throws [UnsupportedError] if not running on Windows.
   /// Throws [StateError] if the server is already running.
-  Future<void> serve({required String pipeName, int maxInstances = PIPE_UNLIMITED_INSTANCES}) async {
+  Future<void> serve({
+    required String pipeName,
+    int maxInstances = PIPE_UNLIMITED_INSTANCES,
+    ServerSettings? http2ServerSettings,
+  }) async {
+    _http2ServerSettings = http2ServerSettings;
     if (!isWindowsPlatform) {
       throw UnsupportedError(
         'Named pipes are only supported on Windows. '
@@ -417,7 +428,11 @@ class NamedPipeServer extends ConnectionServer {
 
     try {
       // Create HTTP/2 connection and serve it
-      final transportConnection = ServerTransportConnection.viaStreams(stream.incoming, stream.outgoingSink);
+      final transportConnection = ServerTransportConnection.viaStreams(
+        stream.incoming,
+        stream.outgoingSink,
+        settings: _http2ServerSettings ?? const ServerSettings(concurrentStreamLimit: 1000),
+      );
       serveConnection(connection: transportConnection);
     } catch (e) {
       // HTTP/2 initialization failure — clean up the pipe handle.
@@ -804,21 +819,29 @@ class _ServerPipeStream {
 
   /// Asynchronously drains [_writeQueue], yielding to the event loop
   /// between writes so the read loop can progress.
+  ///
+  /// Coalesces multiple small queue entries into a single [WriteFile] call
+  /// (up to [kNamedPipeWriteChunkSize] bytes per batch). Without batching,
+  /// each entry triggers a separate WriteFile + event-loop yield, which
+  /// lets producers (HTTP/2 stream handlers) add entries faster than the
+  /// drain loop can remove them — unbounded queue growth under concurrency.
   Future<void> _drainWriteQueue() async {
     try {
       while (_writeQueue.isNotEmpty) {
         if (_handleClosed) break;
 
-        final data = _writeQueue.removeAt(0);
-        if (!_writeChunk(data)) break;
+        final batch = _coalesceWriteQueue();
+        if (!await _writeChunk(batch)) break;
 
         // Yield to the event loop so the read loop (and other async
-        // work) can run between write operations.
+        // work) can run between write operations. Duration.zero timers
+        // use the Dart VM's internal zero-timer fast path (not the OS
+        // timer queue), so this does not incur the 15.6 ms Windows
+        // timer resolution floor.
         await Future<void>.delayed(Duration.zero);
       }
     } finally {
       _draining = false;
-      // If more data was enqueued while we yielded, restart the drain.
       if (_writeQueue.isNotEmpty && !_handleClosed) {
         _draining = true;
         Future.microtask(_drainWriteQueue);
@@ -828,8 +851,42 @@ class _ServerPipeStream {
     }
   }
 
+  /// Removes entries from [_writeQueue] and coalesces them into a single
+  /// buffer up to [kNamedPipeWriteChunkSize] bytes. If the first entry
+  /// alone exceeds the limit, it is returned as-is (already bounded by
+  /// [_enqueueWriteChunks]).
+  List<int> _coalesceWriteQueue() {
+    final first = _writeQueue.removeAt(0);
+    if (_writeQueue.isEmpty || first.length >= kNamedPipeWriteChunkSize) {
+      return first;
+    }
+
+    var totalLength = first.length;
+    final parts = <List<int>>[first];
+    while (_writeQueue.isNotEmpty && totalLength + _writeQueue.first.length <= kNamedPipeWriteChunkSize) {
+      final next = _writeQueue.removeAt(0);
+      parts.add(next);
+      totalLength += next.length;
+    }
+
+    if (parts.length == 1) return first;
+
+    final merged = List<int>.filled(totalLength, 0);
+    var offset = 0;
+    for (final part in parts) {
+      merged.setRange(offset, offset + part.length, part);
+      offset += part.length;
+    }
+    return merged;
+  }
+
   /// Writes a single chunk to the pipe. Returns `false` on error.
-  bool _writeChunk(List<int> data) {
+  ///
+  /// In PIPE_NOWAIT mode, WriteFile returns TRUE with bytesWritten=0 when
+  /// the pipe buffer is full. This method yields to the event loop on
+  /// zero-byte writes so the read loop can process WINDOW_UPDATE frames
+  /// that free buffer space, preventing deadlocks under concurrent streams.
+  Future<bool> _writeChunk(List<int> data) async {
     if (data.isEmpty) return true;
 
     final buffer = calloc<Uint8>(data.length);
@@ -839,7 +896,12 @@ class _ServerPipeStream {
       copyToNativeBuffer(buffer, data);
 
       var offset = 0;
+      final backoff = IdlePollBackoff();
+      const stallTimeout = Duration(seconds: 10);
+      var stallDeadline = DateTime.now().add(stallTimeout);
       while (offset < data.length) {
+        if (_handleClosed) return false;
+
         bytesWritten.value = 0;
         final remaining = data.length - offset;
         final success = WriteFile(_handle, buffer + offset, remaining, bytesWritten, nullptr);
@@ -858,16 +920,26 @@ class _ServerPipeStream {
         }
 
         if (bytesWritten.value == 0) {
-          logGrpcEvent(
-            '[gRPC] Server pipe write stalled: 0 bytes written',
-            component: 'NamedPipeServer',
-            event: 'pipe_write_stall',
-            context: '_writeToPipe',
-          );
-          close(force: true);
-          return false;
+          if (DateTime.now().isAfter(stallDeadline)) {
+            logGrpcEvent(
+              '[gRPC] Server pipe write stalled: '
+              'no bytes written for ${stallTimeout.inSeconds}s',
+              component: 'NamedPipeServer',
+              event: 'pipe_write_stall',
+              context: '_writeToPipe',
+            );
+            if (!_incomingController.isClosed) {
+              _incomingController.addError(Exception('Write stalled: no bytes written for ${stallTimeout.inSeconds}s'));
+            }
+            close(force: true);
+            return false;
+          }
+          await Future<void>.delayed(backoff.nextDelay());
+          continue;
         }
 
+        backoff.reset();
+        stallDeadline = DateTime.now().add(stallTimeout);
         offset += bytesWritten.value;
       }
       return true;
@@ -1200,9 +1272,11 @@ class _ServerError {
 /// via [SetNamedPipeHandleState]) so it returns immediately. The isolate
 /// polls for connections with 1ms yields, keeping the event loop responsive
 /// to stop signals and [Isolate.kill] messages. After a client connects,
-/// the pipe is switched back to `PIPE_WAIT` mode for synchronous data I/O
-/// in the main isolate. By running the accept poll in a separate isolate,
-/// the main isolate's event loop remains responsive for concurrent data I/O.
+/// the pipe handle is sent to the main isolate **still in PIPE_NOWAIT mode**
+/// so that WriteFile cannot block the event loop during data I/O. The read
+/// loop uses PeekNamedPipe before ReadFile, so PIPE_NOWAIT is safe for
+/// reads. By running the accept poll in a separate isolate, the main
+/// isolate's event loop remains responsive for concurrent data I/O.
 Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   final pipePath = namedPipePath(config.pipeName);
   // Use calloc allocator so the matching calloc.free() is correct.
@@ -1228,7 +1302,9 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
   try {
     while (!shouldStop) {
       // Create a new pipe instance for each connection.
-      // Created in PIPE_WAIT mode (the default for data I/O).
+      // Created with PIPE_WAIT (CreateNamedPipe default); switched to
+      // PIPE_NOWAIT below for non-blocking ConnectNamedPipe polling and
+      // kept in PIPE_NOWAIT for data I/O to prevent event-loop stalls.
       final hPipe = CreateNamedPipe(
         pipePathPtr,
         PIPE_ACCESS_DUPLEX,
@@ -1288,9 +1364,11 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
       }
 
       // Poll for a client connection (non-blocking).
-      // Each iteration: ConnectNamedPipe returns immediately → check
-      // result → yield 1ms. The isolate is never blocked in FFI,
-      // so stop signals and Isolate.kill fire within 1-2ms.
+      // ConnectNamedPipe in PIPE_NOWAIT mode returns immediately.
+      // A 1 ms yield keeps CPU usage near zero while waiting; the
+      // 15.6 ms Windows timer floor is acceptable here because
+      // connection setup latency is not performance-critical.
+      // Using Duration.zero would busy-spin at ~40K iterations/s.
       var connected = false;
       while (!shouldStop) {
         final result = ConnectNamedPipe(hPipe, nullptr);
@@ -1304,13 +1382,8 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
           break;
         }
         if (error != ERROR_PIPE_LISTENING) {
-          // Unexpected error (e.g. broken pipe, access denied).
-          // Close this instance and retry with a new pipe.
           break;
         }
-        // No client yet — yield to the event loop. This is the
-        // shutdown checkpoint: stop signals and kill messages are
-        // processed here, setting shouldStop = true.
         await Future<void>.delayed(const Duration(milliseconds: 1));
       }
 
@@ -1329,17 +1402,11 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
         break;
       }
 
-      // Switch back to PIPE_WAIT (blocking) mode for data I/O.
-      // The main isolate's _ServerPipeStream uses synchronous
-      // ReadFile/WriteFile which require PIPE_WAIT to function
-      // correctly. PIPE_NOWAIT ReadFile can falsely report
-      // completion with zero bytes when no data is available.
-      mode.value = PIPE_READMODE_BYTE | PIPE_WAIT;
-      if (SetNamedPipeHandleState(hPipe, mode, nullptr, nullptr) == 0) {
-        // Can't switch mode — close handle and retry.
-        CloseHandle(hPipe);
-        continue;
-      }
+      // Keep PIPE_NOWAIT mode for data I/O. Non-blocking WriteFile prevents
+      // the Dart event loop from stalling when the pipe buffer is full,
+      // allowing the read loop to process WINDOW_UPDATE frames between
+      // write retries. The read loop uses PeekNamedPipe before ReadFile,
+      // so PIPE_NOWAIT ReadFile is safe (it only runs when data is available).
 
       // Send the raw handle to the main isolate for data I/O.
       // The main isolate will handle all reads/writes using PeekNamedPipe

@@ -1111,11 +1111,7 @@ void main() {
         // Server stream: request 20 items, verify full data integrity.
         allFutures.add(
           client.serverStream(20).toList().then((items) {
-            expect(
-              items,
-              equals(List.generate(20, (i) => i + 1)),
-              reason: 'server-stream channel $ch full data integrity',
-            );
+            expect(items, equals(List.generate(20, (i) => i)), reason: 'server-stream channel $ch full data integrity');
           }),
         );
 
@@ -1191,7 +1187,7 @@ void main() {
     // times out. If the HTTP/2 framer corrupts message boundaries,
     // values arrive out of order or duplicated.
     //
-    // EXPECTED: Exactly 255 items, item[i] == i + 1 for all i.
+    // EXPECTED: Exactly 255 items, item[i] == i for all i.
     testTcpAndUds('255-item server stream with full data integrity', (address) async {
       final server = Server.create(services: [EchoService()]);
       await server.serve(address: address, port: 0);
@@ -1218,9 +1214,9 @@ void main() {
       for (var i = 0; i < results.length; i++) {
         expect(
           results[i],
-          equals(i + 1),
+          equals(i),
           reason:
-              'server stream item $i: expected ${i + 1}, '
+              'server stream item $i: expected $i, '
               'got ${results[i]}',
         );
       }
@@ -1294,7 +1290,7 @@ void main() {
     // overhead dominates — testing that the framing layer handles the
     // compression header + trailer correctly for minimal payloads.
     //
-    // EXPECTED: Exactly 255 items, item[i] == i + 1 for all i.
+    // EXPECTED: Exactly 255 items, item[i] == i for all i.
     testTcpAndUds('255-item compressed server stream with gzip', (address) async {
       final server = Server.create(
         services: [EchoService()],
@@ -1328,10 +1324,10 @@ void main() {
       for (var i = 0; i < results.length; i++) {
         expect(
           results[i],
-          equals(i + 1),
+          equals(i),
           reason:
               'compressed server stream item $i: expected '
-              '${i + 1}, got ${results[i]}',
+              '$i, got ${results[i]}',
         );
       }
 
@@ -1821,7 +1817,7 @@ void main() {
     // stream after GOAWAY, the toList() future hangs indefinitely.
     //
     // EXPECTED: Stream terminates (not hang), at least 1 item arrived
-    // before shutdown, items < 255, and each item[i] == i + 1.
+    // before shutdown, items < 255, and each item[i] == i.
     testTcpAndUds('shutdown during 255-item compressed server stream', (address) async {
       final server = Server.create(
         services: [EchoService()],
@@ -1890,14 +1886,14 @@ void main() {
       expect(received.length, greaterThanOrEqualTo(1), reason: 'must receive at least 1 item');
       expect(received.length, lessThanOrEqualTo(255), reason: 'cannot exceed 255 items');
 
-      // Data integrity: each item[i] == i + 1.
+      // Data integrity: each item[i] == i.
       for (var i = 0; i < received.length; i++) {
         expect(
           received[i],
-          equals(i + 1),
+          equals(i),
           reason:
               'compressed server stream item $i: '
-              'expected ${i + 1}, got ${received[i]}',
+              'expected $i, got ${received[i]}',
         );
       }
 

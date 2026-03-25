@@ -189,7 +189,7 @@ class EchoService extends Service {
 
   Stream<int> _serverStream(ServiceCall call, Future<int> request) async* {
     final count = await request;
-    for (var i = 1; i <= count; i++) {
+    for (var i = 0; i < count; i++) {
       yield i;
       await Future.delayed(const Duration(milliseconds: 1));
     }
@@ -222,19 +222,22 @@ class EchoService extends Service {
     final bd = ByteData.sublistView(Uint8List.fromList(req));
     final chunkCount = bd.getUint32(0);
     final chunkSize = bd.getUint32(4);
-    const yieldEvery = 200;
     for (var i = 0; i < chunkCount; i++) {
       final chunk = Uint8List(chunkSize);
-      // Fill with repeating pattern for integrity verification.
       for (var j = 0; j < chunkSize; j++) {
         chunk[j] = (i + j) & 0xFF;
       }
       yield chunk;
-      // Cooperative yield: high-concurrency bytes streams can otherwise
-      // starve the event loop and delay shutdown/cancel processing.
-      if ((i + 1) % yieldEvery == 0) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      // Yield to the EVENT QUEUE (not just the microtask queue) after
+      // every chunk. Dart async* generators schedule continuations as
+      // microtasks, and the microtask queue drains completely before any
+      // event-queue item runs. With N concurrent generators, each yield
+      // adds a microtask continuation that triggers the next yield — the
+      // queue never empties, starving pipe I/O and WINDOW_UPDATE
+      // processing indefinitely. Future.delayed(Duration.zero) schedules
+      // on the event queue via Timer.run, guaranteeing that pipe reads/
+      // writes get event-loop time between chunks.
+      await Future<void>.delayed(Duration.zero);
     }
   }
 

@@ -1132,6 +1132,95 @@ void main() {
     });
 
     // -------------------------------------------------------------------------
+    // Test 12a: 10MB echo via named pipe
+    // -------------------------------------------------------------------------
+    // Exercises sustained throughput at a scale representative of image or
+    // document transfer. The 10MB payload spans ~150+ HTTP/2 DATA frames
+    // and requires hundreds of partial-read/write cycles through the 64KB
+    // pipe buffer. Verifies byte-for-byte integrity after the round trip.
+    testNamedPipe('10MB echo payload (sustained throughput)', timeout: const Timeout(Duration(minutes: 3)), (
+      pipeName,
+    ) async {
+      final sw = Stopwatch()..start();
+      void log(String msg) => print('[Test12a ${sw.elapsedMilliseconds}ms] $msg');
+
+      log('Creating server...');
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      log('Creating client channel...');
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      final payloadSize = 10 * 1024 * 1024;
+      final payload = Uint8List(payloadSize);
+      for (var i = 0; i < payloadSize; i++) {
+        payload[i] = i & 0xFF;
+      }
+      log('Sending 10MB payload...');
+
+      final response = await client.echoBytes(payload);
+      log('Received response: ${response.length} bytes in ${sw.elapsedMilliseconds}ms.');
+
+      expect(response.length, equals(payloadSize), reason: '10MB response length mismatch');
+      expect(response, equals(payload), reason: '10MB payload corrupted during echo');
+
+      final throughputMBps = (payloadSize * 2) / (sw.elapsedMilliseconds / 1000) / (1024 * 1024);
+      log('Round-trip throughput: ${throughputMBps.toStringAsFixed(1)} MB/s');
+
+      await channel.shutdown();
+      await server.shutdown();
+      log('Test complete. Total time: ${sw.elapsedMilliseconds}ms');
+    });
+
+    // -------------------------------------------------------------------------
+    // Test 12b: 30MB echo via named pipe
+    // -------------------------------------------------------------------------
+    // Stress-tests the transport at a scale matching large binary assets
+    // (high-resolution images, serialized model weights, etc.). At 30MB the
+    // payload exceeds the pipe buffer by ~470x, exercising every layer of
+    // chunking, flow control, and reassembly. A corruption or deadlock at
+    // this scale would indicate a fundamental transport defect.
+    testNamedPipe('30MB echo payload (large binary asset scale)', timeout: const Timeout(Duration(minutes: 5)), (
+      pipeName,
+    ) async {
+      final sw = Stopwatch()..start();
+      void log(String msg) => print('[Test12b ${sw.elapsedMilliseconds}ms] $msg');
+
+      log('Creating server...');
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      log('Creating client channel...');
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      final payloadSize = 30 * 1024 * 1024;
+      final payload = Uint8List(payloadSize);
+      for (var i = 0; i < payloadSize; i++) {
+        payload[i] = i & 0xFF;
+      }
+      log('Sending 30MB payload...');
+
+      final response = await client.echoBytes(payload);
+      log('Received response: ${response.length} bytes in ${sw.elapsedMilliseconds}ms.');
+
+      expect(response.length, equals(payloadSize), reason: '30MB response length mismatch');
+      expect(response, equals(payload), reason: '30MB payload corrupted during echo');
+
+      final throughputMBps = (payloadSize * 2) / (sw.elapsedMilliseconds / 1000) / (1024 * 1024);
+      log('Round-trip throughput: ${throughputMBps.toStringAsFixed(1)} MB/s');
+
+      await channel.shutdown();
+      await server.shutdown();
+      log('Test complete. Total time: ${sw.elapsedMilliseconds}ms');
+    });
+
+    // -------------------------------------------------------------------------
     // Test 13: Deferred close safety net cleans up stalled outgoing stream
     // -------------------------------------------------------------------------
     // RACE TARGETED: Start a large server-stream response, then abruptly

@@ -27,6 +27,7 @@ import 'dart:async';
 
 import 'package:meta/meta.dart';
 
+import '../http2/transport.dart';
 import '../shared/codec_registry.dart';
 import 'handler.dart';
 import 'interceptor.dart';
@@ -114,7 +115,11 @@ class NamedPipeServer extends ConnectionServer {
   // ---------------------------------------------------------------------------
 
   /// Starts the named pipe server.
-  Future<void> serve({required String pipeName, int maxInstances = _pipeUnlimitedInstances}) {
+  Future<void> serve({
+    required String pipeName,
+    int maxInstances = _pipeUnlimitedInstances,
+    ServerSettings? http2ServerSettings,
+  }) {
     return Future<void>.error(_namedPipeServerUnsupported('NamedPipeServer.serve'));
   }
 
