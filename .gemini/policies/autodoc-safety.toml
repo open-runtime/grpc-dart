@@ -8,6 +8,15 @@
 # it must only write `.md` files and must never create helper scripts or other
 # non-Markdown artifacts. The installed `runtime_ci_tooling` package may also
 # apply this policy from its template tree at invocation time.
+#
+# This policy replaces the deprecated `--allowed-tools` CLI flag (removed in
+# Gemini CLI 1.0). Tool-surface restriction is handled entirely by these rules:
+# explicit allows for the tools the autodoc pipeline needs, and a catch-all deny
+# for everything else. When loaded via `--policy`, these rules operate at User
+# tier (base priority 2) which overrides both the built-in defaults (tier 1)
+# and `--yolo` mode's allow-all rule (priority 1.999).
+
+# ── Allowed tools ────────────────────────────────────────────────────────────
 
 # Allow docs-only file edits for .md files only
 # (Gemini CLI 0.34+: file edits use `write_file` / `replace`; `edit_file` is not a registered tool.)
@@ -17,6 +26,14 @@ decision = "allow"
 priority = 100
 argsPattern = '"(file_path|path)"\s*:\s*"[^"]*\.md"'
 
+# Allow all read operations unconditionally
+[[rule]]
+toolName = ["read_file", "read_many_files", "glob", "grep_search", "list_directory", "search_file_content"]
+decision = "allow"
+priority = 100
+
+# ── Denied tools ─────────────────────────────────────────────────────────────
+
 # Deny docs-only file edits for all non-.md files
 [[rule]]
 toolName = ["write_file", "replace"]
@@ -24,17 +41,32 @@ decision = "deny"
 priority = 90
 deny_message = "Autodoc safety: only .md files may be edited. Source code and config files are read-only."
 
-# Allow all read operations unconditionally
-[[rule]]
-toolName = ["read_file", "read_many_files", "glob", "grep_search", "list_directory"]
-decision = "allow"
-priority = 100
-
 # Deny shell access entirely for docs-only Gemini runs. The tooling already
 # provides the required prompt and file context, so shell access is unnecessary
 # and can be abused to create helper scripts or other non-Markdown files.
 [[rule]]
-toolName = ["run_shell_command"]
+toolName = "run_shell_command"
 decision = "deny"
 priority = 100
 deny_message = "Autodoc safety: shell access is disabled during docs-only Gemini runs."
+
+# Deny web access — docs-only runs should not fetch external resources.
+[[rule]]
+toolName = ["web_fetch", "google_web_search"]
+decision = "deny"
+priority = 100
+deny_message = "Autodoc safety: web access is disabled during docs-only Gemini runs."
+
+# Deny agent delegation — sub-agents could bypass the policy restrictions.
+[[rule]]
+toolName = ["codebase_investigator"]
+decision = "deny"
+priority = 100
+deny_message = "Autodoc safety: agent delegation is disabled during docs-only Gemini runs."
+
+# Deny memory and planning tools — not needed for docs generation.
+[[rule]]
+toolName = ["save_memory", "write_todos", "enter_plan_mode"]
+decision = "deny"
+priority = 100
+deny_message = "Autodoc safety: memory/planning tools are disabled during docs-only Gemini runs."
