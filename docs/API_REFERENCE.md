@@ -1,203 +1,247 @@
 # Shared Utilities API Reference
 
-This document provides the API reference for the shared utilities module in `grpc-dart`, encompassing codec management, HTTP/2 streaming, error handling, and general utilities.
+This document provides the API reference for the Shared Utilities module in `grpc-dart`. This module contains the foundational building blocks used by both the client and server implementations.
 
-## Classes
+## 1. Protobuf Naming Conventions (CRITICAL)
 
-* **Codec** -- Abstract class for compressing and decompressing messages.
-  * **Fields:**
-    * `String get encodingName` - The message encoding that this compressor uses (e.g., "gzip", "identity").
-  * **Methods:**
-    * `List<int> compress(List<int> data)` - Wraps an existing output stream with a compressed output.
-    * `List<int> decompress(List<int> data)` - Wraps an existing output stream with uncompressed input data.
+When using Protobuf-generated Dart code, **always use `camelCase` for field access**. While the `.proto` files use `snake_case`, the `protoc` plugin for Dart converts these to `camelCase` to follow Dart language conventions.
 
-* **CodecRegistry** -- Encloses classes related to the compression and decompression of messages.
-  * **Constructors:**
-    * `CodecRegistry({List<Codec> codecs = const [IdentityCodec()]})` - Creates a registry with the provided codecs.
-    * `factory CodecRegistry.empty()` - Creates an empty codec registry.
-  * **Fields:**
-    * `String get supportedEncodings` - A comma-separated string of supported encoding names.
-  * **Methods:**
-    * `Codec? lookup(String codecName)` - Looks up and returns a codec by its encoding name.
-  * **Example:**
-    ```dart
-    import 'package:grpc/grpc.dart';
+| Proto Field Name | Dart Property Name |
+| :--- | :--- |
+| `batch_id` | `batchId` |
+| `send_at` | `sendAt` |
+| `mail_settings` | `mailSettings` |
+| `tracking_settings` | `trackingSettings` |
+| `click_tracking` | `clickTracking` |
+| `open_tracking` | `openTracking` |
+| `sandbox_mode` | `sandboxMode` |
+| `dynamic_template_data` | `dynamicTemplateData` |
+| `content_id` | `contentId` |
+| `custom_args` | `customArgs` |
+| `ip_pool_name` | `ipPoolName` |
+| `reply_to` | `replyTo` |
+| `reply_to_list` | `replyToList` |
+| `template_id` | `templateId` |
+| `enable_text` | `enableText` |
+| `substitution_tag` | `substitutionTag` |
+| `group_id` | `groupId` |
+| `groups_to_display` | `groupsToDisplay` |
 
-    // Create a registry supporting both gzip and identity encodings
-    final registry = CodecRegistry(codecs: [
-      const GzipCodec(),
-      const IdentityCodec(),
-    ]);
-    ```
+**Example of correct naming convention:**
 
-* **GrpcData** -- Represents a gRPC data message.
-  * **Fields:**
-    * `final List<int> data` - The raw or compressed byte data.
-    * `final bool isCompressed` - Indicates whether the data is currently compressed.
+```dart
+import 'package:grpc/grpc.dart';
+import 'package:fixnum/fixnum.dart';
 
-* **GrpcError** -- Represents a gRPC error exception.
-  * **Constructors:**
-    * `const GrpcError.custom(this.code, [this.message, this.details, this.rawResponse, this.trailers = const {}])`
-    * Named constructors for standard gRPC status codes: `.ok`, `.cancelled`, `.unknown`, `.invalidArgument`, `.deadlineExceeded`, `.notFound`, `.alreadyExists`, `.permissionDenied`, `.resourceExhausted`, `.failedPrecondition`, `.aborted`, `.outOfRange`, `.unimplemented`, `.internal`, `.unavailable`, `.dataLoss`, `.unauthenticated`.
-  * **Fields:**
-    * `final int code` - The gRPC status code.
-    * `final String? message` - Optional error message detailing the issue.
-    * `final Object? rawResponse` - The raw response object, if applicable.
-    * `final Map<String, String>? trailers` - Any HTTP trailers associated with the error.
-    * `final List<GeneratedMessage>? details` - A list of protobuf `GeneratedMessage` details providing structured error information.
-    * `String get codeName` - The string representation of the status code.
-  * **Methods:**
-    * `bool operator ==(other)` - Checks equality based on code and message.
-    * `int get hashCode` - Returns a hash code for the object.
-    * `String toString()` - String representation of the error.
-  * **Example:**
-    ```dart
-    import 'package:grpc/grpc.dart';
-    import 'package:grpc/src/generated/google/rpc/error_details.pb.dart';
+// CORRECT: Using camelCase
+final request = SendMailRequest()
+  ..batchId = 'batch-123'
+  ..sendAt = Int64(123456789)
+  ..mailSettings = (MailSettings()..sandboxMode = true)
+  ..trackingSettings = (TrackingSettings()
+    ..clickTracking = (ClickTracking()..enable = true)
+    ..openTracking = (OpenTracking()..enable = true));
 
-    // Construct an ErrorInfo detail message using the cascade builder pattern
-    final errorInfo = ErrorInfo()
-      ..reason = 'INVALID_TOKEN'
-      ..domain = 'example.com'
-      ..metadata.addAll({'requestId': '12345'});
+// CORRECT: Protobuf-generated objects also use camelCase for accessors
+final String batchId = request.batchId;
+final bool sandboxMode = request.mailSettings.sandboxMode;
 
-    // Create a custom GrpcError including the detail
-    final error = GrpcError.custom(
-      StatusCode.unauthenticated,
-      'Authentication failed',
-      [errorInfo],
+// INCORRECT: Do not use snake_case in Dart
+// request.batch_id = '123'; // Compilation error
+```
+
+---
+
+## 2. Classes
+
+### Codec
+Abstract base class for message compression and decompression.
+
+- **Properties:**
+  - `String encodingName`: The name of the encoding (e.g., "gzip", "identity").
+- **Methods:**
+  - `List<int> compress(List<int> data)`: Compresses the provided data.
+  - `List<int> decompress(List<int> data)`: Decompresses the provided data.
+
+### CodecRegistry
+A registry of available codecs for a channel or server.
+
+- **Constructors:**
+  - `CodecRegistry({List<Codec> codecs})`: Creates a registry with the provided codecs. Defaults to `[IdentityCodec()]`.
+  - `factory CodecRegistry.empty()`: Creates an empty registry.
+- **Properties:**
+  - `String supportedEncodings`: A comma-separated list of supported encoding names.
+- **Methods:**
+  - `Codec? lookup(String codecName)`: Looks up a codec by its encoding name.
+
+**Example:**
+```dart
+import 'package:grpc/grpc.dart';
+
+final registry = CodecRegistry(codecs: [
+  IdentityCodec(),
+  GzipCodec(),
+]);
+
+final codec = registry.lookup('gzip');
+```
+
+### GrpcError
+Exception class representing a gRPC error.
+
+- **Properties:**
+  - `final int code`: The gRPC status code.
+  - `final String? message`: The error message.
+  - `final List<GeneratedMessage>? details`: A list of error details (e.g., `RetryInfo`, `BadRequest`).
+  - `final Object? rawResponse`: The raw response object if available.
+  - `final Map<String, String>? trailers`: The response trailers.
+  - `String get codeName`: Returns the string representation of the status code (e.g., "NOT_FOUND").
+
+- **Named Constructors:**
+  - `GrpcError.custom(int code, [String? message, List<GeneratedMessage>? details, ...])`
+  - `GrpcError.ok([String? message, ...])`
+  - `GrpcError.cancelled([String? message, ...])`
+  - `GrpcError.unknown([String? message, ...])`
+  - `GrpcError.invalidArgument([String? message, ...])`
+  - `GrpcError.deadlineExceeded([String? message, ...])`
+  - `GrpcError.notFound([String? message, ...])`
+  - `GrpcError.alreadyExists([String? message, ...])`
+  - `GrpcError.permissionDenied([String? message, ...])`
+  - `GrpcError.resourceExhausted([String? message, ...])`
+  - `GrpcError.failedPrecondition([String? message, ...])`
+  - `GrpcError.aborted([String? message, ...])`
+  - `GrpcError.outOfRange([String? message, ...])`
+  - `GrpcError.unimplemented([String? message, ...])`
+  - `GrpcError.internal([String? message, ...])`
+  - `GrpcError.unavailable([String? message, ...])`
+  - `GrpcError.dataLoss([String? message, ...])`
+  - `GrpcError.unauthenticated([String? message, ...])`
+
+**Example:**
+```dart
+import 'package:grpc/grpc.dart';
+import 'package:grpc/src/generated/google/rpc/error_details.pb.dart';
+
+throw GrpcError.invalidArgument(
+  'Invalid batch ID',
+  [
+    BadRequest_FieldViolation()
+      ..field = 'batchId'
+      ..description = 'Must be a UUID'
+  ],
+);
+```
+
+### StatusCode
+Defines standard gRPC status codes.
+
+- **Constants:**
+  - `ok`, `cancelled`, `unknown`, `invalidArgument`, `deadlineExceeded`, `notFound`, `alreadyExists`, `permissionDenied`, `resourceExhausted`, `failedPrecondition`, `aborted`, `outOfRange`, `unimplemented`, `internal`, `unavailable`, `dataLoss`, `unauthenticated`.
+- **Static Methods:**
+  - `static int fromHttpStatus(int status)`: Maps an HTTP status code to a gRPC status code.
+  - `static String? name(int status)`: Returns the name for a status code.
+
+### GrpcMessage
+Base class for messages transferred over the gRPC transport.
+
+- **Subclasses:**
+  - **GrpcMetadata**: Contains metadata (headers/trailers).
+    - `final Map<String, String> metadata`
+  - **GrpcData**: Contains framed message data.
+    - `final List<int> data`
+    - `final bool isCompressed`
+
+### GrpcLogEvent
+Structured log event object for production observability.
+
+- **Properties:**
+  - `final String component`: The component that generated the event (e.g., `ServerHandler`).
+  - `final String event`: The type of event (e.g., `deliver_error`).
+  - `final String context`: The execution context, usually the method name.
+  - `final Object? error`: The underlying error, if any.
+  - `final String formattedMessage`: Pre-formatted human-readable message.
+
+### GrpcHttpEncoder
+Converts `GrpcMessage` objects into HTTP/2 `StreamMessage` frames.
+
+- **Methods:**
+  - `StreamMessage convert(GrpcMessage input)`: Performs the conversion.
+
+### GrpcHttpDecoder
+Converts HTTP/2 `StreamMessage` frames back into `GrpcMessage` objects.
+
+- **Properties:**
+  - `final bool forResponse`: Whether this decoder is being used for a response stream (enables HTTP status validation).
+  - `final int? maxInboundMessageSize`: Optional limit on the size of inbound messages.
+- **Methods:**
+  - `GrpcMessage convert(StreamMessage input)`: Performs the conversion.
+  - `Sink<StreamMessage> startChunkedConversion(Sink<GrpcMessage> sink)`: Starts a chunked conversion process.
+
+### IdlePollBackoff
+Exponential backoff state for named-pipe idle polling (Windows).
+
+- **Properties:**
+  - `int zeroDelayCount`: Number of zero-delay polls before escalating.
+  - `int initialDelayMs`: Starting delay in milliseconds.
+  - `int maxDelayMs`: Maximum delay in milliseconds.
+
+---
+
+## 3. Top-Level Functions
+
+### Formatting and Framing
+- `List<int> frame(List<int> rawPayload, [Codec? codec])`: Frames a raw payload for gRPC transport, optionally compressing it.
+- `String toTimeoutString(Duration duration)`: Converts a `Duration` to the gRPC timeout header format.
+- `Duration? fromTimeoutString(String? timeout)`: Parses a gRPC timeout header string into a `Duration`.
+
+### Local IPC (UDS and Named Pipes)
+- `String defaultUdsDirectory()`: Returns the platform-conventional directory for Unix Domain Sockets.
+- `String udsSocketPath(String serviceName)`: Constructs a UDS path from a service name.
+- `void validateServiceName(String serviceName)`: Ensures a service name is valid for local IPC (e.g., length, characters).
+- `String namedPipePath(String pipeName)`: Constructs the full Windows named pipe path (e.g., `\\.\pipe\service`).
+
+### Parsing and Validation
+- `List<GeneratedMessage> decodeStatusDetails(String data)`: Decodes the `grpc-status-details-bin` trailer.
+- `GeneratedMessage parseErrorDetailsFromAny(Any any)`: Maps a Google RPC `Any` object to a concrete message type.
+- `void validateHttpStatusAndContentType(int? httpStatus, Map<String, String> headers)`: Validates that the HTTP response is a valid gRPC response.
+
+### Logging
+- `void logGrpcError(String message)`: Logs an internal gRPC error using the configured `grpcErrorLogger`.
+- `void logGrpcEvent(String message, {required String component, ...})`: Logs a structured event.
+
+---
+
+## 4. Global Configuration
+
+### Profiling and Timeline
+- `bool isTimelineLoggingEnabled`: If `true`, gRPC events will be logged to the Dart developer timeline. Defaults to `false`.
+
+### Custom Logging
+- `GrpcErrorLogger grpcErrorLogger`: Global callback for string-based error logging. Defaults to `stderr.writeln`.
+- `GrpcEventLogger? grpcEventLogger`: Optional global callback for structured event logging.
+
+**Example: Redirecting gRPC logs to a custom framework:**
+```dart
+import 'package:grpc/grpc.dart';
+
+void main() {
+  grpcErrorLogger = (message) {
+    print('[gRPC-Internal] $message');
+  };
+
+  grpcEventLogger = (event) {
+    // Send to Sentry, Google Cloud Logging, etc.
+    myAnalytics.log(
+      'grpc_event',
+      {
+        'component': event.component,
+        'type': event.event,
+        'error': event.error?.toString(),
+      },
     );
-    ```
+  };
+}
+```
 
-* **GrpcHttpDecoder** -- Decodes `StreamMessage` frames into `GrpcMessage` objects.
-  * **Constructors:**
-    * `GrpcHttpDecoder({this.forResponse = false})`
-  * **Fields:**
-    * `final bool forResponse` - Indicates if this decoder is used for decoding responses.
-  * **Methods:**
-    * `GrpcMessage convert(StreamMessage input)` - Converts a single stream message frame.
-    * `Sink<StreamMessage> startChunkedConversion(Sink<GrpcMessage> sink)` - Starts chunked conversion of stream messages.
-
-* **GrpcHttpEncoder** -- Encodes `GrpcMessage` objects into `StreamMessage` frames.
-  * **Methods:**
-    * `StreamMessage convert(GrpcMessage input)` - Converts a `GrpcMessage` into HTTP/2 headers or data stream frames.
-
-* **GrpcMessage** -- Abstract base class for gRPC messages.
-
-* **GrpcMessageSink** -- Sink for collecting a single `GrpcMessage`.
-  * **Fields:**
-    * `late final GrpcMessage message` - The received message.
-  * **Methods:**
-    * `void add(GrpcMessage data)` - Adds a message to the sink.
-    * `void close()` - Closes the sink.
-
-* **GrpcMetadata** -- Represents gRPC metadata message.
-  * **Fields:**
-    * `final Map<String, String> metadata` - The key-value pairs of the metadata headers.
-  * **Example:**
-    ```dart
-    import 'package:grpc/grpc.dart';
-
-    final metadata = GrpcMetadata({
-      'authorization': 'Bearer token...',
-      'x-custom-header': 'value',
-    });
-    ```
-
-* **GzipCodec** -- A gzip compressor and decompressor implementation of `Codec`.
-  * **Fields:**
-    * `final String encodingName` - Always `'gzip'`.
-  * **Methods:**
-    * `List<int> compress(List<int> data)` - Compresses data using GZIP (throws UnsupportedError on web).
-    * `List<int> decompress(List<int> data)` - Decompresses GZIP data (throws UnsupportedError on web).
-
-* **IdentityCodec** -- The "identity" or "none" codec implementation of `Codec`.
-  * **Fields:**
-    * `final String encodingName` - Always `'identity'`.
-  * **Methods:**
-    * `List<int> compress(List<int> data)` - Returns the data unchanged.
-    * `List<int> decompress(List<int> data)` - Returns the data unchanged.
-
-* **InternetAddress** -- Stub class for `InternetAddress`.
-  * *Note:* Unavailable natively on the web platform.
-
-* **StatusCode** -- Class containing static constants for gRPC status codes and mapping logic.
-  * **Fields:**
-    * Static constant integers representing standard gRPC status codes: `ok`, `cancelled`, `unknown`, `invalidArgument`, `deadlineExceeded`, `notFound`, `alreadyExists`, `permissionDenied`, `resourceExhausted`, `failedPrecondition`, `aborted`, `outOfRange`, `unimplemented`, `internal`, `unavailable`, `dataLoss`, `unauthenticated`.
-  * **Methods:**
-    * `static int fromHttpStatus(int status)` - Creates a gRPC Status code from an HTTP Status code.
-    * `static String? name(int status)` - Creates a string name from a gRPC status code.
-
-* **X509Certificate** -- Stub class for `X509Certificate`.
-  * *Note:* Should not be used on the Web, but is pulled through protoc-generated code.
-
-## Enums
-
-*(No public enums are defined in this module)*
-
-## Extensions
-
-*(No public extensions are defined in this module)*
-
-## Top-Level Functions
-
-* **createSecurityContext** -- `SecurityContext createSecurityContext(bool isServer)`
-  * Creates a `SecurityContext` with supported ALPN protocols populated.
-  * **Parameters:** `bool isServer`
-  * **Returns:** `SecurityContext`
-
-* **decodeStatusDetails** -- `List<GeneratedMessage> decodeStatusDetails(String data)`
-  * Given a string of base64url data, attempts to parse a Status object and its detailed `GeneratedMessage` items.
-  * **Parameters:** `String data`
-  * **Returns:** `List<GeneratedMessage>`
-
-* **frame** -- `List<int> frame(List<int> rawPayload, [Codec? codec])`
-  * Frames a raw payload according to gRPC specification, conditionally compressing it if a `Codec` is provided.
-  * **Parameters:** `List<int> rawPayload`, optional `Codec? codec`
-  * **Returns:** `List<int>`
-
-* **fromTimeoutString** -- `Duration? fromTimeoutString(String? timeout)`
-  * Converts a timeout from grpc-timeout header string format to a `Duration`. Returns `null` if incorrectly formatted.
-  * **Parameters:** `String? timeout`
-  * **Returns:** `Duration?`
-
-* **grpcDecompressor** -- `StreamTransformer<GrpcMessage, GrpcMessage> grpcDecompressor({CodecRegistry? codecRegistry})`
-  * Returns a `StreamTransformer` that decompresses incoming `GrpcData` messages based on the active `grpc-encoding`.
-  * **Parameters:** optional `CodecRegistry? codecRegistry`
-  * **Returns:** `StreamTransformer<GrpcMessage, GrpcMessage>`
-
-* **grpcErrorDetailsFromTrailers** -- `GrpcError? grpcErrorDetailsFromTrailers(Map<String, String> trailers)`
-  * Extracts error details, including `grpc-status` and `grpc-message`, from an HTTP trailers map.
-  * **Parameters:** `Map<String, String> trailers`
-  * **Returns:** `GrpcError?`
-
-* **logGrpcError** -- `void logGrpcError(String message)`
-  * Platform-specific logging. Uses `stderr` in VM/IO environments and `print` in web/browser environments.
-  * **Parameters:** `String message`
-  * **Returns:** `void`
-
-* **parseErrorDetailsFromAny** -- `GeneratedMessage parseErrorDetailsFromAny(Any any)`
-  * Parses an error details `Any` object into the right kind of `GeneratedMessage` (e.g. `RetryInfo`, `DebugInfo`).
-  * **Parameters:** `Any any`
-  * **Returns:** `GeneratedMessage`
-
-* **toCustomTrailers** -- `Map<String, String> toCustomTrailers(Map<String, String> trailers)`
-  * Filters standard gRPC keys (`:status`, `content-type`, `grpc-status`, `grpc-message`) out of a trailers map.
-  * **Parameters:** `Map<String, String> trailers`
-  * **Returns:** `Map<String, String>`
-
-* **toTimeoutString** -- `String toTimeoutString(Duration duration)`
-  * Converts a `Duration` to the grpc-timeout header string format (e.g., `100m`, `5S`).
-  * **Parameters:** `Duration duration`
-  * **Returns:** `String`
-
-* **validateHttpStatusAndContentType** -- `void validateHttpStatusAndContentType(int? httpStatus, Map<String, String> headers, {Object? rawResponse})`
-  * Validates HTTP status and Content-Type arriving with the response, rejecting non-ok (200) statuses or unsupported types.
-  * **Parameters:** `int? httpStatus`, `Map<String, String> headers`, optional `Object? rawResponse`
-  * **Returns:** `void`
-
-## Constants and Variables
-
-* **clientTimelineFilterKey** -- `const String clientTimelineFilterKey = 'grpc/client'`
-* **isTimelineLoggingEnabled** -- `bool isTimelineLoggingEnabled = false` (Controls logging requests and responses for clients)
-* **supportedAlpnProtocols** -- `const supportedAlpnProtocols = ['grpc-exp', 'h2']`
+### Security Constants
+- `const List<String> supportedAlpnProtocols`: The ALPN protocols supported by this implementation (`['grpc-exp', 'h2']`).

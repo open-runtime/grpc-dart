@@ -6,12 +6,18 @@
 This is the **open-runtime fork** of the official [grpc/grpc-dart](https://github.com/grpc/grpc-dart) package, maintained with critical production fixes and enhancements.
 
 **Key Features:**
-- **Currently v5.4.0** (Based on upstream 5.0.0 with fork-specific improvements)
+- **Currently v5.5.0** (Based on upstream 5.0.0 with fork-specific improvements)
 - Vendored `http2` implementation for precise connection and flow control
 - Local IPC support via Unix Domain Sockets and Windows Named Pipes (see [LOCAL_IPC_GUIDE.md](docs/LOCAL_IPC_GUIDE.md))
 - Race condition fixes for production stability
 - Null connection exception handling
 - ServerInterceptor support for advanced security patterns
+
+**What's New in v5.5.0:**
+- Substantial performance and reliability improvements for Windows Named Pipes (zero-delay read polling, 32KB write chunk coalescing).
+- Resolved deadlocks and microtask starvation in named pipe duplex transport.
+- Added comprehensive documentation on [Platform Selection Logic](docs/PLATFORM_SELECTION.md) and the vendored HTTP/2 module.
+- Transitioned `runtime_ci_tooling` to global activation for internal development.
 
 **Why this fork?** See [WHY_USE_OPEN_RUNTIME_FORK.md](WHY_USE_OPEN_RUNTIME_FORK.md) for detailed justification.
 
@@ -19,6 +25,15 @@ This is the **open-runtime fork** of the official [grpc/grpc-dart](https://githu
 
 The [Dart](https://www.dart.dev/) implementation of
 [gRPC](https://grpc.io/): A high performance, open source, general RPC framework that puts mobile and HTTP/2 first.
+
+## Installation
+
+Add the following to your `pubspec.yaml` to use the latest version of this fork:
+
+```yaml
+dependencies:
+  grpc: ^5.5.0
+```
 
 ## Learn more
 
@@ -35,6 +50,7 @@ For complete documentation, see [Dart gRPC](https://grpc.io/docs/languages/dart)
 
 > **Note:** [grpc-web](https://github.com/grpc/grpc-web) is supported by `package:grpc/grpc_web.dart`.
 > **Local IPC** is natively supported via Unix Domain Sockets (macOS/Linux) and Named Pipes (Windows). See the [Local IPC Guide](docs/LOCAL_IPC_GUIDE.md).
+> **Platform Selection:** See [Platform Selection Logic](docs/PLATFORM_SELECTION.md) for details on how transports are chosen at compile-time and runtime.
 
 ## Development Scripts
 
@@ -43,6 +59,8 @@ The `scripts/` directory contains utilities for development and maintenance:
 - `scripts/devbox/bootstrap-devbox.ps1` - Provisions an Azure Dev Box for remote Windows development.
 - `scripts/devbox/setup-local-mutagen.sh` - Synchronizes your local macOS/Linux workspace to a remote Windows Dev Box via Mutagen (see [Dev Box Guide](docs/devbox/README.md)).
 - `scripts/prompts/` - Contains AI coding assistant prompts used for generating API references and examples.
+
+> **Note:** For auto-documentation and CI management, we use `runtime_ci_tooling` globally. See [pubspec.yaml](pubspec.yaml) for installation instructions.
 
 ## Contributing
 

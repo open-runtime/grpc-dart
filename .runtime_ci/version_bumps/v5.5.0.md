@@ -1,0 +1,18 @@
+- **Decision**: minor
+  The update expands the public API surface with an additive, backward-compatible change (`NamedPipeServer.serve` taking `http2ServerSettings`), which falls under a minor version bump.
+- **Key Changes**:
+  - Add optional `http2ServerSettings` parameter to `NamedPipeServer.serve` to support custom HTTP/2 configuration (e.g., flow-control limits) on Windows named pipe connections.
+  - Implement zero-delay read polling and coalesced writes (up to 32KB chunks) to drastically reduce latency and resolve microtask starvation on Windows named pipes.
+  - Switch named pipe server data I/O to `PIPE_NOWAIT` mode to prevent the Dart event loop from stalling under heavy concurrency.
+  - Remove synchronous `WaitNamedPipe` FFI calls that blocked the Dart isolate, replacing them with asynchronous exponential backoff and a wall-clock deadline.
+  - Fix idle connector release, overlapped write spikes, and general pipeline resilience on Windows.
+  - Fix git tracking of CI workflow logs (added to `.gitignore`).
+  - Correct repository name resolution in CI configuration (`grpc-dart`).
+  - Switch CI to WarpBuild runners for increased speed and upgrade `runtime_ci_tooling` templates to `v0.23.10`.
+- **Breaking Changes**:
+  - None. (Adding an optional named parameter is fully backward-compatible in Dart).
+- **New Features**:
+  - Expose `ServerSettings` tuning (e.g., stream window size, concurrent streams) for Windows named pipe deployments.
+- **References**:
+  - PR #50 (`fix/windows-named-pipe-ci-hardening`).
+  - Commits `7228207`, `62d0325`, `cfb9248`, `7b87f49`, `e6c139e`, `0ca1b7b`.
