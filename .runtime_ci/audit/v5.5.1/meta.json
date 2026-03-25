@@ -1,0 +1,82 @@
+{
+  "command": "merged-audit",
+  "started_at": "2026-03-25T08:13:37.528599",
+  "merged_from": [
+    {
+      "artifact": "cicd-audit-release-notes",
+      "command": "release-notes",
+      "args": [],
+      "started_at": "2026-03-25T08:05:32.136739",
+      "pid": 2823,
+      "platform": "linux",
+      "dart_version": "3.9.2",
+      "repo_root": "/home/runner/work/grpc-dart/grpc-dart",
+      "run_dir": "/home/runner/work/grpc-dart/grpc-dart/.runtime_ci/runs/run_2026-03-25T08-05-32_2823",
+      "ci": true,
+      "completed_at": "2026-03-25T08:13:07.473817",
+      "duration_seconds": 455,
+      "artifacts": [
+        "meta.json",
+        "release-notes/release_notes.md",
+        "release-notes/gemini_response.json",
+        "release-notes/prompt.txt"
+      ]
+    },
+    {
+      "artifact": "cicd-audit-prepare-release-docs",
+      "command": "compose",
+      "args": [],
+      "started_at": "2026-03-25T07:35:57.357988",
+      "pid": 2794,
+      "platform": "linux",
+      "dart_version": "3.9.2",
+      "repo_root": "/home/runner/work/grpc-dart/grpc-dart",
+      "run_dir": "/home/runner/work/grpc-dart/grpc-dart/.runtime_ci/runs/run_2026-03-25T07-35-57_2794",
+      "ci": true,
+      "completed_at": "2026-03-25T07:42:44.741417",
+      "duration_seconds": 407,
+      "artifacts": [
+        "meta.json",
+        "compose/gemini_response.json",
+        "compose/prompt.txt"
+      ]
+    },
+    {
+      "artifact": "cicd-audit-prepare-release-docs",
+      "command": "documentation",
+      "args": [],
+      "started_at": "2026-03-25T07:42:45.186522",
+      "pid": 5341,
+      "platform": "linux",
+      "dart_version": "3.9.2",
+      "repo_root": "/home/runner/work/grpc-dart/grpc-dart",
+      "run_dir": "/home/runner/work/grpc-dart/grpc-dart/.runtime_ci/runs/run_2026-03-25T07-42-45_5341",
+      "ci": true
+    },
+    {
+      "artifact": "cicd-audit-explore",
+      "command": "explore",
+      "args": [],
+      "started_at": "2026-03-25T07:26:45.466296",
+      "pid": 2689,
+      "platform": "linux",
+      "dart_version": "3.9.2",
+      "repo_root": "/home/runner/work/grpc-dart/grpc-dart",
+      "run_dir": "/home/runner/work/grpc-dart/grpc-dart/.runtime_ci/runs/run_2026-03-25T07-26-45_2689",
+      "ci": true,
+      "completed_at": "2026-03-25T07:34:56.883377",
+      "duration_seconds": 491,
+      "exit_code": 0,
+      "artifacts": [
+        "meta.json",
+        "explore/gemini_response.json",
+        "explore/prompt.txt"
+      ]
+    }
+  ],
+  "artifact_count": 5,
+  "total_files": 18,
+  "ci": true,
+  "platform": "linux",
+  "dart_version": "3.9.2"
+}

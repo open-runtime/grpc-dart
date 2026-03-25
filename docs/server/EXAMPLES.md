@@ -1,436 +1,287 @@
 # gRPC Server Examples
 
-This document provides practical, copy-paste-ready examples for the **gRPC Server** module. It covers basic usage, common workflows, error handling, and advanced configuration patterns.
+This document provides practical, copy-paste-ready examples for the **gRPC Server** module. It covers basic instantiation, common workflows, error handling, and advanced features such as interceptors and keepalive configurations.
 
 ## 1. Basic Usage
 
-### Implementing a Service
-
-To create a gRPC server, you first need to implement the service generated from your `.proto` file. The server logic lives within a class that extends the generated base service class (which itself extends `Service`).
-
-Below is an implementation of a hypothetical `MailService` that covers a typical `.proto` file with underscores in field names:
-
-```protobuf
-syntax = "proto3";
-package examples;
-
-enum MailFrom {
-  MAIL_FROM_UNSPECIFIED = 0;
-  MAIL_FROM_NO_REPLY = 1;
-  MAIL_FROM_SUPPORT = 2;
-}
-
-message MailSettings {
-  // Whether to run in sandbox mode.
-  bool sandbox_mode = 1;
-  // Whether to enable text format.
-  bool enable_text = 2;
-}
-
-message ClickTracking {
-  // Whether to enable click tracking.
-  bool enable = 1;
-  // Whether to enable text format for click tracking.
-  bool enable_text = 2;
-}
-
-message OpenTracking {
-  // Whether to enable open tracking.
-  bool enable = 1;
-  // The substitution tag for tracking.
-  string substitution_tag = 2;
-}
-
-message TrackingSettings {
-  // Click tracking settings.
-  ClickTracking click_tracking = 1;
-  // Open tracking settings.
-  OpenTracking open_tracking = 2;
-}
-
-// Request to send an email.
-message SendMailRequest {
-  // Unique batch identifier.
-  string batch_id = 1;
-  // Timestamp to send the email at.
-  int64 send_at = 2;
-  // Global mail settings.
-  MailSettings mail_settings = 3;
-  // Tracking settings for the email.
-  TrackingSettings tracking_settings = 4;
-  // Dynamic data for templates.
-  map<string, string> dynamic_template_data = 5;
-  // Content identifier.
-  string content_id = 6;
-  // Custom arguments for tracking.
-  map<string, string> custom_args = 7;
-  // IP pool name to use.
-  string ip_pool_name = 8;
-  // Reply-to address.
-  string reply_to = 9;
-  // Multiple reply-to addresses.
-  repeated string reply_to_list = 10;
-  // ID of the template to use.
-  string template_id = 11;
-  // Target group ID.
-  int32 group_id = 12;
-  // List of group IDs to display.
-  repeated int32 groups_to_display = 13;
-  // Enum representing the mail sender.
-  MailFrom mail_from = 14;
-}
-
-message SendMailResponse {
-  // The identifier of the sent message.
-  string message_id = 1;
-}
-
-service MailService {
-  // Sends a single mail.
-  rpc SendMail (SendMailRequest) returns (SendMailResponse);
-}
-```
-
-When implementing the generated `MailServiceBase`, **always use camelCase** for Dart field access corresponding to underscored proto fields. `Message` and `Enum` names remain `PascalCase`.
-
-```dart
-import 'dart:async';
-import 'package:grpc/grpc.dart';
-import 'src/generated/mail.pbgrpc.dart'; // Assume this contains generated protobufs
-import 'package:fixnum/fixnum.dart';
-
-/// Implementation of the MailService defined in the .proto file.
-class MailServiceImpl extends MailServiceBase {
-  @override
-  Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
-    // Access fields using camelCase:
-    
-    // Unique batch identifier.
-    final String batchId = request.batchId;
-    
-    // Timestamp to send the email at.
-    final Int64 sendAt = request.sendAt;
-    
-    // Global mail settings.
-    final MailSettings mailSettings = request.mailSettings;
-    
-    // Tracking settings for the email.
-    final TrackingSettings trackingSettings = request.trackingSettings;
-    
-    // Content identifier.
-    final String contentId = request.contentId;
-    
-    // IP pool name to use.
-    final String ipPoolName = request.ipPoolName;
-    
-    // Reply-to address.
-    final String replyTo = request.replyTo;
-    
-    // Multiple reply-to addresses.
-    final List<String> replyToList = request.replyToList;
-    
-    // ID of the template to use.
-    final String templateId = request.templateId;
-    
-    // Target group ID.
-    final int groupId = request.groupId;
-    
-    // List of group IDs to display.
-    final List<int> groupsToDisplay = request.groupsToDisplay;
-    
-    // Dynamic data for templates.
-    final Map<String, String> dynamicTemplateData = request.dynamicTemplateData;
-    
-    // Custom arguments for tracking.
-    final Map<String, String> customArgs = request.customArgs;
-
-    // Enum representing the mail sender.
-    final MailFrom mailFrom = request.mailFrom;
-
-    print('Received request for batch $batchId to be sent at $sendAt');
-
-    // Create a response and set its fields using camelCase:
-    // The identifier of the sent message.
-    final response = SendMailResponse()
-      ..messageId = 'msg_$batchId';
-
-    return response;
-  }
-}
-```
-
-### Constructing Messages with the Builder Pattern
-
-You can use the builder pattern (cascade `..`) to easily construct requests and inner messages, ensuring that optional fields or edge cases are covered cleanly:
-
-```dart
-import 'package:fixnum/fixnum.dart';
-import 'src/generated/mail.pbgrpc.dart';
-
-// Constructing a fully populated SendMailRequest covering edge cases:
-final request = SendMailRequest()
-  // Unique batch identifier.
-  ..batchId = 'batch_123'
-  // Timestamp to send the email at.
-  ..sendAt = Int64(1672531200)
-  // Global mail settings.
-  ..mailSettings = (MailSettings()
-    ..sandboxMode = true
-    ..enableText = true)
-  // Tracking settings for the email.
-  ..trackingSettings = (TrackingSettings()
-    ..clickTracking = (ClickTracking()
-      ..enable = true
-      ..enableText = false)
-    ..openTracking = (OpenTracking()
-      ..enable = true
-      ..substitutionTag = '[open]'))
-  // Dynamic data for templates.
-  ..dynamicTemplateData.addAll({'user': 'Alice', 'role': 'Admin'})
-  // Content identifier.
-  ..contentId = 'content_456'
-  // Custom arguments for tracking.
-  ..customArgs.addAll({'source': 'app', 'campaign': 'spring_sale'})
-  // IP pool name to use.
-  ..ipPoolName = 'transactional'
-  // Reply-to address.
-  ..replyTo = 'support@example.com'
-  // Multiple reply-to addresses.
-  ..replyToList.addAll(['sales@example.com', 'help@example.com'])
-  // ID of the template to use.
-  ..templateId = 'template_789'
-  // Target group ID.
-  ..groupId = 10
-  // List of group IDs to display.
-  ..groupsToDisplay.addAll([1, 2, 3])
-  // Enum representing the mail sender.
-  ..mailFrom = MailFrom.MAIL_FROM_NO_REPLY;
-```
-
-### Instantiating and Serving `Server`
-
-The standard `Server` listens over TCP/IP and HTTP/2. It requires a list of initialized services.
-
-```dart
-import 'package:grpc/grpc.dart';
-import 'src/generated/mail.pbgrpc.dart';
-
-Future<void> main() async {
-  // 1. Instantiate the server
-  final server = Server.create(
-    services: [MailServiceImpl()],
-    // Optional configuration:
-    maxInboundMessageSize: 4 * 1024 * 1024, // 4MB
-  );
-
-  // 2. Start serving
-  await server.serve(port: 8080);
-  print('Server listening on port ${server.port}...');
-
-  // (Optional) shutdown gracefully
-  // await server.shutdown();
-}
-```
-
-### Instantiating `LocalGrpcServer`
-
-`LocalGrpcServer` provides local-only IPC using the best transport per platform (Unix Domain Sockets on macOS/Linux, Named Pipes on Windows). This avoids opening network ports.
-
-```dart
-import 'package:grpc/grpc.dart';
-import 'src/generated/mail.pbgrpc.dart';
-
-Future<void> main() async {
-  // 1. Instantiate LocalGrpcServer with a service name
-  final localServer = LocalGrpcServer(
-    'my-local-app',
-    services: [MailServiceImpl()],
-  );
-
-  // 2. Start serving
-  await localServer.serve();
-  
-  if (localServer.isServing) {
-    print('Local server serving at: ${localServer.address}');
-  }
-
-  // 3. Clean up on exit
-  // await localServer.shutdown();
-}
-```
-
-### Instantiating `NamedPipeServer` (Windows-only)
-
-If you are developing specifically for Windows and need advanced named pipe IPC behavior, you can use `NamedPipeServer`.
+### Standard TCP Server
+The standard `Server` listens on TCP ports and is the most common way to serve gRPC clients. This example uses a generated `MailServiceBase` class which handles method dispatching.
 
 ```dart
 import 'dart:io';
 import 'package:grpc/grpc.dart';
-import 'src/generated/mail.pbgrpc.dart';
+import 'package:fixnum/fixnum.dart';
+// import 'src/generated/mail.pbgrpc.dart';
+
+class MailServiceImpl extends MailServiceBase {
+  @override
+  Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
+    // 1. Access snake_case proto fields using camelCase Dart fields:
+    final String batchId = request.batchId;           // from batch_id
+    final Int64 sendAt = request.sendAt;              // from send_at
+    final String templateId = request.templateId;      // from template_id
+
+    // 2. Access nested messages and enums:
+    final bool sandbox = request.mailSettings.sandboxMode; // from sandbox_mode
+    final MailFrom sender = request.mailFrom;              // from mail_from
+
+    print('Processing batch $batchId for sender $sender (sandbox: $sandbox)');
+
+    // 3. Construct response using the builder pattern (cascade ..):
+    return SendMailResponse()
+      ..messageId = 'msg_${batchId}'; // from message_id
+  }
+}
 
 Future<void> main() async {
-  if (!Platform.isWindows) {
-    print('NamedPipeServer is only supported on Windows.');
-    return;
-  }
+  // Instantiate the server with your generated services
+  final server = Server.create(
+    services: [MailServiceImpl()],
+    // Optional: add a global error handler for unexpected errors
+    errorHandler: (error, stackTrace) {
+      print('Global gRPC Server Error: $error');
+    },
+  );
 
-  // 1. Create a named pipe server
+  // Serve the server on a specified port
+  await server.serve(
+    address: InternetAddress.anyIPv4,
+    port: 50051,
+    // Alternatively, secure the connection:
+    // security: ServerTlsCredentials(certificate: ..., privateKey: ...)
+  );
+
+  print('Server listening on port ${server.port}');
+  
+  // When your application is stopping:
+  // await server.shutdown();
+}
+```
+
+### Local gRPC Server (IPC)
+The `LocalGrpcServer` uses Unix domain sockets on macOS/Linux and Named Pipes on Windows. It is highly optimized for local, on-machine communication.
+
+```dart
+import 'package:grpc/grpc.dart';
+
+Future<void> main() async {
+  // The service name determines the IPC address.
+  // - macOS/Linux: \$XDG_RUNTIME_DIR/grpc-local/mail-service.sock
+  // - Windows: \\.\pipe\mail-service
+  final localServer = LocalGrpcServer(
+    'mail-service',
+    services: [MailServiceImpl()],
+  );
+
+  await localServer.serve();
+  
+  print('Local IPC server serving on: ${localServer.address}');
+
+  // Shutdown when done
+  // await localServer.shutdown();
+}
+```
+
+### Windows Named Pipe Server
+For specialized Windows local-only IPC using `NamedPipeServer`.
+
+```dart
+import 'package:grpc/grpc.dart';
+
+Future<void> main() async {
+  // Ensure we only run this on Windows platforms, as it relies on dart:ffi
   final pipeServer = NamedPipeServer.create(
     services: [MailServiceImpl()],
   );
 
-  // 2. Start serving on a named pipe
+  // Start listening on a Windows named pipe
   await pipeServer.serve(
-    pipeName: 'my-windows-service', // Maps to \\.\pipe\my-windows-service
-    maxInstances: 255,              // Optional: Configure max concurrent pipe instances
+    pipeName: 'mail-service-12345',
+    maxInstances: 255, // Optional bounded concurrency limit
   );
-  
-  print('Named Pipe server listening at: ${pipeServer.pipePath}');
+
+  print('Serving on Named Pipe: ${pipeServer.pipePath}');
+
+  // await pipeServer.shutdown();
 }
 ```
 
 ## 2. Common Workflows
 
-### Accessing Metadata (Headers and Trailers)
-
-You can access incoming `clientMetadata` and set response `headers` and `trailers` via the `ServiceCall` object.
+### Accessing Call Context (Headers & Trailers)
+The `ServiceCall` object provides access to metadata, headers, trailers, and client context.
 
 ```dart
-import 'dart:async';
-import 'package:grpc/grpc.dart';
-import 'src/generated/mail.pbgrpc.dart';
-
-class MetadataServiceImpl extends MailServiceBase {
+class ContextAwareMailService extends MailServiceBase {
   @override
   Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
-    // 1. Read incoming metadata
-    final Map<String, String>? clientMetadata = call.clientMetadata;
-    final String? authHeader = clientMetadata?['authorization'];
+    // Read custom metadata sent by the client
+    final authHeader = call.clientMetadata?['authorization'];
+    print('Client Auth: $authHeader');
 
-    // 2. Set outgoing headers before the first response is sent
-    call.sendHeaders(); // Manually send default headers early if needed
+    // Add custom headers to the response
+    call.headers?['x-server-custom-header'] = 'MailServer-Alpha';
     
-    // 3. Set custom trailers (sent automatically after the response completes)
-    call.trailers?['x-custom-trailer'] = 'operation-successful';
+    // Optionally send headers early (otherwise sent automatically with the first response message)
+    call.sendHeaders();
 
-    return SendMailResponse()
-      ..messageId = 'metadata-msg';
+    // Add trailing metadata sent after all response messages complete
+    call.trailers?['x-request-cost'] = '0.05';
+
+    // Retrieve information about the client connection
+    print('Client IP: ${call.remoteAddress?.address}');
+    
+    if (call.deadline != null && call.isTimedOut) {
+      print('Warning: call has exceeded its deadline.');
+    }
+
+    return SendMailResponse()..messageId = 'processed_${request.batchId}';
   }
 }
 ```
 
-### Checking Call Deadlines
-
-If a client sets a timeout, `call.deadline` and `call.isTimedOut` will reflect that. You should verify `call.isCanceled` during long-running streaming methods.
+### Advanced Field Access and Builder Pattern
+This example demonstrates construction of a complex request and how to access all nested/repeated fields in the service.
 
 ```dart
-  // Example for a streaming method
-  Stream<SendMailResponse> streamMails(ServiceCall call, SendMailRequest request) async* {
-    while (!call.isCanceled && !call.isTimedOut) {
-      // Check if deadline is approaching
-      if (call.deadline != null && DateTime.now().isAfter(call.deadline!)) {
-        break; // Stop yielding
-      }
-      
-      yield SendMailResponse()..messageId = 'active-stream';
-      await Future.delayed(const Duration(seconds: 1));
-    }
+import 'package:grpc/grpc.dart';
+import 'package:fixnum/fixnum.dart';
+
+// Illustrative client-side request construction using the builder pattern
+SendMailRequest buildComplexRequest() {
+  return SendMailRequest()
+    ..batchId = 'TXN-2026-987'             // batch_id
+    ..sendAt = Int64(1774396800)           // send_at
+    ..templateId = 'welcome-template'      // template_id
+    ..contentId = 'body-content-v2'        // content_id
+    ..ipPoolName = 'dedicated-pool'        // ip_pool_name
+    ..groupId = 505                        // group_id
+    ..mailSettings = (MailSettings()       // mail_settings
+      ..sandboxMode = false                // sandbox_mode
+      ..enableText = true)                 // enable_text
+    ..trackingSettings = (TrackingSettings() // tracking_settings
+      ..clickTracking = (ClickTracking()..enable = true) // click_tracking
+      ..openTracking = (OpenTracking()..enable = true..substitutionTag = '[open]')) // open_tracking, substitution_tag
+    ..dynamicTemplateData.addAll({         // dynamic_template_data
+      'user_name': 'Alice',
+      'plan': 'Premium'
+    })
+    ..customArgs.addAll({                  // custom_args
+      'campaign': 'spring_2026',
+      'segment': 'beta_users'
+    })
+    ..replyTo = 'support@example.com'      // reply_to
+    ..replyToList.addAll([                 // reply_to_list
+      'backup-support@example.com',
+      'archive@example.com'
+    ])
+    ..groupsToDisplay.addAll([10, 20, 30]); // groups_to_display
+}
+
+class FullMailService extends MailServiceBase {
+  @override
+  Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
+    // Accessing every field type (camelCase access is MANDATORY):
+    final String bId = request.batchId;
+    final Int64 sAt = request.sendAt;
+    final String tId = request.templateId;
+    final String cId = request.contentId;
+    final String ipPool = request.ipPoolName;
+    final int gId = request.groupId;
+    
+    // Nested message fields
+    final bool sMode = request.mailSettings.sandboxMode;
+    final bool eText = request.mailSettings.enableText;
+    final bool cTrack = request.trackingSettings.clickTracking.enable;
+    final bool oTrack = request.trackingSettings.openTracking.enable;
+    final String sTag = request.trackingSettings.openTracking.substitutionTag;
+    
+    // Collections (Map and List)
+    final Map<String, String> dData = request.dynamicTemplateData;
+    final Map<String, String> cArgs = request.customArgs;
+    final String rTo = request.replyTo;
+    final List<String> rToList = request.replyToList;
+    final List<int> gDisplay = request.groupsToDisplay;
+
+    return SendMailResponse()..messageId = 'processed_${bId}';
   }
+}
 ```
 
 ## 3. Error Handling
 
-### Throwing `GrpcError`
-
-When processing fails, throw a `GrpcError` with the appropriate status code. The client receives this error mapped to standard gRPC status codes.
+### Returning gRPC Errors
+Throw standard `GrpcError` exceptions to report explicit failure states to the client. The handler will automatically capture the error and send the appropriate `grpc-status`.
 
 ```dart
-class ValidatingServiceImpl extends MailServiceBase {
+class ValidatingMailService extends MailServiceBase {
   @override
   Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
     if (request.batchId.isEmpty) {
-      // Throw GrpcError.invalidArgument
-      throw GrpcError.invalidArgument('The batch_id field is required.');
+      // Send an INVALID_ARGUMENT (code 3) status to the client
+      throw GrpcError.invalidArgument('batchId must not be empty');
     }
 
-    if (request.mailSettings.sandboxMode == false && request.contentId.isEmpty) {
-      // Throw GrpcError.failedPrecondition
-      throw GrpcError.failedPrecondition('Content ID must be specified outside of sandbox mode.');
+    if (request.mailSettings.sandboxMode && request.replyToList.isNotEmpty) {
+      // Throw a FAILED_PRECONDITION (code 9) for invalid state combinations
+      throw GrpcError.failedPrecondition('Recipients are not allowed in sandbox mode');
     }
 
-    // Unhandled standard exceptions become GrpcError.internal.
     try {
-      // riskyOperation();
+      // Perform an operation that might fail
+      return SendMailResponse()..messageId = 'ok';
     } catch (e) {
-      throw GrpcError.internal('Internal failure: $e');
+      // Catch internal exceptions and return a generic INTERNAL (code 13) error
+      throw GrpcError.internal('Internal Server Error: $e');
     }
-
-    return SendMailResponse()..messageId = 'valid';
   }
-}
-```
-
-### Global Error Handling (`GrpcErrorHandler`)
-
-You can provide a `GrpcErrorHandler` when creating your server to centrally log or monitor all uncaught server errors.
-
-```dart
-void logError(GrpcError error, StackTrace? trace) {
-  print('Global Error Intercepted: ${error.code} - ${error.message}');
-  if (trace != null) {
-    print('StackTrace: $trace');
-  }
-}
-
-Future<void> main() async {
-  final server = Server.create(
-    services: [MailServiceImpl()],
-    errorHandler: logError, // Catch all unhandled GrpcErrors here
-  );
-  await server.serve(port: 8080);
 }
 ```
 
 ## 4. Advanced Usage
 
-### Using Interceptors (`Interceptor` and `ServerInterceptor`)
-
-Interceptors allow you to run logic before a `ServiceMethod` is invoked.
-
-*   `Interceptor`: Simple function to inspect headers/metadata and optionally block the call by returning a `GrpcError`.
-*   `ServerInterceptor`: Class to completely wrap the method stream, modifying requests or responses.
-
-#### `Interceptor` (Authentication/Authorization)
+### Using Basic Interceptors (Authentication)
+A standard `Interceptor` executes before the `ServiceMethod` handler, allowing request validation or rejection based on context headers.
 
 ```dart
 import 'dart:async';
 import 'package:grpc/grpc.dart';
 
+// An interceptor that checks for an authentication token
 FutureOr<GrpcError?> authInterceptor(ServiceCall call, ServiceMethod method) {
-  final clientMetadata = call.clientMetadata;
-  final token = clientMetadata?['authorization'];
-
-  if (token != 'Bearer secret-token') {
-    // Return a GrpcError to block the call immediately
-    return GrpcError.unauthenticated('Invalid or missing authentication token');
+  final authHeader = call.clientMetadata?['authorization'];
+  
+  if (authHeader == null || !authHeader.startsWith('Bearer ')) {
+    return GrpcError.unauthenticated('Missing or invalid token');
   }
 
-  // Return null to allow the call to proceed
+  final token = authHeader.substring(7);
+  if (token != 'valid-production-token') {
+    return GrpcError.permissionDenied('Invalid credentials');
+  }
+
+  // Returning null means the interceptor passes and the request handler will be called
   return null;
 }
 
 Future<void> main() async {
   final server = Server.create(
     services: [MailServiceImpl()],
+    // Interceptors run sequentially before the service method
     interceptors: [authInterceptor],
   );
-  await server.serve(port: 8080);
+
+  await server.serve(port: 50051);
 }
 ```
 
-#### `ServerInterceptor` (Logging/Stream Wrapping)
+### Using ServerInterceptors (Streaming interception)
+A `ServerInterceptor` provides advanced capabilities, allowing you to manipulate or observe both the request and response streams directly.
 
 ```dart
+import 'dart:async';
+import 'package:grpc/grpc.dart';
+
 class LoggingServerInterceptor extends ServerInterceptor {
   @override
   Stream<R> intercept<Q, R>(
@@ -439,25 +290,27 @@ class LoggingServerInterceptor extends ServerInterceptor {
     Stream<Q> requests,
     ServerStreamingInvoker<Q, R> invoker,
   ) {
-    print('>>> Starting call: ${method.name}');
+    print('Executing RPC: ${method.name}');
     
-    // You can intercept/modify the requests stream here
-    final interceptedRequests = requests.map((req) {
-      print('Received request data');
-      return req;
-    });
-
-    // Invoke the actual handler
-    final responseStream = invoker(call, method, interceptedRequests);
-
-    // Intercept/modify the responses stream
-    return responseStream.map((res) {
-      print('Sending response data');
-      return res;
-    }).handleError((error) {
-      print('<<< Error in call: ${method.name} -> $error');
-      throw error; // Re-throw to ensure correct status code
-    });
+    final stopwatch = Stopwatch()..start();
+    final responseStream = invoker(call, method, requests);
+    
+    return responseStream.transform(
+      StreamTransformer.fromHandlers(
+        handleData: (R data, EventSink<R> sink) {
+          sink.add(data);
+        },
+        handleError: (Object error, StackTrace trace, EventSink<R> sink) {
+          print('Error in ${method.name}: $error');
+          sink.addError(error, trace);
+        },
+        handleDone: (EventSink<R> sink) {
+          stopwatch.stop();
+          print('Completed ${method.name} in ${stopwatch.elapsedMilliseconds}ms');
+          sink.close();
+        },
+      )
+    );
   }
 }
 
@@ -466,73 +319,33 @@ Future<void> main() async {
     services: [MailServiceImpl()],
     serverInterceptors: [LoggingServerInterceptor()],
   );
-  await server.serve(port: 8080);
+
+  await server.serve(port: 50051);
 }
 ```
 
-### Server KeepAlive Configuration
-
-To protect against idle clients or excessive ping attacks, configure `ServerKeepAliveOptions`.
-
-```dart
-Future<void> main() async {
-  final server = Server.create(
-    services: [MailServiceImpl()],
-    keepAliveOptions: ServerKeepAliveOptions(
-      // Max bad pings before closing connection (DDoS protection)
-      maxBadPings: 2,
-      // Minimum interval between pings without data
-      minIntervalBetweenPingsWithoutData: const Duration(minutes: 5),
-    ),
-  );
-  await server.serve(port: 8080);
-}
-```
-
-### TLS/SSL Server Credentials
-
-Instead of standard HTTP/2, use `ServerTlsCredentials` to encrypt traffic (highly recommended in production).
+### Using Service-Specific Initialization via `$onMetadata`
+For unified handling of metadata across all methods within a single `Service`, override `$onMetadata`. This fires once per call before the method handler is invoked.
 
 ```dart
-import 'dart:io';
-import 'package:grpc/grpc.dart';
+class MetadataAwareMailService extends MailServiceBase {
+  // Shared state accessible by the method handlers
+  String? _currentUser;
 
-Future<void> main() async {
-  // Read certificates from disk
-  final certificate = File('certs/server.crt').readAsBytesSync();
-  final privateKey = File('certs/server.key').readAsBytesSync();
+  @override
+  void $onMetadata(ServiceCall context) {
+    // This executes before any method in this service is invoked.
+    final token = context.clientMetadata?['x-user-id'];
+    if (token == null) {
+      throw GrpcError.unauthenticated('User ID header required');
+    }
+    _currentUser = 'User_$token';
+  }
 
-  final credentials = ServerTlsCredentials(
-    certificate: certificate,
-    privateKey: privateKey,
-  );
-
-  final server = Server.create(
-    services: [MailServiceImpl()],
-  );
-
-  // Bind to 443 with TLS
-  await server.serve(
-    port: 443,
-    security: credentials,
-  );
-  print('Secure server listening on port 443...');
-}
-```
-
-### Multiplexing Multiple Services
-
-A single `Server` can host any number of gRPC services simultaneously.
-
-```dart
-Future<void> main() async {
-  final server = Server.create(
-    services: [
-      MailServiceImpl(),
-      // BillingServiceImpl(),
-      // AnalyticsServiceImpl(),
-    ],
-  );
-  await server.serve(port: 8080);
+  @override
+  Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
+    print('Action by $_currentUser');
+    return SendMailResponse()..messageId = 'ok';
+  }
 }
 ```

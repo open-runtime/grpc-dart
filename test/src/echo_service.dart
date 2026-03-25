@@ -78,22 +78,11 @@ class EchoClient extends Client {
   }
 
   ResponseStream<int> serverStream(int request, {CallOptions? options}) {
-    return $createStreamingCall(
-      _$serverStream,
-      Stream.value(request),
-      options: options,
-    );
+    return $createStreamingCall(_$serverStream, Stream.value(request), options: options);
   }
 
-  ResponseFuture<int> clientStream(
-    Stream<int> requests, {
-    CallOptions? options,
-  }) {
-    return $createStreamingCall(
-      _$clientStream,
-      requests,
-      options: options,
-    ).single;
+  ResponseFuture<int> clientStream(Stream<int> requests, {CallOptions? options}) {
+    return $createStreamingCall(_$clientStream, requests, options: options).single;
   }
 
   ResponseStream<int> bidiStream(Stream<int> requests, {CallOptions? options}) {
@@ -101,32 +90,19 @@ class EchoClient extends Client {
   }
 
   /// Echoes raw bytes back. Use for large payload testing (>64KB).
-  ResponseFuture<List<int>> echoBytes(
-    List<int> request, {
-    CallOptions? options,
-  }) {
+  ResponseFuture<List<int>> echoBytes(List<int> request, {CallOptions? options}) {
     return $createUnaryCall(_$echoBytes, request, options: options);
   }
 
   /// Server-streams byte chunks. Request: 8 bytes big-endian
   /// [chunkCount(4), chunkSize(4)]. Each response is chunkSize bytes
   /// filled with (chunkIndex & 0xFF).
-  ResponseStream<List<int>> serverStreamBytes(
-    List<int> request, {
-    CallOptions? options,
-  }) {
-    return $createStreamingCall(
-      _$serverStreamBytes,
-      Stream.value(request),
-      options: options,
-    );
+  ResponseStream<List<int>> serverStreamBytes(List<int> request, {CallOptions? options}) {
+    return $createStreamingCall(_$serverStreamBytes, Stream.value(request), options: options);
   }
 
   /// Bidirectional byte echo — each received chunk is echoed back.
-  ResponseStream<List<int>> bidiStreamBytes(
-    Stream<List<int>> requests, {
-    CallOptions? options,
-  }) {
+  ResponseStream<List<int>> bidiStreamBytes(Stream<List<int>> requests, {CallOptions? options}) {
     return $createStreamingCall(_$bidiStreamBytes, requests, options: options);
   }
 }
@@ -141,14 +117,7 @@ class EchoService extends Service {
 
   EchoService() {
     $addMethod(
-      ServiceMethod<int, int>(
-        'Echo',
-        _echo,
-        false,
-        false,
-        (List<int> value) => value[0],
-        (int value) => [value],
-      ),
+      ServiceMethod<int, int>('Echo', _echo, false, false, (List<int> value) => value[0], (int value) => [value]),
     );
     $addMethod(
       ServiceMethod<int, int>(
@@ -220,7 +189,7 @@ class EchoService extends Service {
 
   Stream<int> _serverStream(ServiceCall call, Future<int> request) async* {
     final count = await request;
-    for (var i = 1; i <= count; i++) {
+    for (var i = 0; i < count; i++) {
       yield i;
       await Future.delayed(const Duration(milliseconds: 1));
     }
@@ -241,45 +210,39 @@ class EchoService extends Service {
   }
 
   /// Echoes raw bytes back unchanged.
-  Future<List<int>> _echoBytes(
-    ServiceCall call,
-    Future<List<int>> request,
-  ) async {
+  Future<List<int>> _echoBytes(ServiceCall call, Future<List<int>> request) async {
     return await request;
   }
 
   /// Server-streams byte chunks. Request: 8 bytes big-endian
   /// [chunkCount(4), chunkSize(4)]. Each response chunk is chunkSize bytes
   /// filled with (chunkIndex & 0xFF) for integrity verification.
-  Stream<List<int>> _serverStreamBytes(
-    ServiceCall call,
-    Future<List<int>> request,
-  ) async* {
+  Stream<List<int>> _serverStreamBytes(ServiceCall call, Future<List<int>> request) async* {
     final req = await request;
     final bd = ByteData.sublistView(Uint8List.fromList(req));
     final chunkCount = bd.getUint32(0);
     final chunkSize = bd.getUint32(4);
-    const yieldEvery = 200;
     for (var i = 0; i < chunkCount; i++) {
       final chunk = Uint8List(chunkSize);
-      // Fill with repeating pattern for integrity verification.
       for (var j = 0; j < chunkSize; j++) {
         chunk[j] = (i + j) & 0xFF;
       }
       yield chunk;
-      // Cooperative yield: high-concurrency bytes streams can otherwise
-      // starve the event loop and delay shutdown/cancel processing.
-      if ((i + 1) % yieldEvery == 0) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      // Yield to the EVENT QUEUE (not just the microtask queue) after
+      // every chunk. Dart async* generators schedule continuations as
+      // microtasks, and the microtask queue drains completely before any
+      // event-queue item runs. With N concurrent generators, each yield
+      // adds a microtask continuation that triggers the next yield — the
+      // queue never empties, starving pipe I/O and WINDOW_UPDATE
+      // processing indefinitely. Future.delayed(Duration.zero) schedules
+      // on the event queue via Timer.run, guaranteeing that pipe reads/
+      // writes get event-loop time between chunks.
+      await Future<void>.delayed(Duration.zero);
     }
   }
 
   /// Bidirectional byte echo — returns each received chunk unchanged.
-  Stream<List<int>> _bidiStreamBytes(
-    ServiceCall call,
-    Stream<List<int>> requests,
-  ) async* {
+  Stream<List<int>> _bidiStreamBytes(ServiceCall call, Stream<List<int>> requests) async* {
     await for (final chunk in requests) {
       yield chunk;
     }

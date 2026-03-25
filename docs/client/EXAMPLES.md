@@ -1,257 +1,345 @@
-# gRPC Client Examples
+# gRPC Dart Client Examples
 
-This document provides practical, copy-paste-ready examples for using the gRPC Client module in Dart. It covers basic usage, common workflows, error handling, and advanced patterns.
+This document provides practical, copy-paste-ready examples for using the **gRPC Client** module in Dart. These examples assume you have generated Dart source files from standard `helloworld.proto` and `route_guide.proto` schemas.
 
 ## 1. Basic Usage
 
-### Instantiating a Client Channel and Stub
+### Creating a Channel and Client Stub
 
-To make RPC calls, you first need a `ClientChannel` and a generated client stub. By default, `ClientChannel` uses HTTP/2.
+This example demonstrates how to instantiate a `ClientChannel`, configure it with `ChannelOptions`, and make a simple Unary RPC call using a generated client stub.
 
 ```dart
-import "package:grpc/grpc.dart";
-import "src/generated/helloworld.pbgrpc.dart";
+import 'dart:async';
+import 'package:grpc/grpc.dart';
+import 'src/generated/helloworld.pbgrpc.dart'; // Assume this contains generated protobufs
 
 Future<void> main() async {
-  // Create an insecure HTTP/2 channel to localhost:50051
+  // 1. Create a channel to the virtual gRPC endpoint.
   final channel = ClientChannel(
-    "localhost",
+    'localhost',
     port: 50051,
     options: const ChannelOptions(
+      // Disable TLS for local development
       credentials: ChannelCredentials.insecure(),
+      idleTimeout: Duration(minutes: 5),
     ),
   );
 
-  // Instantiate the generated client stub using the channel
+  // 2. Instantiate the generated client stub.
   final stub = GreeterClient(channel);
 
+  // 3. Make an RPC call.
   try {
-    // Create a request message
-    final request = HelloRequest()..name = "Dart Developer";
-
-    // Call a unary RPC
+    // Create the request message using the builder pattern (cascades)
+    final request = HelloRequest()..name = 'Dart';
+    
+    // Call the method, which returns a ResponseFuture<HelloReply>
     final response = await stub.sayHello(request);
-    print("Greeter client received: ${response.message}");
-  } finally {
-    // Shutdown the channel when finished
-    await channel.shutdown();
+    
+    print('Greeter client received: ${response.message}');
+  } on GrpcError catch (e) {
+    print('gRPC Error: ${e.codeName} - ${e.message}');
+  } catch (e) {
+    print('Caught error: $e');
   }
+
+  // 4. Clean up the channel when done.
+  await channel.shutdown();
 }
 ```
 
+---
 
-### Making Unary Calls
+## 2. Common Workflows
 
-A unary RPC sends a single request and receives a single response.
+### Streaming RPCs
+
+gRPC supports Unary, Server Streaming, Client Streaming, and Bidirectional Streaming. These examples use the `RouteGuide` standard example.
 
 ```dart
-import "package:grpc/grpc.dart";
-import "src/generated/route_guide.pbgrpc.dart";
+import 'dart:async';
+import 'package:grpc/grpc.dart';
+import 'src/generated/route_guide.pbgrpc.dart'; // Assume this contains generated protobufs
 
+Future<void> main() async {
+  final channel = ClientChannel(
+    'localhost',
+    port: 50051,
+    options: const ChannelOptions(credentials: ChannelCredentials.insecure()),
+  );
+  
+  final stub = RouteGuideClient(channel);
+
+  await runGetFeature(stub);
+  await runListFeatures(stub);
+  await runRecordRoute(stub);
+  await runRouteChat(stub);
+
+  await channel.shutdown();
+}
+
+/// Simple Unary RPC example
 Future<void> runGetFeature(RouteGuideClient stub) async {
   final point = Point()
     ..latitude = 409146138
-    ..longitude = -746188906;
+    ..longitude = -746188606;
 
   try {
+    // Obtains the feature at a given position.
     final feature = await stub.getFeature(point);
-    if (feature.name.isNotEmpty) {
-      print("Found feature called \"${feature.name}\" at ${feature.location.latitude}, ${feature.location.longitude}");
+    if (feature.name.isEmpty) {
+      print('No feature found at ${feature.location}');
     } else {
-      print("Found no feature at ${point.latitude}, ${point.longitude}");
+      print('Found feature "${feature.name}" at ${feature.location}');
     }
   } catch (e) {
-    print("Error getting feature: $e");
+    print('Error in GetFeature: $e');
   }
 }
-```
 
-### Making Client Streaming Calls
-
-In client streaming, the client writes a sequence of messages and sends them to the server. Once the client has finished writing the messages, it waits for the server to read them all and return its response.
-
-```dart
-import "package:grpc/grpc.dart";
-import "src/generated/route_guide.pbgrpc.dart";
-
-Future<void> runRecordRoute(RouteGuideClient stub) async {
-  Stream<Point> generateRoute() async* {
-    yield Point()..latitude = 407838351..longitude = -746143763;
-    await Future.delayed(const Duration(milliseconds: 500));
-    yield Point()..latitude = 408122808..longitude = -743999179;
-    await Future.delayed(const Duration(milliseconds: 500));
-    yield Point()..latitude = 413628156..longitude = -749015468;
-  }
-
-  try {
-    final summary = await stub.recordRoute(generateRoute());
-    print("Route Summary:");
-    print("  Points: ${summary.pointCount}"); // point_count -> pointCount
-    print("  Features: ${summary.featureCount}"); // feature_count -> featureCount
-    print("  Distance: ${summary.distance}");
-    print("  Elapsed time: ${summary.elapsedTime} seconds"); // elapsed_time -> elapsedTime
-  } catch (e) {
-    print("Error recording route: $e");
-  }
-}
-```
-
-### Making Bidirectional Streaming Calls
-
-In bidirectional streaming, both sides send a sequence of messages using a read-write stream. The two streams operate independently, so clients and servers can read and write in whatever order they like.
-
-```dart
-import "package:grpc/grpc.dart";
-import "src/generated/route_guide.pbgrpc.dart";
-
-Future<void> runRouteChat(RouteGuideClient stub) async {
-  Stream<RouteNote> generateNotes() async* {
-    final notes = [
-      RouteNote()..location = (Point()..latitude = 0..longitude = 0)..message = "First message",
-      RouteNote()..location = (Point()..latitude = 0..longitude = 1)..message = "Second message",
-      RouteNote()..location = (Point()..latitude = 1..longitude = 0)..message = "Third message",
-    ];
-    for (var note in notes) {
-      print("Sending message \"${note.message}\" at ${note.location.latitude}, ${note.location.longitude}");
-      yield note;
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-  }
-
-  try {
-    final responseStream = stub.routeChat(generateNotes());
-    await for (final note in responseStream) {
-      print("Got message \"${note.message}\" at ${note.location.latitude}, ${note.location.longitude}");
-    }
-  } catch (e) {
-    print("Error in route chat: $e");
-  }
-}
-```
-
-### Making Server Streaming Calls
-
-gRPC supports server streaming, client streaming, and bidirectional streaming.
-
-```dart
-import "package:grpc/grpc.dart";
-import "src/generated/route_guide.pbgrpc.dart";
-
+/// Server-streaming RPC example
 Future<void> runListFeatures(RouteGuideClient stub) async {
   final rect = Rectangle()
     ..lo = (Point()..latitude = 400000000..longitude = -750000000)
     ..hi = (Point()..latitude = 420000000..longitude = -730000000);
 
-  // Server Streaming RPC
-  final ResponseStream<Feature> stream = stub.listFeatures(rect);
+  // Server streaming RPC returns a ResponseStream
+  final responseStream = stub.listFeatures(rect);
 
   try {
-    await for (final feature in stream) {
-      if (feature.name.isNotEmpty) {
-        print("Found feature called \"${feature.name}\" at ${feature.location.latitude}, ${feature.location.longitude}");
-      }
+    // Iterate over incoming features using await for
+    await for (final feature in responseStream) {
+      print('Found feature: ${feature.name} at '
+          '${feature.location.latitude}, ${feature.location.longitude}');
     }
   } catch (e) {
-    print("Error receiving stream: $e");
+    print('Error in ListFeatures: $e');
   }
 }
-```
 
-## 2. Common Workflows
+/// Client-streaming RPC example
+Future<void> runRecordRoute(RouteGuideClient stub) async {
+  // A generator that yields points on a route
+  Stream<Point> generateRoute() async* {
+    yield Point()..latitude = 4078383..longitude = -7461437;
+    await Future.delayed(const Duration(milliseconds: 500));
+    yield Point()..latitude = 4081228..longitude = -7439991;
+  }
 
-### Configuring CallOptions (Metadata and Timeouts)
+  try {
+    // Send the stream to the server and await the single summary response
+    final summary = await stub.recordRoute(generateRoute());
+    print('Finished route with ${summary.pointCount} points.'); // point_count
+    print('Feature count: ${summary.featureCount}');             // feature_count
+    print('Total distance: ${summary.distance}');
+    print('Elapsed time: ${summary.elapsedTime} seconds');     // elapsed_time
+  } catch (e) {
+    print('Error in RecordRoute: $e');
+  }
+}
 
-You can pass `CallOptions` to any RPC method to set custom metadata (headers), compression, or a timeout for the call.
+/// Bidirectional-streaming RPC example
+Future<void> runRouteChat(RouteGuideClient stub) async {
+  final requests = StreamController<RouteNote>();
+  
+  // Establish the bidirectional stream
+  final responseStream = stub.routeChat(requests.stream);
 
-```dart
-import "package:grpc/grpc.dart";
-import "src/generated/helloworld.pbgrpc.dart";
-
-Future<void> callWithCallOptions(GreeterClient stub) async {
-  final options = CallOptions(
-    metadata: {
-      "authorization": "Bearer my-auth-token",
-      "custom-header": "value123",
+  // Listen to responses from the server
+  final responseSubscription = responseStream.listen(
+    (RouteNote note) {
+      print('Got message "${note.message}" at '
+          '${note.location.latitude}, ${note.location.longitude}');
     },
-    timeout: const Duration(seconds: 5), // Set a 5-second deadline
-    providers: [
-      // Dynamic metadata provider
-      (metadata, uri) {
-        metadata["x-request-id"] = "req-${DateTime.now().millisecondsSinceEpoch}";
-      }
-    ],
+    onError: (Object e) {
+      print('Error in RouteChat: $e');
+    },
+    onDone: () => print('RouteChat stream closed by server.'),
   );
 
-  final request = HelloRequest()..name = "Alice";
+  // Send requests to the server
+  requests.add(RouteNote()
+    ..message = 'First message'
+    ..location = (Point()..latitude = 0..longitude = 0));
+    
+  await Future.delayed(const Duration(seconds: 1));
   
-  // Pass the options to the generated method
-  final response = await stub.sayHello(request, options: options);
-  print(response.message);
+  requests.add(RouteNote()
+    ..message = 'Second message'
+    ..location = (Point()..latitude = 0..longitude = 1));
+
+  // Close the request stream when done; the response stream will eventually finish
+  await requests.close();
+  await responseSubscription.asFuture();
 }
 ```
 
-### Accessing Response Headers and Trailers
+---
 
-gRPC responses contain both the primary message and metadata (headers and trailers). You can access these via `ResponseFuture` or `ResponseStream`.
+## 3. Complex Message and Field Naming
 
-```dart
-import "package:grpc/grpc.dart";
-import "src/generated/helloworld.pbgrpc.dart";
+### Dart Naming Conventions
+Protobuf-generated Dart code automatically converts `snake_case` field names to `camelCase`. **Always use camelCase for property access in Dart.** Message and Enum names remain `PascalCase`.
 
-Future<void> readHeadersAndTrailers(GreeterClient stub) async {
-  final request = HelloRequest()..name = "Bob";
-  
-  // Store the ResponseFuture instead of immediately awaiting the value
-  final ResponseFuture<HelloReply> responseFuture = stub.sayHello(request);
-
-  // Read headers (completes before the response value)
-  final headers = await responseFuture.headers;
-  print("Response Headers: $headers");
-
-  // Await the actual response value
-  final response = await responseFuture;
-  print("Response value: ${response.message}");
-
-  // Read trailers (completes after the response value)
-  final trailers = await responseFuture.trailers;
-  print("Response Trailers: $trailers");
-}
-```
-
-### Canceling an Active Call
-
-You can cancel an in-flight RPC by calling `.cancel()` on the `ResponseFuture` or `ResponseStream`.
+The following example demonstrates constructing a complex `SendMailRequest` using the builder pattern and correct Dart naming conventions.
 
 ```dart
-import "package:grpc/grpc.dart";
-import "src/generated/helloworld.pbgrpc.dart";
+import 'package:fixnum/fixnum.dart';
+import 'src/generated/mail.pbgrpc.dart'; // Hypothetical mail service
 
-Future<void> cancelCall(GreeterClient stub) async {
-  final request = HelloRequest()..name = "Charlie";
-  final responseFuture = stub.sayHello(request);
-
-  // Cancel the call before it completes
-  await responseFuture.cancel();
+Future<void> sendTransactionalMail(MailServiceClient stub) async {
+  // Construct the request using cascades for nested builders
+  final request = SendMailRequest()
+    ..batchId = 'TXN-98765'               // string batch_id = 1;
+    ..sendAt = Int64(1679700000)         // int64 send_at = 2;
+    ..mailSettings = (MailSettings()     // MailSettings mail_settings = 3;
+      ..sandboxMode = true               // bool sandbox_mode = 1;
+      ..enableText = true                // bool enable_text = 2;
+    )
+    ..trackingSettings = (TrackingSettings() // TrackingSettings tracking_settings = 4;
+      ..clickTracking = (ClickTracking()      // ClickTracking click_tracking = 1;
+        ..enable = true
+        ..enableText = true             // bool enable_text = 2;
+      )
+      ..openTracking = (OpenTracking()        // OpenTracking open_tracking = 2;
+        ..enable = true
+        ..substitutionTag = '[open]'     // string substitution_tag = 2;
+      )
+    )
+    ..dynamicTemplateData.addAll({       // map<string, string> dynamic_template_data = 5;
+      'user_name': 'Dart Developer',
+      'plan': 'Pro',
+    })
+    ..contentId = 'template-v1'          // string content_id = 6;
+    ..customArgs.addAll({                // map<string, string> custom_args = 7;
+      'internal_id': '88990',
+    })
+    ..ipPoolName = 'transactional-pool'   // string ip_pool_name = 8;
+    ..replyTo = 'support@example.com'    // string reply_to = 9;
+    ..replyToList.addAll(['billing@example.com', 'dev@example.com']) // repeated string reply_to_list = 10;
+    ..templateId = 'd-998877'            // string template_id = 11;
+    ..groupId = 42                       // int32 group_id = 12;
+    ..groupsToDisplay.addAll([1, 2, 3])  // repeated int32 groups_to_display = 13;
+    ..mailFrom = MailFrom.MAIL_FROM_SUPPORT; // MailFrom mail_from = 14; (Enum)
 
   try {
-    await responseFuture;
+    final response = await stub.sendMail(request);
+    print('Mail sent successfully. Message ID: ${response.messageId}');
   } catch (e) {
-    if (e is GrpcError && e.code == StatusCode.cancelled) {
-      print("Call was successfully canceled: ${e.message}");
-    }
+    print('Error: $e');
   }
+}
+```
+
+---
+
+## 4. Error Handling
+
+Properly handle `GrpcError` structures with different `StatusCode` values.
+
+```dart
+import 'dart:async';
+import 'package:grpc/grpc.dart';
+import 'src/generated/helloworld.pbgrpc.dart';
+
+Future<void> main() async {
+  final channel = ClientChannel(
+    'localhost',
+    port: 50051,
+    options: const ChannelOptions(credentials: ChannelCredentials.insecure()),
+  );
+  
+  final stub = GreeterClient(channel);
+  
+  try {
+    final response = await stub.sayHello(HelloRequest()..name = 'Dart');
+    print(response.message);
+  } on GrpcError catch (e) {
+    // Handle specific gRPC status codes
+    if (e.code == StatusCode.unauthenticated) {
+      print('Authentication failed: ${e.message}');
+    } else if (e.code == StatusCode.deadlineExceeded) {
+      print('Request timed out.');
+    } else if (e.code == StatusCode.resourceExhausted) {
+      print('Too many requests.');
+    } else {
+      print('gRPC Error (${e.codeName}): ${e.message}');
+    }
+    
+    // Check if the server sent detailed error trailers
+    if (e.trailers != null && e.trailers!.isNotEmpty) {
+      print('Error trailers: ${e.trailers}');
+    }
+  } catch (e, stackTrace) {
+    print('Unexpected error: $e\n$stackTrace');
+  }
+
+  await channel.shutdown();
+}
+```
+
+---
+
+## 5. Advanced Usage
+
+### Runtime Configuration & Dynamic Metadata
+
+Use `CallOptions` for timeouts, and `MetadataProvider` functions to dynamically inject metadata (like authorization headers) on each call.
+
+```dart
+import 'dart:async';
+import 'package:grpc/grpc.dart';
+import 'src/generated/helloworld.pbgrpc.dart';
+
+Future<void> main() async {
+  final channel = ClientChannel(
+    'localhost',
+    port: 50051,
+    options: const ChannelOptions(credentials: ChannelCredentials.insecure()),
+  );
+  final stub = GreeterClient(channel);
+
+  // A MetadataProvider is invoked before every RPC to modify the outgoing metadata
+  FutureOr<void> fetchAuthToken(Map<String, String> metadata, String uri) async {
+    // Fetch a token dynamically (e.g., from an OAuth2 provider)
+    final token = await Future.delayed(
+      const Duration(milliseconds: 100), 
+      () => 'fresh-token',
+    );
+    metadata['authorization'] = 'Bearer $token';
+  }
+
+  // Configure runtime options for the RPC
+  final options = CallOptions(
+    providers: [fetchAuthToken],
+    timeout: const Duration(seconds: 5),
+  );
+
+  final response = await stub.sayHello(
+    HelloRequest()..name = 'Dart',
+    options: options,
+  );
+  
+  print('Response: ${response.message}');
+  await channel.shutdown();
 }
 ```
 
 ### Client Interceptors
 
-Interceptors allow you to inspect, modify, or block outgoing requests and incoming responses.
+Interceptors can catch and mutate requests or options before they are sent.
 
 ```dart
-import "dart:async";
-import "package:grpc/grpc.dart";
+import 'dart:async';
+import 'package:grpc/grpc.dart';
+import 'src/generated/helloworld.pbgrpc.dart';
 
-class LoggingInterceptor extends ClientInterceptor {
+/// A custom interceptor that injects a token into all outgoing requests.
+class AuthInterceptor extends ClientInterceptor {
+  final String _token;
+
+  AuthInterceptor(this._token);
+
   @override
   ResponseFuture<R> interceptUnary<Q, R>(
     ClientMethod<Q, R> method,
@@ -259,21 +347,11 @@ class LoggingInterceptor extends ClientInterceptor {
     CallOptions options,
     ClientUnaryInvoker<Q, R> invoker,
   ) {
-    print("Sending unary request to ${method.path}");
-    final newOptions = options.mergedWith(CallOptions(
-      metadata: {"x-intercepted": "true"},
-    ));
-    
-    final responseFuture = invoker(method, request, newOptions);
-    
-    // Log response completion
-    responseFuture.then((_) {
-      print("Received response from ${method.path}");
-    }).catchError((e) {
-      print("Error on ${method.path}: $e");
-    });
-    
-    return responseFuture;
+    // Merge the provided options with the custom metadata
+    final newOptions = options.mergedWith(
+      CallOptions(metadata: {'authorization': 'Bearer $_token'})
+    );
+    return invoker(method, request, newOptions);
   }
 
   @override
@@ -283,189 +361,151 @@ class LoggingInterceptor extends ClientInterceptor {
     CallOptions options,
     ClientStreamingInvoker<Q, R> invoker,
   ) {
-    print("Starting streaming request to ${method.path}");
-    return invoker(method, requests, options);
+    final newOptions = options.mergedWith(
+      CallOptions(metadata: {'authorization': 'Bearer $_token'})
+    );
+    return invoker(method, requests, newOptions);
   }
 }
 
-// Usage:
-// final stub = GreeterClient(channel, interceptors: [LoggingInterceptor()]);
-```
-
-## 3. Error Handling
-
-### Catching and Processing GrpcError
-
-gRPC errors are thrown as `GrpcError` objects, containing a standard `StatusCode` and an optional message.
-
-```dart
-import "package:grpc/grpc.dart";
-import "src/generated/helloworld.pbgrpc.dart";
-
-Future<void> handleErrors(GreeterClient stub) async {
-  final request = HelloRequest()..name = "Eve";
-  
-  try {
-    final response = await stub.sayHello(request);
-    print(response.message);
-  } on GrpcError catch (e) {
-    // Handle specific gRPC status codes
-    switch (e.code) {
-      case StatusCode.deadlineExceeded:
-        print("The request timed out!");
-        break;
-      case StatusCode.unauthenticated:
-        print("Authentication failed: ${e.message}");
-        break;
-      case StatusCode.unavailable:
-        print("Service unavailable. Is the server running?");
-        break;
-      default:
-        print("gRPC Error: [${e.codeName}] ${e.message}");
-    }
-    
-    // You can also inspect error details passed via trailers if any
-    print("Error details: ${e.details}");
-  } catch (e) {
-    print("Unexpected non-gRPC error: $e");
-  }
-}
-```
-
-## 4. Advanced Usage
-
-### Using gRPC-Web
-
-For web applications, use `GrpcWebClientChannel` which executes requests over XMLHttpRequest (XHR) instead of raw HTTP/2 sockets.
-
-```dart
-import "package:grpc/grpc_web.dart";
-import "src/generated/helloworld.pbgrpc.dart";
-
-Future<void> useGrpcWeb() async {
-  // Create a channel targeting a gRPC-Web proxy (like Envoy)
-  final channel = GrpcWebClientChannel.xhr(
-    Uri.parse("https://api.example.com"),
-  );
-
-  final stub = GreeterClient(channel);
-  
-  // Optionally use WebCallOptions for CORS preflight optimization
-  final options = WebCallOptions(
-    bypassCorsPreflight: true,
-    withCredentials: true,
+Future<void> main() async {
+  final channel = ClientChannel(
+    'localhost',
+    port: 50051,
+    options: const ChannelOptions(credentials: ChannelCredentials.insecure()),
   );
   
-  final request = HelloRequest()..name = "Web User";
-  final response = await stub.sayHello(request, options: options);
+  // Pass interceptors directly to the generated client constructor.
+  // Interceptors are applied in direct order.
+  final stub = GreeterClient(
+    channel,
+    interceptors: [AuthInterceptor('super-secret-token')],
+  );
   
-  print("Web response: ${response.message}");
+  final response = await stub.sayHello(HelloRequest()..name = 'Dart');
+  print('Response: ${response.message}');
+  
   await channel.shutdown();
 }
 ```
 
-### Local IPC Channels (macOS / Linux / Windows)
+### Connection State Monitoring & Keep-Alive
 
-The library provides `LocalGrpcChannel` for efficient local Inter-Process Communication (IPC). It automatically selects Unix Domain Sockets on Linux/macOS and Named Pipes on Windows.
+Monitor connection drops via streams and implement `ClientKeepAliveOptions`.
 
 ```dart
-import "package:grpc/grpc.dart";
-import "src/generated/helloworld.pbgrpc.dart";
+import 'dart:async';
+import 'package:grpc/grpc.dart';
 
-Future<void> localIpcCommunication() async {
-  // Create a local IPC channel using a named service
-  // Under the hood, this uses UDS or Named Pipes depending on the OS
-  final channel = LocalGrpcChannel(
-    "my-local-service", // Service name matching the LocalGrpcServer
-    options: const LocalChannelOptions(
-      connectTimeout: Duration(seconds: 2),
+Future<void> main() async {
+  // Keep alive pings can be configured via ClientKeepAliveOptions
+  final channel = ClientChannel(
+    'localhost',
+    port: 50051,
+    options: const ChannelOptions(
+      credentials: ChannelCredentials.insecure(),
+      keepAlive: ClientKeepAliveOptions(
+        pingInterval: Duration(minutes: 5), // ping_interval
+        timeout: Duration(seconds: 20),
+        permitWithoutCalls: true,           // permit_without_calls
+      ),
     ),
   );
 
-  // Address property reveals the resolved socket or pipe path
-  print("Connecting via local IPC to: ${channel.address}");
-
-  final stub = GreeterClient(channel);
-  final request = HelloRequest()..name = "Local Process";
-  
-  try {
-    final response = await stub.sayHello(request);
-    print("Local IPC Response: ${response.message}");
-  } finally {
-    await channel.shutdown();
-  }
-}
-```
-
-### Advanced Channel Options (KeepAlive, Proxy, Backoff)
-
-You can heavily customize the `ChannelOptions` for production resilience.
-
-```dart
-import "package:grpc/grpc.dart";
-
-Future<void> advancedChannelOptions() async {
-  final options = ChannelOptions(
-    credentials: const ChannelCredentials.secure(),
-    connectTimeout: const Duration(seconds: 10),
-    idleTimeout: const Duration(minutes: 5),
-    connectionTimeout: const Duration(minutes: 50),
-    maxInboundMessageSize: 10 * 1024 * 1024, // 10 MB limit
-    
-    // HTTP Proxy support
-    proxy: const Proxy(
-      host: "proxy.internal",
-      port: 8080,
-    ),
-    
-    // KeepAlive settings to maintain stateful TCP connections
-    keepAlive: const ClientKeepAliveOptions(
-      pingInterval: Duration(seconds: 30),
-      timeout: Duration(seconds: 15),
-      permitWithoutCalls: true,
-    ),
-    
-    // Custom backoff strategy for reconnections
-    backoffStrategy: (Duration? lastBackoff) {
-      if (lastBackoff == null) return const Duration(seconds: 1);
-      final next = lastBackoff * 2;
-      return next > const Duration(minutes: 1) ? const Duration(minutes: 1) : next;
-    },
-  );
-
-  final channel = ClientChannel("grpc.example.com", options: options);
-  
-  // Use the channel...
-  await channel.shutdown();
-}
-```
-
-### Monitoring Connection State
-
-You can listen to `onConnectionStateChanged` to react to connection transitions.
-
-```dart
-import "package:grpc/grpc.dart";
-
-void monitorConnection(ClientChannel channel) {
-  channel.onConnectionStateChanged.listen((ConnectionState state) {
+  // Monitor the connection state over time
+  final subscription = channel.onConnectionStateChanged.listen((ConnectionState state) {
     switch (state) {
-      case ConnectionState.idle:
-        print("Channel is idle");
-        break;
       case ConnectionState.connecting:
-        print("Channel is connecting...");
+        print('Connecting...');
         break;
       case ConnectionState.ready:
-        print("Channel is ready for RPCs");
+        print('Connection established and ready.');
         break;
       case ConnectionState.transientFailure:
-        print("Channel encountered a transient failure (reconnecting)");
+        print('Transient failure occurred, reconnecting...');
+        break;
+      case ConnectionState.idle:
+        print('Channel is idle.');
         break;
       case ConnectionState.shutdown:
-        print("Channel is shutting down");
+        print('Channel has been shut down.');
         break;
     }
   });
+
+  await Future.delayed(const Duration(seconds: 1));
+  await subscription.cancel();
+  await channel.shutdown();
+}
+```
+
+### Local IPC Channels
+
+Utilize native machine-local transports for lower latency and improved security in local environments.
+
+```dart
+import 'dart:async';
+import 'package:grpc/grpc.dart';
+import 'src/generated/helloworld.pbgrpc.dart';
+
+Future<void> main() async {
+  // Use LocalGrpcChannel for local IPC. 
+  // - macOS/Linux: Uses Unix domain sockets
+  // - Windows: Uses Named pipes
+  final localChannel = LocalGrpcChannel(
+    'my-service',
+    options: const LocalChannelOptions(
+      connectTimeout: Duration(seconds: 5),
+    ),
+  );
+
+  final localStub = GreeterClient(localChannel);
+  
+  try {
+    final response = await localStub.sayHello(HelloRequest()..name = 'Local IPC');
+    print('Local response: ${response.message}');
+  } catch (e) {
+    print('Error: $e');
+  }
+  
+  // Windows-specific named pipe channel can also be instantiated directly:
+  // final pipeChannel = NamedPipeClientChannel('my-service');
+  
+  await localChannel.shutdown();
+}
+```
+
+### gRPC Web and CORS
+
+Leverage `GrpcWebClientChannel` with `WebCallOptions` to bypass preflight requests in browser environments.
+
+```dart
+import 'dart:async';
+import 'package:grpc/grpc_web.dart';
+import 'src/generated/helloworld.pbgrpc.dart';
+
+Future<void> main() async {
+  // Use GrpcWebClientChannel for XHR-based communication in browsers
+  final channel = GrpcWebClientChannel.xhr(
+    Uri.parse('https://api.example.com'),
+  );
+  
+  final stub = GreeterClient(channel);
+  
+  // WebCallOptions helps with CORS issues by shifting headers to query params
+  final options = WebCallOptions(
+    bypassCorsPreflight: true, // bypass_cors_preflight
+    withCredentials: true,    // with_credentials
+  );
+
+  try {
+    final response = await stub.sayHello(
+      HelloRequest()..name = 'Web Client',
+      options: options,
+    );
+    print('Web response: ${response.message}');
+  } catch (e) {
+    print('Error: $e');
+  }
 }
 ```

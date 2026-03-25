@@ -76,10 +76,7 @@ Future<void> waitForHandlers(
   final deadline = DateTime.now().add(timeout);
   var lastHandlerCount = 0;
   while (DateTime.now().isBefore(deadline)) {
-    final handlerCount = server.handlers.values.fold<int>(
-      0,
-      (sum, list) => sum + list.length,
-    );
+    final handlerCount = server.handlers.values.fold<int>(0, (sum, list) => sum + list.length);
     lastHandlerCount = handlerCount;
     if (handlerCount >= minCount) return;
     await Future<void>.delayed(const Duration(milliseconds: 1));
@@ -134,16 +131,7 @@ void expectExpectedRpcSettlement(Object? result, {required String reason}) {
 /// Hardcore transport tests should settle to a valid payload type or explicit
 /// [GrpcError], never arbitrary [Exception]/[Error] values.
 void expectHardcoreRpcSettlement(Object? result, {required String reason}) {
-  expect(
-    result,
-    anyOf(
-      isA<int>(),
-      isA<List<int>>(),
-      isA<List<List<int>>>(),
-      isA<GrpcError>(),
-    ),
-    reason: reason,
-  );
+  expect(result, anyOf(isA<int>(), isA<List<int>>(), isA<List<List<int>>>(), isA<GrpcError>()), reason: reason);
 }
 
 // =============================================================================
@@ -167,41 +155,22 @@ class TestClientChannel extends ClientChannelBase {
 /// with insecure credentials.
 ///
 /// An optional [codecRegistry] can be provided for compression tests.
-TestClientChannel createTestChannel(
-  Object address,
-  int port, {
-  ChannelOptions? options,
-  CodecRegistry? codecRegistry,
-}) {
+TestClientChannel createTestChannel(Object address, int port, {ChannelOptions? options, CodecRegistry? codecRegistry}) {
   return TestClientChannel(
     Http2ClientConnection(
       address,
       port,
-      options ??
-          ChannelOptions(
-            credentials: ChannelCredentials.insecure(),
-            codecRegistry: codecRegistry,
-          ),
+      options ?? ChannelOptions(credentials: ChannelCredentials.insecure(), codecRegistry: codecRegistry),
     ),
   );
 }
 
 /// Test functionality for Unix domain socket.
-void testUds(
-  String name,
-  FutureOr<void> Function(InternetAddress) testCase, {
-  Timeout? timeout,
-  String? skip,
-}) {
-  final skipReason = Platform.isWindows
-      ? 'Unix domain sockets are not supported on Windows'
-      : skip;
+void testUds(String name, FutureOr<void> Function(InternetAddress) testCase, {Timeout? timeout, String? skip}) {
+  final skipReason = Platform.isWindows ? 'Unix domain sockets are not supported on Windows' : skip;
   test(name, timeout: timeout, skip: skipReason, () async {
     final tempDir = await Directory.systemTemp.createTemp();
-    final address = InternetAddress(
-      '${tempDir.path}/socket',
-      type: InternetAddressType.unix,
-    );
+    final address = InternetAddress('${tempDir.path}/socket', type: InternetAddressType.unix);
     addTearDown(() => tempDir.delete(recursive: true));
     await testCase(address);
   });
@@ -259,8 +228,7 @@ void testNamedPipe(
       // collide when tests start within the same millisecond.
       final now = DateTime.now();
       final counter = _pipeNameCounter++;
-      final uniquePipeName =
-          '$basePipeName-${now.microsecondsSinceEpoch}-$counter-$pid';
+      final uniquePipeName = '$basePipeName-${now.microsecondsSinceEpoch}-$counter-$pid';
       await testCase(uniquePipeName);
     },
   );

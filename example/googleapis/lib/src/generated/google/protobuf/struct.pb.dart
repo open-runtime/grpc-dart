@@ -44,14 +44,11 @@ class Struct extends $pb.GeneratedMessage with $mixin.StructMixin {
   factory Struct.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Struct.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Struct.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Struct',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.protobuf'),
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Struct',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.protobuf'),
       createEmptyInstance: create,
       wellKnownType: $mixin.WellKnownType.struct)
     ..m<$core.String, Value>(1, _omitFieldNames ? '' : 'fields',
@@ -66,8 +63,7 @@ class Struct extends $pb.GeneratedMessage with $mixin.StructMixin {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   Struct clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Struct copyWith(void Function(Struct) updates) =>
-      super.copyWith((message) => updates(message as Struct)) as Struct;
+  Struct copyWith(void Function(Struct) updates) => super.copyWith((message) => updates(message as Struct)) as Struct;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -77,8 +73,7 @@ class Struct extends $pb.GeneratedMessage with $mixin.StructMixin {
   @$core.override
   Struct createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Struct getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Struct>(create);
+  static Struct getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Struct>(create);
   static Struct? _defaultInstance;
 
   /// Unordered map of dynamically typed values.
@@ -86,15 +81,7 @@ class Struct extends $pb.GeneratedMessage with $mixin.StructMixin {
   $pb.PbMap<$core.String, Value> get fields => $_getMap(0);
 }
 
-enum Value_Kind {
-  nullValue,
-  numberValue,
-  stringValue,
-  boolValue,
-  structValue,
-  listValue,
-  notSet
-}
+enum Value_Kind { nullValue, numberValue, stringValue, boolValue, structValue, listValue, notSet }
 
 /// `Value` represents a dynamically typed value which can be either
 /// null, a number, a string, a boolean, a recursive struct value, or a
@@ -126,8 +113,7 @@ class Value extends $pb.GeneratedMessage with $mixin.ValueMixin {
   factory Value.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Value.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Value.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
   static const $core.Map<$core.int, Value_Kind> _Value_KindByTag = {
@@ -139,29 +125,23 @@ class Value extends $pb.GeneratedMessage with $mixin.ValueMixin {
     6: Value_Kind.listValue,
     0: Value_Kind.notSet
   };
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Value',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.protobuf'),
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Value',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.protobuf'),
       createEmptyInstance: create,
       wellKnownType: $mixin.WellKnownType.value)
     ..oo(0, [1, 2, 3, 4, 5, 6])
-    ..aE<NullValue>(1, _omitFieldNames ? '' : 'nullValue',
-        enumValues: NullValue.values)
+    ..aE<NullValue>(1, _omitFieldNames ? '' : 'nullValue', enumValues: NullValue.values)
     ..aD(2, _omitFieldNames ? '' : 'numberValue')
     ..aOS(3, _omitFieldNames ? '' : 'stringValue')
     ..aOB(4, _omitFieldNames ? '' : 'boolValue')
-    ..aOM<Struct>(5, _omitFieldNames ? '' : 'structValue',
-        subBuilder: Struct.create)
-    ..aOM<ListValue>(6, _omitFieldNames ? '' : 'listValue',
-        subBuilder: ListValue.create)
+    ..aOM<Struct>(5, _omitFieldNames ? '' : 'structValue', subBuilder: Struct.create)
+    ..aOM<ListValue>(6, _omitFieldNames ? '' : 'listValue', subBuilder: ListValue.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   Value clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Value copyWith(void Function(Value) updates) =>
-      super.copyWith((message) => updates(message as Value)) as Value;
+  Value copyWith(void Function(Value) updates) => super.copyWith((message) => updates(message as Value)) as Value;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -171,8 +151,7 @@ class Value extends $pb.GeneratedMessage with $mixin.ValueMixin {
   @$core.override
   Value createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Value getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Value>(create);
+  static Value getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Value>(create);
   static Value? _defaultInstance;
 
   @$pb.TagNumber(1)
@@ -272,14 +251,11 @@ class ListValue extends $pb.GeneratedMessage with $mixin.ListValueMixin {
   factory ListValue.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory ListValue.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory ListValue.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ListValue',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.protobuf'),
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListValue',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.protobuf'),
       createEmptyInstance: create,
       wellKnownType: $mixin.WellKnownType.listValue)
     ..pPM<Value>(1, _omitFieldNames ? '' : 'values', subBuilder: Value.create)
@@ -299,8 +275,7 @@ class ListValue extends $pb.GeneratedMessage with $mixin.ListValueMixin {
   @$core.override
   ListValue createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static ListValue getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ListValue>(create);
+  static ListValue getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ListValue>(create);
   static ListValue? _defaultInstance;
 
   /// Repeated field of dynamically typed values.
@@ -308,7 +283,5 @@ class ListValue extends $pb.GeneratedMessage with $mixin.ListValueMixin {
   $pb.PbList<Value> get values => $_getList(0);
 }
 
-const $core.bool _omitFieldNames =
-    $core.bool.fromEnvironment('protobuf.omit_field_names');
-const $core.bool _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const $core.bool _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
+const $core.bool _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

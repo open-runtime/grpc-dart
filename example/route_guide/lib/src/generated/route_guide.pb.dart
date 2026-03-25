@@ -36,14 +36,11 @@ class Point extends $pb.GeneratedMessage {
   factory Point.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Point.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Point.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Point',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Point',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'), createEmptyInstance: create)
     ..aI(1, _omitFieldNames ? '' : 'latitude')
     ..aI(2, _omitFieldNames ? '' : 'longitude')
     ..hasRequiredFields = false;
@@ -51,8 +48,7 @@ class Point extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   Point clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Point copyWith(void Function(Point) updates) =>
-      super.copyWith((message) => updates(message as Point)) as Point;
+  Point copyWith(void Function(Point) updates) => super.copyWith((message) => updates(message as Point)) as Point;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -62,8 +58,7 @@ class Point extends $pb.GeneratedMessage {
   @$core.override
   Point createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Point getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Point>(create);
+  static Point getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Point>(create);
   static Point? _defaultInstance;
 
   @$pb.TagNumber(1)
@@ -103,14 +98,11 @@ class Rectangle extends $pb.GeneratedMessage {
   factory Rectangle.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Rectangle.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Rectangle.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Rectangle',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Rectangle',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'), createEmptyInstance: create)
     ..aOM<Point>(1, _omitFieldNames ? '' : 'lo', subBuilder: Point.create)
     ..aOM<Point>(2, _omitFieldNames ? '' : 'hi', subBuilder: Point.create)
     ..hasRequiredFields = false;
@@ -129,8 +121,7 @@ class Rectangle extends $pb.GeneratedMessage {
   @$core.override
   Rectangle createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Rectangle getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Rectangle>(create);
+  static Rectangle getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Rectangle>(create);
   static Rectangle? _defaultInstance;
 
   /// One corner of the rectangle.
@@ -177,14 +168,11 @@ class Feature extends $pb.GeneratedMessage {
   factory Feature.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory Feature.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory Feature.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Feature',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Feature',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'name')
     ..aOM<Point>(2, _omitFieldNames ? '' : 'location', subBuilder: Point.create)
     ..hasRequiredFields = false;
@@ -203,8 +191,7 @@ class Feature extends $pb.GeneratedMessage {
   @$core.override
   Feature createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static Feature getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Feature>(create);
+  static Feature getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Feature>(create);
   static Feature? _defaultInstance;
 
   /// The name of the feature.
@@ -247,14 +234,11 @@ class RouteNote extends $pb.GeneratedMessage {
   factory RouteNote.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory RouteNote.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory RouteNote.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'RouteNote',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RouteNote',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'), createEmptyInstance: create)
     ..aOM<Point>(1, _omitFieldNames ? '' : 'location', subBuilder: Point.create)
     ..aOS(2, _omitFieldNames ? '' : 'message')
     ..hasRequiredFields = false;
@@ -273,8 +257,7 @@ class RouteNote extends $pb.GeneratedMessage {
   @$core.override
   RouteNote createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static RouteNote getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RouteNote>(create);
+  static RouteNote getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RouteNote>(create);
   static RouteNote? _defaultInstance;
 
   /// The location from which the message is sent.
@@ -325,14 +308,11 @@ class RouteSummary extends $pb.GeneratedMessage {
   factory RouteSummary.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory RouteSummary.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory RouteSummary.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'RouteSummary',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RouteSummary',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'routeguide'), createEmptyInstance: create)
     ..aI(1, _omitFieldNames ? '' : 'pointCount')
     ..aI(2, _omitFieldNames ? '' : 'featureCount')
     ..aI(3, _omitFieldNames ? '' : 'distance')
@@ -343,8 +323,7 @@ class RouteSummary extends $pb.GeneratedMessage {
   RouteSummary clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   RouteSummary copyWith(void Function(RouteSummary) updates) =>
-      super.copyWith((message) => updates(message as RouteSummary))
-          as RouteSummary;
+      super.copyWith((message) => updates(message as RouteSummary)) as RouteSummary;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -354,8 +333,7 @@ class RouteSummary extends $pb.GeneratedMessage {
   @$core.override
   RouteSummary createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static RouteSummary getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<RouteSummary>(create);
+  static RouteSummary getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RouteSummary>(create);
   static RouteSummary? _defaultInstance;
 
   /// The number of points received.
@@ -399,7 +377,5 @@ class RouteSummary extends $pb.GeneratedMessage {
   void clearElapsedTime() => $_clearField(4);
 }
 
-const $core.bool _omitFieldNames =
-    $core.bool.fromEnvironment('protobuf.omit_field_names');
-const $core.bool _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const $core.bool _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
+const $core.bool _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

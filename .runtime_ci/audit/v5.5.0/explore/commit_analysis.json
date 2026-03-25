@@ -1,0 +1,112 @@
+{
+  "version": "5.5.0",
+  "previous_version": "v5.4.0",
+  "total_commits": 42,
+  "categories": {
+    "added": [
+      {
+        "description": "Added overlapped_named_pipe_spike.dart as design anchor for future overlapped I/O",
+        "pr": "#49",
+        "commits": ["e6c139e", "ae546b4"]
+      },
+      {
+        "description": "Added 10MB and 30MB echo payload tests for sustained throughput validation",
+        "pr": "#50",
+        "commits": ["41c4749"]
+      },
+      {
+        "description": "Added 13 named pipe test variants achieving full parity with TCP/UDS",
+        "pr": "#50",
+        "commits": ["cfb9248"]
+      }
+    ],
+    "changed": [
+      {
+        "description": "Switched CI to WarpBuild runners for faster CI and updated GitHub action templates",
+        "pr": "#50",
+        "commits": ["a3a2f3e", "c46d616", "e2b43df", "0ca1b7b", "c133e87", "d969cab"]
+      },
+      {
+        "description": "Performance: zero-delay read polling and 32KB write chunks for Windows named pipes",
+        "pr": "#50",
+        "commits": ["7b87f49", "41c4749"]
+      },
+      {
+        "description": "Performance: write queue coalescing for named pipes",
+        "pr": "#50",
+        "commits": ["cfb9248"]
+      },
+      {
+        "description": "Chore: align Dart workspace resolution and dependency constraints",
+        "pr": "#47",
+        "commits": ["f4ed4e4", "1d7be33"]
+      },
+      {
+        "description": "Chore: use gemini-3-flash-preview for doc reviews",
+        "pr": "",
+        "commits": ["f975a08"]
+      },
+      {
+        "description": "Bot: apply dart format --line-length 120",
+        "pr": "#47",
+        "commits": ["4cf6e8f", "eb4abd9"]
+      }
+    ],
+    "deprecated": [],
+    "removed": [
+      {
+        "description": "Removed blocking WaitNamedPipe FFI in favor of wall-clock deadline",
+        "pr": "",
+        "commits": ["7228207"]
+      },
+      {
+        "description": "Removed runtime_common_codestyle from dev_dependencies",
+        "pr": "",
+        "commits": ["6b9fc6b"]
+      }
+    ],
+    "fixed": [
+      {
+        "description": "Fixed microtask starvation causing duplex stall on Windows named pipes by yielding to event queue",
+        "pr": "",
+        "commits": ["8b11154"]
+      },
+      {
+        "description": "Fixed PIPE_NOWAIT for server data I/O and non-blocking WriteFile retry to prevent deadlocks",
+        "pr": "",
+        "commits": ["62d0325"]
+      },
+      {
+        "description": "Fixed: guard _writeChunk after yield against closed handle",
+        "pr": "#49",
+        "commits": ["0cf59cd", "a712d10"]
+      },
+      {
+        "description": "Fixed: remove all non-terminal connector OS releases to prevent early stream termination",
+        "pr": "#49",
+        "commits": ["da840ee", "71d6339", "83ecc53", "3ce236b"]
+      },
+      {
+        "description": "Fixed: connector retry on ERROR_FILE_NOT_FOUND to handle heavy connection contention",
+        "pr": "#50",
+        "commits": ["cfb9248"]
+      },
+      {
+        "description": "Fixed: 0-based serverStream index to prevent data corruption at index 0",
+        "pr": "#50",
+        "commits": ["cfb9248"]
+      },
+      {
+        "description": "Fixed: correct repository name grpc-dart in config.json to resolve tool failures",
+        "pr": "",
+        "commits": ["0503a10"]
+      },
+      {
+        "description": "Fixed: remove workflow_logs from git and gitignore them to fix Windows path length cloning issues",
+        "pr": "",
+        "commits": ["6c339a0"]
+      }
+    ],
+    "security": []
+  }
+}

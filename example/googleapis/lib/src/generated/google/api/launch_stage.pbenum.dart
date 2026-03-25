@@ -22,20 +22,17 @@ class LaunchStage extends $pb.ProtobufEnum {
       LaunchStage._(0, _omitEnumNames ? '' : 'LAUNCH_STAGE_UNSPECIFIED');
 
   /// The feature is not yet implemented. Users can not use it.
-  static const LaunchStage UNIMPLEMENTED =
-      LaunchStage._(6, _omitEnumNames ? '' : 'UNIMPLEMENTED');
+  static const LaunchStage UNIMPLEMENTED = LaunchStage._(6, _omitEnumNames ? '' : 'UNIMPLEMENTED');
 
   /// Prelaunch features are hidden from users and are only visible internally.
-  static const LaunchStage PRELAUNCH =
-      LaunchStage._(7, _omitEnumNames ? '' : 'PRELAUNCH');
+  static const LaunchStage PRELAUNCH = LaunchStage._(7, _omitEnumNames ? '' : 'PRELAUNCH');
 
   /// Early Access features are limited to a closed group of testers. To use
   /// these features, you must sign up in advance and sign a Trusted Tester
   /// agreement (which includes confidentiality provisions). These features may
   /// be unstable, changed in backward-incompatible ways, and are not
   /// guaranteed to be released.
-  static const LaunchStage EARLY_ACCESS =
-      LaunchStage._(1, _omitEnumNames ? '' : 'EARLY_ACCESS');
+  static const LaunchStage EARLY_ACCESS = LaunchStage._(1, _omitEnumNames ? '' : 'EARLY_ACCESS');
 
   /// Alpha is a limited availability test for releases before they are cleared
   /// for widespread use. By Alpha, all significant design issues are resolved
@@ -46,16 +43,14 @@ class LaunchStage extends $pb.ProtobufEnum {
   /// they will be far enough along that customers can actually use them in
   /// test environments or for limited-use tests -- just like they would in
   /// normal production cases.
-  static const LaunchStage ALPHA =
-      LaunchStage._(2, _omitEnumNames ? '' : 'ALPHA');
+  static const LaunchStage ALPHA = LaunchStage._(2, _omitEnumNames ? '' : 'ALPHA');
 
   /// Beta is the point at which we are ready to open a release for any
   /// customer to use. There are no SLA or technical support obligations in a
   /// Beta release. Products will be complete from a feature perspective, but
   /// may have some open outstanding issues. Beta releases are suitable for
   /// limited production use cases.
-  static const LaunchStage BETA =
-      LaunchStage._(3, _omitEnumNames ? '' : 'BETA');
+  static const LaunchStage BETA = LaunchStage._(3, _omitEnumNames ? '' : 'BETA');
 
   /// GA features are open to all developers and are considered stable and
   /// fully qualified for production use.
@@ -66,8 +61,7 @@ class LaunchStage extends $pb.ProtobufEnum {
   /// Service](https://cloud.google.com/terms/)
   /// and the [Google Cloud Platform Subject to the Deprecation
   /// Policy](https://cloud.google.com/terms/deprecation) documentation.
-  static const LaunchStage DEPRECATED =
-      LaunchStage._(5, _omitEnumNames ? '' : 'DEPRECATED');
+  static const LaunchStage DEPRECATED = LaunchStage._(5, _omitEnumNames ? '' : 'DEPRECATED');
 
   static const $core.List<LaunchStage> values = <LaunchStage>[
     LAUNCH_STAGE_UNSPECIFIED,
@@ -80,13 +74,10 @@ class LaunchStage extends $pb.ProtobufEnum {
     DEPRECATED,
   ];
 
-  static final $core.List<LaunchStage?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 7);
-  static LaunchStage? valueOf($core.int value) =>
-      value < 0 || value >= _byValue.length ? null : _byValue[value];
+  static final $core.List<LaunchStage?> _byValue = $pb.ProtobufEnum.$_initByValueList(values, 7);
+  static LaunchStage? valueOf($core.int value) => value < 0 || value >= _byValue.length ? null : _byValue[value];
 
   const LaunchStage._(super.value, super.name);
 }
 
-const $core.bool _omitEnumNames =
-    $core.bool.fromEnvironment('protobuf.omit_enum_names');
+const $core.bool _omitEnumNames = $core.bool.fromEnvironment('protobuf.omit_enum_names');

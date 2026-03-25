@@ -1,5 +1,5 @@
 name: grpc
-version: 5.4.0
+version: 5.5.1
 description: Dart implementation of gRPC, a high performance, open-source universal RPC framework. This is the open-runtime fork with critical production fixes.
 repository: https://github.com/open-runtime/grpc-dart
 homepage: https://github.com/open-runtime/grpc-dart
@@ -29,11 +29,9 @@ dependencies:
   win32: ^5.10.0
 
 dev_dependencies:
-  runtime_ci_tooling:
-    git:
-      url: git@github.com:open-runtime/runtime_ci_tooling.git
-      tag_pattern: v{{version}}
-    version: ^0.14.1
+  # runtime_ci_tooling — use global activation (do not add as a dev_dependency). Example:
+  #   dart pub global activate --source git https://github.com/open-runtime/runtime_ci_tooling.git --git-ref vX.Y.Z
+  #   dart pub global run runtime_ci_tooling:manage_cicd --help
 
   # ==========================================================================
   # Direct pub.dev dev dependencies

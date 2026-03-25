@@ -1,165 +1,167 @@
 # Authentication Module Quickstart
 
 ## 1. Overview
-The `auth` module provides comprehensive, production-ready authentication mechanisms for gRPC clients, primarily focusing on Google Cloud Platform (GCP) credential flows. It includes robust APIs for token management, automatic refreshing, JSON Web Token (JWT) generation, Application Default Credentials (ADC) resolution, and underlying utilities for RSA signing and ASN1 parsing.
+The Authentication module provides utilities for authenticating gRPC client calls, specifically for Google Cloud environment. It allows you to inject authorization metadata (like OAuth 2.0 access tokens or self-signed JWTs) into your gRPC calls.
+
+This module simplifies the process of using **Application Default Credentials (ADC)**, **Service Accounts**, and **Compute Engine Metadata** by providing `BaseAuthenticator` implementations that automatically manage token acquisition and refresh.
 
 ## 2. Import
-Import the libraries based on your application's environment:
+The primary authenticators are available via the main `grpc.dart` entry point. For the JWT-specific authenticator, you may need to import from the internal auth source.
 
 ```dart
-// For core authentication interfaces and JWT logic (Platform agnostic)
+import 'package:grpc/grpc.dart';
+// Required for JwtServiceAccountAuthenticator:
 import 'package:grpc/src/auth/auth.dart';
-
-// For IO-dependent authenticators like ADC, Service Accounts, and GCE
-import 'package:grpc/src/auth/auth_io.dart';
-
-// For low-level cryptography and ASN.1 structure parsing
-import 'package:grpc/src/auth/rsa.dart';
 ```
 
-## 3. Core Authenticator Classes
-
-### `BaseAuthenticator`
-The foundational abstract class for all authenticators.
-- `Future<void> authenticate(Map<String, String> metadata, String uri)`: Attaches the authorization header.
-- `CallOptions get toCallOptions`: Generates the interceptor.
-- `Future<void> obtainAccessCredentials(String uri)`: Abstract method to fetch credentials.
-
-### `HttpBasedAuthenticator`
-Inherits from `BaseAuthenticator` and provides HTTP client caching.
-- `Future<auth.AccessCredentials> obtainCredentialsWithClient(http.Client client, String uri)`: Abstract method to fetch credentials using a provided HTTP client.
-
-## 4. Common Operations
-
-### Using Application Default Credentials (ADC)
-This is the recommended approach for GCP environments. It seamlessly handles local `gcloud` credentials, environment variables, or Compute Engine metadata.
+## 3. Basic Setup (Application Default Credentials)
+The most common way to authenticate in a Google Cloud environment or locally via the gcloud CLI is using `applicationDefaultCredentialsAuthenticator`. It returns an `HttpBasedAuthenticator` which can be converted to `CallOptions`.
 
 ```dart
-import 'package:grpc/src/auth/auth_io.dart';
+import 'package:grpc/grpc.dart';
 
 Future<void> main() async {
+  // 1. Define required OAuth 2.0 scopes
   final scopes = ['https://www.googleapis.com/auth/cloud-platform'];
-  
-  // Resolves the correct HttpBasedAuthenticator internally 
-  // (ComputeEngineAuthenticator, ServiceAccountAuthenticator, or a refreshing ADC)
+
+  // 2. Create the authenticator using ADC
+  // This automatically checks environment variables, gcloud config, and metadata servers.
   final authenticator = await applicationDefaultCredentialsAuthenticator(scopes);
-  
-  final callOptions = authenticator.toCallOptions;
-  // Use callOptions in your generated gRPC Client calls
+
+  // 3. Convert to CallOptions to be used in client calls
+  final options = authenticator.toCallOptions;
+
+  // Use 'options' when calling your gRPC client methods
 }
 ```
 
-### Authenticating with a JWT Service Account
-Use `JwtServiceAccountAuthenticator` when you want to avoid network-based token fetches and rely directly on locally-signed JWTs using `RS256Signer`.
+## 4. Advanced Authentication
+
+### Using a Service Account JSON
+If you have a Service Account JSON key string, use `ServiceAccountAuthenticator`.
+
+```dart
+import 'package:grpc/grpc.dart';
+
+void setupServiceAccount(String jsonKeyString) {
+  final scopes = ['https://www.googleapis.com/auth/cloud-platform'];
+  
+  // Creates an authenticator that exchanges the service account key for OAuth 2.0 tokens
+  final authenticator = ServiceAccountAuthenticator(jsonKeyString, scopes);
+  
+  final options = authenticator.toCallOptions;
+}
+```
+
+### Using a JWT Service Account (Self-Signed)
+For improved performance, you can use a self-signed JWT. This avoids the extra network hop to the OAuth 2.0 token server.
 
 ```dart
 import 'package:grpc/src/auth/auth.dart';
-import 'dart:io';
 
-Future<void> main() async {
-  final serviceAccountJsonString = await File('service_account.json').readAsString();
+void setupJwtAuth(String jsonKeyString) {
+  // Creates an authenticator that signs its own JWTs for authentication
+  final authenticator = JwtServiceAccountAuthenticator(jsonKeyString);
   
-  // Instantiates the BaseAuthenticator with JWT capabilities
-  final authenticator = JwtServiceAccountAuthenticator(serviceAccountJsonString);
-  
-  // Alternatively, from parsed JSON:
-  // final authenticator = JwtServiceAccountAuthenticator.fromJson(jsonMap);
-  
-  final callOptions = authenticator.toCallOptions;
-  // Optional: access project info
-  print('Project ID: ${authenticator.projectId}');
+  final options = authenticator.toCallOptions;
 }
 ```
 
-### Standard Service Account Authenticator
-Use `ServiceAccountAuthenticator` for HTTP-based token resolution and refresh for a defined service account scope.
+### Using Compute Engine Metadata
+When running on GCE, GAE, or GKE, you can fetch tokens directly from the local metadata server.
 
 ```dart
-import 'package:grpc/src/auth/auth_io.dart';
-import 'dart:io';
+import 'package:grpc/grpc.dart';
 
-Future<void> main() async {
-  final serviceAccountJsonString = await File('service_account.json').readAsString();
-  final scopes = ['https://www.googleapis.com/auth/cloud-platform'];
-  
-  final authenticator = ServiceAccountAuthenticator(serviceAccountJsonString, scopes);
-  
-  // Alternatively, from parsed JSON:
-  // final authenticator = ServiceAccountAuthenticator.fromJson(jsonMap, scopes);
-  
-  final callOptions = authenticator.toCallOptions;
-  print('Project ID: ${authenticator.projectId}');
-}
-```
-
-### Compute Engine Metadata Auth
-For code strictly running on Google Compute Engine or App Engine Flex.
-
-```dart
-import 'package:grpc/src/auth/auth_io.dart';
-
-void main() {
+void setupComputeEngineAuth() {
+  // Fetches credentials from the GCE metadata service
   final authenticator = ComputeEngineAuthenticator();
-  final callOptions = authenticator.toCallOptions;
+  
+  final options = authenticator.toCallOptions;
 }
 ```
 
-## 5. Low-Level RSA and Cryptography Utilities
+## 5. Comprehensive Example (SendMail Service)
 
-The `rsa.dart` module provides classes for raw RSA signing and parsing `ASN1Object` streams (`ASN1Sequence`, `ASN1Integer`, `ASN1OctetString`, `ASN1ObjectIdentifier`, `ASN1Null`).
-
-### Working with `RSAPrivateKey`
-The `RSAPrivateKey` class encapsulates the components of an RSA key:
-- `p` (BigInt): First prime number.
-- `q` (BigInt): Second prime number.
-- `n` (BigInt): Modulus.
-- `e` (BigInt): Public exponent.
-- `d` (BigInt): Private exponent.
-- `dmp1` (BigInt): `d mod (p-1)`.
-- `dmq1` (BigInt): `d mod (q-1)`.
-- `coeff` (BigInt): `q^-1 mod p`.
-- `bitLength` (int): Bit length of the modulus.
-
-### Crypto Operations Examples
+This example demonstrates using an authenticator with a generated gRPC client (`MailServiceClient`). Note how all `snake_case` proto fields are accessed using `camelCase` in Dart.
 
 ```dart
-import 'package:grpc/src/auth/rsa.dart';
-import 'dart:typed_data';
+import 'package:grpc/grpc.dart';
+import 'package:fixnum/fixnum.dart';
+// Assuming mail.pbgrpc.dart is generated from your proto definitions
+// import 'src/generated/mail.pbgrpc.dart';
 
-void encryptAndSign(RSAPrivateKey rsaKey, List<int> data) {
-  // Encrypt directly using RSAAlgorithm
-  final encryptedBytes = RSAAlgorithm.encrypt(rsaKey, data, 256);
+Future<void> sendSecureMail(String jsonKey) async {
+  final channel = ClientChannel('mail.googleapis.com');
+  final stub = MailServiceClient(channel);
   
-  // Sign using EMSA-PKCS1-v1_5 SHA-256
-  final signer = RS256Signer(rsaKey);
-  final signature = signer.sign(data);
-  
-  // Convert BigInt to Bytes and vice versa
-  final number = RSAAlgorithm.bytes2BigInt(data);
-  final bytes = RSAAlgorithm.integer2Bytes(number, 256);
-  
-  // Parse ASN1
-  final asn1Object = ASN1Parser.parse(Uint8List.fromList(data));
-  
-  if (asn1Object is ASN1Sequence) {
-    print('Parsed a sequence with ${asn1Object.objects.length} elements');
-  } else if (asn1Object is ASN1Integer) {
-    print('Parsed integer: ${asn1Object.integer}');
+  // Setup JWT authentication
+  final authenticator = JwtServiceAccountAuthenticator(jsonKey);
+  final authOptions = authenticator.toCallOptions;
+
+  // Combine auth options with call-specific options (like timeout)
+  final callOptions = authOptions.mergedWith(
+    CallOptions(timeout: Duration(seconds: 10)),
+  );
+
+  final request = SendMailRequest()
+    ..batchId = 'batch-123' // Unique batch identifier
+    ..sendAt = Int64(DateTime.now().millisecondsSinceEpoch ~/ 1000) // Timestamp to send at
+    ..mailSettings = (MailSettings()
+      ..sandboxMode = false // Whether to run in sandbox mode
+      ..enableText = true // Whether to enable text format
+    )
+    ..trackingSettings = (TrackingSettings()
+      ..clickTracking = (ClickTracking()
+        ..enable = true // Whether to enable click tracking
+        ..enableText = true // Whether to enable text format for click tracking
+        ..substitutionTag = '[click_track]' // The substitution tag for tracking
+      )
+      ..openTracking = (OpenTracking()
+        ..enable = true // Whether to enable open tracking
+        ..substitutionTag = '[open_track]' // The substitution tag for tracking
+      )
+    )
+    ..dynamicTemplateData['user'] = 'John Doe' // Dynamic data for templates
+    ..contentId = 'welcome-email-001' // Content identifier
+    ..customArgs['campaign'] = 'spring_sale' // Custom arguments for tracking
+    ..ipPoolName = 'transactional-pool' // IP pool name to use
+    ..replyTo = 'support@example.com' // Reply-to address
+    ..replyToList.addAll(['backup@example.com', 'logs@example.com']) // Multiple reply-to addresses
+    ..templateId = 'tmpl_456' // ID of the template to use
+    ..groupId = 789 // Target group ID
+    ..groupsToDisplay.addAll([1, 2, 3]) // List of group IDs to display
+    ..mailFrom = MailFrom.MAIL_FROM_SUPPORT; // Enum representing the mail sender
+
+  try {
+    final response = await stub.sendMail(request, options: callOptions);
+    print('Mail sent: ${response.messageId}');
+  } catch (e) {
+    print('Error sending mail: $e');
+  } finally {
+    await channel.shutdown();
   }
 }
 ```
 
-## 6. Configuration
+## 6. Configuration Details
 
-The `applicationDefaultCredentialsAuthenticator()` flow automatically evaluates the following configurations in order:
+### Authenticator Inheritance
+- **`BaseAuthenticator`**: The base class for all authenticators. Provides `toCallOptions`.
+- **`HttpBasedAuthenticator`**: Subclass that handles asynchronous token fetching via HTTP clients.
 
+### ADC Discovery Order
+The `applicationDefaultCredentialsAuthenticator` function searches for credentials in the following order:
 1. **`GOOGLE_APPLICATION_CREDENTIALS`**: Environment variable pointing to a service account JSON file.
-2. **gcloud Local Defaults**: Uses `%APPDATA%/gcloud/application_default_credentials.json` on Windows or `$HOME/.config/gcloud/application_default_credentials.json` on Linux/Mac.
-3. **Metadata Service**: Fallback to Google Compute Engine (GCE) metadata service headers if no files are found.
-4. **Quota Projects**: When using ADC user files, the system automatically checks for `quota_project_id` and attaches the `X-Goog-User-Project` header via the internal `_CredentialsRefreshingAuthenticator`.
+2. **Local GCloud Config**: JSON file created by `gcloud auth application-default login`.
+   - Windows: `%APPDATA%/gcloud/application_default_credentials.json`
+   - Linux/macOS: `$HOME/.config/gcloud/application_default_credentials.json`
+3. **Metadata Server**: Fetches from the Google Compute Engine (GCE) metadata service.
+
+### Metadata Injection
+Authenticators inject the `authorization` header into the metadata of every RPC call. If a `quota_project_id` is found in the credentials, the `X-Goog-User-Project` header is also automatically added.
 
 ## 7. Related Modules
-
-*   `package:googleapis_auth/googleapis_auth.dart`: Used internally for HTTP-based authentication workflows and underlying credentials mapping.
-*   `client/call.dart`: Exposes the `CallOptions` class which authenticators instantiate using the `toCallOptions` method.
-*   `shared/logging/logging.dart`: Internal gRPC library utility utilized for logging failed `token_refresh` routines in the `authenticate` pipeline.
+- **Client (`lib/src/client/`)**: Uses `CallOptions` to attach the authentication metadata to HTTP/2 streams.
+- **Shared (`lib/src/shared/`)**: Defines the `CallOptions` and `ClientMethod` classes used by the authenticators.
+- **Google APIs Auth (`googleapis_auth`)**: The underlying library used for OAuth 2.0 credential management.

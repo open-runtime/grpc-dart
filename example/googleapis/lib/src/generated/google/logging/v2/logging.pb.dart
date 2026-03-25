@@ -43,11 +43,8 @@ class DeleteLogRequest extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'DeleteLogRequest',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'DeleteLogRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'logName')
     ..hasRequiredFields = false;
 
@@ -55,8 +52,7 @@ class DeleteLogRequest extends $pb.GeneratedMessage {
   DeleteLogRequest clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   DeleteLogRequest copyWith(void Function(DeleteLogRequest) updates) =>
-      super.copyWith((message) => updates(message as DeleteLogRequest))
-          as DeleteLogRequest;
+      super.copyWith((message) => updates(message as DeleteLogRequest)) as DeleteLogRequest;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -66,8 +62,8 @@ class DeleteLogRequest extends $pb.GeneratedMessage {
   @$core.override
   DeleteLogRequest createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static DeleteLogRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<DeleteLogRequest>(create);
+  static DeleteLogRequest getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<DeleteLogRequest>(create);
   static DeleteLogRequest? _defaultInstance;
 
   /// Required. The resource name of the log to delete:
@@ -122,21 +118,16 @@ class WriteLogEntriesRequest extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'WriteLogEntriesRequest',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'WriteLogEntriesRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'logName')
-    ..aOM<$2.MonitoredResource>(2, _omitFieldNames ? '' : 'resource',
-        subBuilder: $2.MonitoredResource.create)
+    ..aOM<$2.MonitoredResource>(2, _omitFieldNames ? '' : 'resource', subBuilder: $2.MonitoredResource.create)
     ..m<$core.String, $core.String>(3, _omitFieldNames ? '' : 'labels',
         entryClassName: 'WriteLogEntriesRequest.LabelsEntry',
         keyFieldType: $pb.PbFieldType.OS,
         valueFieldType: $pb.PbFieldType.OS,
         packageName: const $pb.PackageName('google.logging.v2'))
-    ..pPM<$3.LogEntry>(4, _omitFieldNames ? '' : 'entries',
-        subBuilder: $3.LogEntry.create)
+    ..pPM<$3.LogEntry>(4, _omitFieldNames ? '' : 'entries', subBuilder: $3.LogEntry.create)
     ..aOB(5, _omitFieldNames ? '' : 'partialSuccess')
     ..aOB(6, _omitFieldNames ? '' : 'dryRun')
     ..hasRequiredFields = false;
@@ -144,10 +135,8 @@ class WriteLogEntriesRequest extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   WriteLogEntriesRequest clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  WriteLogEntriesRequest copyWith(
-          void Function(WriteLogEntriesRequest) updates) =>
-      super.copyWith((message) => updates(message as WriteLogEntriesRequest))
-          as WriteLogEntriesRequest;
+  WriteLogEntriesRequest copyWith(void Function(WriteLogEntriesRequest) updates) =>
+      super.copyWith((message) => updates(message as WriteLogEntriesRequest)) as WriteLogEntriesRequest;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -157,8 +146,8 @@ class WriteLogEntriesRequest extends $pb.GeneratedMessage {
   @$core.override
   WriteLogEntriesRequest createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static WriteLogEntriesRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<WriteLogEntriesRequest>(create);
+  static WriteLogEntriesRequest getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<WriteLogEntriesRequest>(create);
   static WriteLogEntriesRequest? _defaultInstance;
 
   /// Optional. A default log resource name that is assigned to all log entries
@@ -282,20 +271,15 @@ class WriteLogEntriesResponse extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'WriteLogEntriesResponse',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'WriteLogEntriesResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   WriteLogEntriesResponse clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  WriteLogEntriesResponse copyWith(
-          void Function(WriteLogEntriesResponse) updates) =>
-      super.copyWith((message) => updates(message as WriteLogEntriesResponse))
-          as WriteLogEntriesResponse;
+  WriteLogEntriesResponse copyWith(void Function(WriteLogEntriesResponse) updates) =>
+      super.copyWith((message) => updates(message as WriteLogEntriesResponse)) as WriteLogEntriesResponse;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -305,8 +289,8 @@ class WriteLogEntriesResponse extends $pb.GeneratedMessage {
   @$core.override
   WriteLogEntriesResponse createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static WriteLogEntriesResponse getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<WriteLogEntriesResponse>(create);
+  static WriteLogEntriesResponse getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<WriteLogEntriesResponse>(create);
   static WriteLogEntriesResponse? _defaultInstance;
 }
 
@@ -316,8 +300,7 @@ class WriteLogEntriesPartialErrors extends $pb.GeneratedMessage {
     $core.Iterable<$core.MapEntry<$core.int, $4.Status>>? logEntryErrors,
   }) {
     final result = create();
-    if (logEntryErrors != null)
-      result.logEntryErrors.addEntries(logEntryErrors);
+    if (logEntryErrors != null) result.logEntryErrors.addEntries(logEntryErrors);
     return result;
   }
 
@@ -330,11 +313,8 @@ class WriteLogEntriesPartialErrors extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'WriteLogEntriesPartialErrors',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'WriteLogEntriesPartialErrors',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..m<$core.int, $4.Status>(1, _omitFieldNames ? '' : 'logEntryErrors',
         entryClassName: 'WriteLogEntriesPartialErrors.LogEntryErrorsEntry',
         keyFieldType: $pb.PbFieldType.O3,
@@ -347,23 +327,19 @@ class WriteLogEntriesPartialErrors extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   WriteLogEntriesPartialErrors clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  WriteLogEntriesPartialErrors copyWith(
-          void Function(WriteLogEntriesPartialErrors) updates) =>
-      super.copyWith(
-              (message) => updates(message as WriteLogEntriesPartialErrors))
-          as WriteLogEntriesPartialErrors;
+  WriteLogEntriesPartialErrors copyWith(void Function(WriteLogEntriesPartialErrors) updates) =>
+      super.copyWith((message) => updates(message as WriteLogEntriesPartialErrors)) as WriteLogEntriesPartialErrors;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static WriteLogEntriesPartialErrors create() =>
-      WriteLogEntriesPartialErrors._();
+  static WriteLogEntriesPartialErrors create() => WriteLogEntriesPartialErrors._();
   @$core.override
   WriteLogEntriesPartialErrors createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static WriteLogEntriesPartialErrors getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<WriteLogEntriesPartialErrors>(create);
+  static WriteLogEntriesPartialErrors getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<WriteLogEntriesPartialErrors>(create);
   static WriteLogEntriesPartialErrors? _defaultInstance;
 
   /// When `WriteLogEntriesRequest.partial_success` is true, records the error
@@ -403,11 +379,8 @@ class ListLogEntriesRequest extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ListLogEntriesRequest',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListLogEntriesRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aOS(2, _omitFieldNames ? '' : 'filter')
     ..aOS(3, _omitFieldNames ? '' : 'orderBy')
     ..aI(4, _omitFieldNames ? '' : 'pageSize')
@@ -418,10 +391,8 @@ class ListLogEntriesRequest extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   ListLogEntriesRequest clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ListLogEntriesRequest copyWith(
-          void Function(ListLogEntriesRequest) updates) =>
-      super.copyWith((message) => updates(message as ListLogEntriesRequest))
-          as ListLogEntriesRequest;
+  ListLogEntriesRequest copyWith(void Function(ListLogEntriesRequest) updates) =>
+      super.copyWith((message) => updates(message as ListLogEntriesRequest)) as ListLogEntriesRequest;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -431,8 +402,8 @@ class ListLogEntriesRequest extends $pb.GeneratedMessage {
   @$core.override
   ListLogEntriesRequest createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static ListLogEntriesRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ListLogEntriesRequest>(create);
+  static ListLogEntriesRequest getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ListLogEntriesRequest>(create);
   static ListLogEntriesRequest? _defaultInstance;
 
   /// Optional. Only log entries that match the filter are returned.  An empty
@@ -532,23 +503,17 @@ class ListLogEntriesResponse extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ListLogEntriesResponse',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
-    ..pPM<$3.LogEntry>(1, _omitFieldNames ? '' : 'entries',
-        subBuilder: $3.LogEntry.create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListLogEntriesResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
+    ..pPM<$3.LogEntry>(1, _omitFieldNames ? '' : 'entries', subBuilder: $3.LogEntry.create)
     ..aOS(2, _omitFieldNames ? '' : 'nextPageToken')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   ListLogEntriesResponse clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ListLogEntriesResponse copyWith(
-          void Function(ListLogEntriesResponse) updates) =>
-      super.copyWith((message) => updates(message as ListLogEntriesResponse))
-          as ListLogEntriesResponse;
+  ListLogEntriesResponse copyWith(void Function(ListLogEntriesResponse) updates) =>
+      super.copyWith((message) => updates(message as ListLogEntriesResponse)) as ListLogEntriesResponse;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -558,8 +523,8 @@ class ListLogEntriesResponse extends $pb.GeneratedMessage {
   @$core.override
   ListLogEntriesResponse createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static ListLogEntriesResponse getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ListLogEntriesResponse>(create);
+  static ListLogEntriesResponse getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ListLogEntriesResponse>(create);
   static ListLogEntriesResponse? _defaultInstance;
 
   /// A list of log entries.  If `entries` is empty, `nextPageToken` may still be
@@ -602,19 +567,15 @@ class ListMonitoredResourceDescriptorsRequest extends $pb.GeneratedMessage {
 
   ListMonitoredResourceDescriptorsRequest._();
 
-  factory ListMonitoredResourceDescriptorsRequest.fromBuffer(
-          $core.List<$core.int> data,
+  factory ListMonitoredResourceDescriptorsRequest.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
   factory ListMonitoredResourceDescriptorsRequest.fromJson($core.String json,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ListMonitoredResourceDescriptorsRequest',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListMonitoredResourceDescriptorsRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aI(1, _omitFieldNames ? '' : 'pageSize')
     ..aOS(2, _omitFieldNames ? '' : 'pageToken')
     ..hasRequiredFields = false;
@@ -622,24 +583,20 @@ class ListMonitoredResourceDescriptorsRequest extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   ListMonitoredResourceDescriptorsRequest clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ListMonitoredResourceDescriptorsRequest copyWith(
-          void Function(ListMonitoredResourceDescriptorsRequest) updates) =>
-      super.copyWith((message) =>
-              updates(message as ListMonitoredResourceDescriptorsRequest))
+  ListMonitoredResourceDescriptorsRequest copyWith(void Function(ListMonitoredResourceDescriptorsRequest) updates) =>
+      super.copyWith((message) => updates(message as ListMonitoredResourceDescriptorsRequest))
           as ListMonitoredResourceDescriptorsRequest;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static ListMonitoredResourceDescriptorsRequest create() =>
-      ListMonitoredResourceDescriptorsRequest._();
+  static ListMonitoredResourceDescriptorsRequest create() => ListMonitoredResourceDescriptorsRequest._();
   @$core.override
   ListMonitoredResourceDescriptorsRequest createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
   static ListMonitoredResourceDescriptorsRequest getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<
-          ListMonitoredResourceDescriptorsRequest>(create);
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ListMonitoredResourceDescriptorsRequest>(create);
   static ListMonitoredResourceDescriptorsRequest? _defaultInstance;
 
   /// Optional. The maximum number of results to return from this request.
@@ -675,29 +632,23 @@ class ListMonitoredResourceDescriptorsResponse extends $pb.GeneratedMessage {
     $core.String? nextPageToken,
   }) {
     final result = create();
-    if (resourceDescriptors != null)
-      result.resourceDescriptors.addAll(resourceDescriptors);
+    if (resourceDescriptors != null) result.resourceDescriptors.addAll(resourceDescriptors);
     if (nextPageToken != null) result.nextPageToken = nextPageToken;
     return result;
   }
 
   ListMonitoredResourceDescriptorsResponse._();
 
-  factory ListMonitoredResourceDescriptorsResponse.fromBuffer(
-          $core.List<$core.int> data,
+  factory ListMonitoredResourceDescriptorsResponse.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
   factory ListMonitoredResourceDescriptorsResponse.fromJson($core.String json,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ListMonitoredResourceDescriptorsResponse',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
-    ..pPM<$2.MonitoredResourceDescriptor>(
-        1, _omitFieldNames ? '' : 'resourceDescriptors',
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListMonitoredResourceDescriptorsResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
+    ..pPM<$2.MonitoredResourceDescriptor>(1, _omitFieldNames ? '' : 'resourceDescriptors',
         subBuilder: $2.MonitoredResourceDescriptor.create)
     ..aOS(2, _omitFieldNames ? '' : 'nextPageToken')
     ..hasRequiredFields = false;
@@ -705,30 +656,25 @@ class ListMonitoredResourceDescriptorsResponse extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   ListMonitoredResourceDescriptorsResponse clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ListMonitoredResourceDescriptorsResponse copyWith(
-          void Function(ListMonitoredResourceDescriptorsResponse) updates) =>
-      super.copyWith((message) =>
-              updates(message as ListMonitoredResourceDescriptorsResponse))
+  ListMonitoredResourceDescriptorsResponse copyWith(void Function(ListMonitoredResourceDescriptorsResponse) updates) =>
+      super.copyWith((message) => updates(message as ListMonitoredResourceDescriptorsResponse))
           as ListMonitoredResourceDescriptorsResponse;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static ListMonitoredResourceDescriptorsResponse create() =>
-      ListMonitoredResourceDescriptorsResponse._();
+  static ListMonitoredResourceDescriptorsResponse create() => ListMonitoredResourceDescriptorsResponse._();
   @$core.override
   ListMonitoredResourceDescriptorsResponse createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
   static ListMonitoredResourceDescriptorsResponse getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<
-          ListMonitoredResourceDescriptorsResponse>(create);
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ListMonitoredResourceDescriptorsResponse>(create);
   static ListMonitoredResourceDescriptorsResponse? _defaultInstance;
 
   /// A list of resource descriptors.
   @$pb.TagNumber(1)
-  $pb.PbList<$2.MonitoredResourceDescriptor> get resourceDescriptors =>
-      $_getList(0);
+  $pb.PbList<$2.MonitoredResourceDescriptor> get resourceDescriptors => $_getList(0);
 
   /// If there might be more results than those appearing in this response, then
   /// `nextPageToken` is included.  To get the next set of results, call this
@@ -764,15 +710,11 @@ class ListLogsRequest extends $pb.GeneratedMessage {
   factory ListLogsRequest.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory ListLogsRequest.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+  factory ListLogsRequest.fromJson($core.String json, [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ListLogsRequest',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListLogsRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'parent')
     ..aI(2, _omitFieldNames ? '' : 'pageSize')
     ..aOS(3, _omitFieldNames ? '' : 'pageToken')
@@ -783,8 +725,7 @@ class ListLogsRequest extends $pb.GeneratedMessage {
   ListLogsRequest clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   ListLogsRequest copyWith(void Function(ListLogsRequest) updates) =>
-      super.copyWith((message) => updates(message as ListLogsRequest))
-          as ListLogsRequest;
+      super.copyWith((message) => updates(message as ListLogsRequest)) as ListLogsRequest;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -794,8 +735,8 @@ class ListLogsRequest extends $pb.GeneratedMessage {
   @$core.override
   ListLogsRequest createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static ListLogsRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ListLogsRequest>(create);
+  static ListLogsRequest getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ListLogsRequest>(create);
   static ListLogsRequest? _defaultInstance;
 
   /// Required. The resource name to list logs for:
@@ -878,11 +819,8 @@ class ListLogsResponse extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ListLogsResponse',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListLogsResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..aOS(2, _omitFieldNames ? '' : 'nextPageToken')
     ..pPS(3, _omitFieldNames ? '' : 'logNames')
     ..hasRequiredFields = false;
@@ -891,8 +829,7 @@ class ListLogsResponse extends $pb.GeneratedMessage {
   ListLogsResponse clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   ListLogsResponse copyWith(void Function(ListLogsResponse) updates) =>
-      super.copyWith((message) => updates(message as ListLogsResponse))
-          as ListLogsResponse;
+      super.copyWith((message) => updates(message as ListLogsResponse)) as ListLogsResponse;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -902,8 +839,8 @@ class ListLogsResponse extends $pb.GeneratedMessage {
   @$core.override
   ListLogsResponse createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static ListLogsResponse getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ListLogsResponse>(create);
+  static ListLogsResponse getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ListLogsResponse>(create);
   static ListLogsResponse? _defaultInstance;
 
   /// If there might be more results than those appearing in this response, then
@@ -948,24 +885,18 @@ class TailLogEntriesRequest extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'TailLogEntriesRequest',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'TailLogEntriesRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
     ..pPS(1, _omitFieldNames ? '' : 'resourceNames')
     ..aOS(2, _omitFieldNames ? '' : 'filter')
-    ..aOM<$5.Duration>(3, _omitFieldNames ? '' : 'bufferWindow',
-        subBuilder: $5.Duration.create)
+    ..aOM<$5.Duration>(3, _omitFieldNames ? '' : 'bufferWindow', subBuilder: $5.Duration.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   TailLogEntriesRequest clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  TailLogEntriesRequest copyWith(
-          void Function(TailLogEntriesRequest) updates) =>
-      super.copyWith((message) => updates(message as TailLogEntriesRequest))
-          as TailLogEntriesRequest;
+  TailLogEntriesRequest copyWith(void Function(TailLogEntriesRequest) updates) =>
+      super.copyWith((message) => updates(message as TailLogEntriesRequest)) as TailLogEntriesRequest;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -975,8 +906,8 @@ class TailLogEntriesRequest extends $pb.GeneratedMessage {
   @$core.override
   TailLogEntriesRequest createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static TailLogEntriesRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<TailLogEntriesRequest>(create);
+  static TailLogEntriesRequest getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<TailLogEntriesRequest>(create);
   static TailLogEntriesRequest? _defaultInstance;
 
   /// Required. Name of a parent resource from which to retrieve log entries:
@@ -1039,21 +970,16 @@ class TailLogEntriesResponse_SuppressionInfo extends $pb.GeneratedMessage {
 
   TailLogEntriesResponse_SuppressionInfo._();
 
-  factory TailLogEntriesResponse_SuppressionInfo.fromBuffer(
-          $core.List<$core.int> data,
+  factory TailLogEntriesResponse_SuppressionInfo.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
   factory TailLogEntriesResponse_SuppressionInfo.fromJson($core.String json,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'TailLogEntriesResponse.SuppressionInfo',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
-    ..aE<TailLogEntriesResponse_SuppressionInfo_Reason>(
-        1, _omitFieldNames ? '' : 'reason',
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'TailLogEntriesResponse.SuppressionInfo',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
+    ..aE<TailLogEntriesResponse_SuppressionInfo_Reason>(1, _omitFieldNames ? '' : 'reason',
         enumValues: TailLogEntriesResponse_SuppressionInfo_Reason.values)
     ..aI(2, _omitFieldNames ? '' : 'suppressedCount')
     ..hasRequiredFields = false;
@@ -1061,32 +987,27 @@ class TailLogEntriesResponse_SuppressionInfo extends $pb.GeneratedMessage {
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   TailLogEntriesResponse_SuppressionInfo clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  TailLogEntriesResponse_SuppressionInfo copyWith(
-          void Function(TailLogEntriesResponse_SuppressionInfo) updates) =>
-      super.copyWith((message) =>
-              updates(message as TailLogEntriesResponse_SuppressionInfo))
+  TailLogEntriesResponse_SuppressionInfo copyWith(void Function(TailLogEntriesResponse_SuppressionInfo) updates) =>
+      super.copyWith((message) => updates(message as TailLogEntriesResponse_SuppressionInfo))
           as TailLogEntriesResponse_SuppressionInfo;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static TailLogEntriesResponse_SuppressionInfo create() =>
-      TailLogEntriesResponse_SuppressionInfo._();
+  static TailLogEntriesResponse_SuppressionInfo create() => TailLogEntriesResponse_SuppressionInfo._();
   @$core.override
   TailLogEntriesResponse_SuppressionInfo createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
   static TailLogEntriesResponse_SuppressionInfo getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<
-          TailLogEntriesResponse_SuppressionInfo>(create);
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<TailLogEntriesResponse_SuppressionInfo>(create);
   static TailLogEntriesResponse_SuppressionInfo? _defaultInstance;
 
   /// The reason that entries were omitted from the session.
   @$pb.TagNumber(1)
   TailLogEntriesResponse_SuppressionInfo_Reason get reason => $_getN(0);
   @$pb.TagNumber(1)
-  set reason(TailLogEntriesResponse_SuppressionInfo_Reason value) =>
-      $_setField(1, value);
+  set reason(TailLogEntriesResponse_SuppressionInfo_Reason value) => $_setField(1, value);
   @$pb.TagNumber(1)
   $core.bool hasReason() => $_has(0);
   @$pb.TagNumber(1)
@@ -1124,25 +1045,18 @@ class TailLogEntriesResponse extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'TailLogEntriesResponse',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'),
-      createEmptyInstance: create)
-    ..pPM<$3.LogEntry>(1, _omitFieldNames ? '' : 'entries',
-        subBuilder: $3.LogEntry.create)
-    ..pPM<TailLogEntriesResponse_SuppressionInfo>(
-        2, _omitFieldNames ? '' : 'suppressionInfo',
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'TailLogEntriesResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'google.logging.v2'), createEmptyInstance: create)
+    ..pPM<$3.LogEntry>(1, _omitFieldNames ? '' : 'entries', subBuilder: $3.LogEntry.create)
+    ..pPM<TailLogEntriesResponse_SuppressionInfo>(2, _omitFieldNames ? '' : 'suppressionInfo',
         subBuilder: TailLogEntriesResponse_SuppressionInfo.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
   TailLogEntriesResponse clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  TailLogEntriesResponse copyWith(
-          void Function(TailLogEntriesResponse) updates) =>
-      super.copyWith((message) => updates(message as TailLogEntriesResponse))
-          as TailLogEntriesResponse;
+  TailLogEntriesResponse copyWith(void Function(TailLogEntriesResponse) updates) =>
+      super.copyWith((message) => updates(message as TailLogEntriesResponse)) as TailLogEntriesResponse;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
@@ -1152,8 +1066,8 @@ class TailLogEntriesResponse extends $pb.GeneratedMessage {
   @$core.override
   TailLogEntriesResponse createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static TailLogEntriesResponse getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<TailLogEntriesResponse>(create);
+  static TailLogEntriesResponse getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<TailLogEntriesResponse>(create);
   static TailLogEntriesResponse? _defaultInstance;
 
   /// A list of log entries. Each response in the stream will order entries with
@@ -1168,11 +1082,8 @@ class TailLogEntriesResponse extends $pb.GeneratedMessage {
   /// one of each reason per response. The counts represent the number of
   /// suppressed entries since the last streamed response.
   @$pb.TagNumber(2)
-  $pb.PbList<TailLogEntriesResponse_SuppressionInfo> get suppressionInfo =>
-      $_getList(1);
+  $pb.PbList<TailLogEntriesResponse_SuppressionInfo> get suppressionInfo => $_getList(1);
 }
 
-const $core.bool _omitFieldNames =
-    $core.bool.fromEnvironment('protobuf.omit_field_names');
-const $core.bool _omitMessageNames =
-    $core.bool.fromEnvironment('protobuf.omit_message_names');
+const $core.bool _omitFieldNames = $core.bool.fromEnvironment('protobuf.omit_field_names');
+const $core.bool _omitMessageNames = $core.bool.fromEnvironment('protobuf.omit_message_names');

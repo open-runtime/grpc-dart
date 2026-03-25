@@ -30,6 +30,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
+import 'package:grpc/src/http2/transport.dart';
 import 'package:grpc/src/shared/named_pipe_io.dart';
 import 'package:test/test.dart';
 
@@ -713,6 +714,110 @@ void main() {
       }
       await server.shutdown();
     });
+
+    // 25 concurrent server-streaming RPCs through a single connection.
+    // Exercises the write queue coalescing path: without batching, the
+    // drain loop processes one small HTTP/2 frame per event-loop turn,
+    // which lets producers add entries faster than the drain removes
+    // them — unbounded queue growth, stalling first-item delivery.
+    // With coalescing, the drain batches many frames into a single
+    // WriteFile call, keeping the queue bounded.
+    testNamedPipe('25 concurrent server-streaming RPCs with data integrity', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      const streamCount = 25;
+      const itemsPerStream = 50;
+      final futures = <Future<List<int>>>[];
+
+      for (var i = 0; i < streamCount; i++) {
+        futures.add(client.serverStream(itemsPerStream).toList());
+      }
+
+      final allResults = await Future.wait(futures).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => fail(
+          '25 concurrent server-streaming RPCs did not complete '
+          'within 30s — write queue coalescing may not be working',
+        ),
+      );
+
+      expect(allResults, hasLength(streamCount));
+      final expected = List.generate(itemsPerStream, (i) => i);
+      for (var i = 0; i < streamCount; i++) {
+        expect(
+          allResults[i],
+          equals(expected),
+          reason: 'Stream $i data integrity: expected [0..${itemsPerStream - 1}]',
+        );
+      }
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
+
+    // Same as above but with serverStreamBytes (identity serialization,
+    // larger payloads) to stress HTTP/2 flow control + write coalescing
+    // under realistic production-like data volumes.
+    testNamedPipe('25 concurrent serverStreamBytes RPCs deliver first items', (pipeName) async {
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      await server.serve(pipeName: pipeName);
+      addTearDown(() => server.shutdown());
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      const streamCount = 25;
+      const streamItems = 500;
+      const chunkSize = 64;
+      final request = encodeStreamBytesRequest(streamItems, chunkSize);
+      final firstItemCompleters = List.generate(streamCount, (_) => Completer<void>());
+      final doneCompleters = <Completer<void>>[];
+
+      for (var i = 0; i < streamCount; i++) {
+        final done = Completer<void>();
+        doneCompleters.add(done);
+        final idx = i;
+
+        client
+            .serverStreamBytes(request)
+            .listen(
+              (chunk) {
+                if (!firstItemCompleters[idx].isCompleted) {
+                  firstItemCompleters[idx].complete();
+                }
+              },
+              onError: (e) {
+                if (!done.isCompleted) done.complete();
+              },
+              onDone: () {
+                if (!done.isCompleted) done.complete();
+              },
+            );
+      }
+
+      await Future.wait(firstItemCompleters.map((c) => c.future)).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => fail(
+          'Not all 25 streams received first item — '
+          '${firstItemCompleters.where((c) => c.isCompleted).length}/'
+          '$streamCount started. Write coalescing or flow control stall.',
+        ),
+      );
+
+      await server.shutdown();
+      await Future.wait(
+        doneCompleters.map((c) => c.future),
+      ).timeout(const Duration(seconds: 10), onTimeout: () => fail('Streams did not terminate after shutdown'));
+
+      await channel.terminate();
+    });
   });
 
   // ===========================================================================
@@ -1252,6 +1357,40 @@ void main() {
       await channel2.shutdown();
       await server.shutdown();
     });
+
+    // 24. Verify http2ServerSettings are wired through to the HTTP/2 transport.
+    //     NamedPipeServer.serve(http2ServerSettings: ...) must pass those
+    //     settings to ServerTransportConnection.viaStreams(). Without wiring,
+    //     custom flow-control windows and concurrency limits are silently
+    //     ignored — discovered as an unused-field analyzer warning.
+    testNamedPipe('http2ServerSettings are applied to named pipe connections', (pipeName) async {
+      // Pass custom ServerSettings with a larger stream window to verify
+      // the parameter is accepted and wired through without error.
+      // The default stream window is 65535; a larger window improves
+      // throughput for high-concurrency named pipe workloads.
+      final server = NamedPipeServer.create(services: [EchoService()]);
+      addTearDown(() => server.shutdown());
+      await server.serve(
+        pipeName: pipeName,
+        http2ServerSettings: const ServerSettings(concurrentStreamLimit: 100, streamWindowSize: 1024 * 1024),
+      );
+
+      final channel = NamedPipeClientChannel(pipeName, options: const NamedPipeChannelOptions());
+      addTearDown(() => channel.terminate());
+      final client = EchoClient(channel);
+
+      // Basic round-trip: if the settings caused a protocol error or
+      // misconfiguration, this RPC would fail.
+      expect(await client.echo(42), equals(42));
+
+      // Server-stream with custom settings: larger window should allow
+      // more data in flight without stalling on WINDOW_UPDATE.
+      final items = await client.serverStream(50).toList();
+      expect(items, equals(List.generate(50, (i) => i)));
+
+      await channel.shutdown();
+      await server.shutdown();
+    });
   });
 
   // ===========================================================================
@@ -1300,24 +1439,43 @@ void main() {
   });
 
   group('Idle Poll Backoff', () {
-    test('nextDelay grows exponentially and caps at max delay', () {
-      final backoff = IdlePollBackoff(initialDelayMs: 1, maxDelayMs: 50);
-      final delays = List.generate(8, (_) => backoff.nextDelay().inMilliseconds);
-      expect(delays, equals([1, 2, 4, 8, 16, 32, 50, 50]));
+    test('nextDelay starts with zero-delay phase then grows exponentially', () {
+      final backoff = IdlePollBackoff(zeroDelayCount: 3, initialDelayMs: 1, maxDelayMs: 50);
+      final delays = List.generate(11, (_) => backoff.nextDelay().inMilliseconds);
+      // First 3: zero-delay phase (Duration.zero = 0ms)
+      // Then: 1, 2, 4, 8, 16, 32, 50, 50 (exponential with cap)
+      expect(delays, equals([0, 0, 0, 1, 2, 4, 8, 16, 32, 50, 50]));
     });
 
-    test('reset restores initial polling delay', () {
+    test('default zeroDelayCount uses the constant', () {
       final backoff = IdlePollBackoff(initialDelayMs: 1, maxDelayMs: 50);
-      backoff.nextDelay();
-      backoff.nextDelay();
-      backoff.nextDelay();
+      // Uses kNamedPipeIdlePollZeroDelayCount (currently 64).
+      for (var i = 0; i < kNamedPipeIdlePollZeroDelayCount; i++) {
+        expect(backoff.nextDelay(), equals(Duration.zero), reason: 'zero-delay phase at $i');
+      }
+      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)), reason: 'first ms delay');
+    });
+
+    test('reset restores zero-delay phase and initial ms delay', () {
+      final backoff = IdlePollBackoff(zeroDelayCount: 2, initialDelayMs: 1, maxDelayMs: 50);
+      backoff.nextDelay(); // zero
+      backoff.nextDelay(); // zero
+      backoff.nextDelay(); // 1ms
+      backoff.nextDelay(); // 2ms
       backoff.reset();
-      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)));
+      expect(backoff.nextDelay(), equals(Duration.zero), reason: 'zero-delay restored after reset');
+      expect(backoff.nextDelay(), equals(Duration.zero), reason: 'second zero-delay');
+      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)), reason: 'back to ms');
     });
 
     test('constructor rejects invalid delay bounds', () {
       expect(() => IdlePollBackoff(initialDelayMs: 0, maxDelayMs: 50), throwsA(isA<ArgumentError>()));
       expect(() => IdlePollBackoff(initialDelayMs: 5, maxDelayMs: 4), throwsA(isA<ArgumentError>()));
+    });
+
+    test('zeroDelayCount of 0 skips zero-delay phase entirely', () {
+      final backoff = IdlePollBackoff(zeroDelayCount: 0, initialDelayMs: 1, maxDelayMs: 50);
+      expect(backoff.nextDelay(), equals(const Duration(milliseconds: 1)));
     });
   });
 

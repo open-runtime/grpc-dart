@@ -1,0 +1,40 @@
+{
+  "version": "5.5.1",
+  "previous_version": "v5.5.0",
+  "total_commits": 1,
+  "categories": {
+    "added": [],
+    "changed": [
+      {
+        "description": "Updated runtime_ci_tooling to v0.23.13 in all GitHub Actions workflows.",
+        "pr": null,
+        "commits": ["842b98a2ed45b14f57c839a1f23c1d0ca6f54f3d"]
+      },
+      {
+        "description": "Updated CI workflow to always run on manual workflow_dispatch triggers regardless of commit message.",
+        "pr": null,
+        "commits": ["842b98a2ed45b14f57c839a1f23c1d0ca6f54f3d"]
+      },
+      {
+        "description": "Added step to enable Windows long paths in the CI workflow.",
+        "pr": null,
+        "commits": ["842b98a2ed45b14f57c839a1f23c1d0ca6f54f3d"]
+      },
+      {
+        "description": "Updated release workflow to checkout the main branch instead of workflow_run.head_sha.",
+        "pr": null,
+        "commits": ["842b98a2ed45b14f57c839a1f23c1d0ca6f54f3d"]
+      }
+    ],
+    "deprecated": [],
+    "removed": [],
+    "fixed": [
+      {
+        "description": "Fixed create-release push failure on detached HEAD.",
+        "pr": null,
+        "commits": ["842b98a2ed45b14f57c839a1f23c1d0ca6f54f3d"]
+      }
+    ],
+    "security": []
+  }
+}

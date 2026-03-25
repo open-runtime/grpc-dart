@@ -1,0 +1,28 @@
+{
+  "pull_requests": [
+    {
+      "number": 50,
+      "title": "fix(windows): named-pipe performance + WarpBuild CI runners",
+      "author": "tsavo-at-pieces",
+      "labels": [],
+      "summary": "Improves Windows named-pipe performance via chunk size updates and zero-delay polling, fixes serverStream index to prevent data corruption, adds large payload tests, and switches CI to WarpBuild runners for faster execution.",
+      "commits": ["1bb1699", "cfb9248", "41c4749", "7b87f49", "a3a2f3e", "c46d616", "e2b43df", "0ca1b7b", "c133e87", "d969cab"]
+    },
+    {
+      "number": 49,
+      "title": "fix(windows): named-pipe duplex yields + connector OS release on idle paths",
+      "author": "tsavo-at-pieces",
+      "labels": [],
+      "summary": "Fixes deadlocks by adding partial WriteFile yields for named pipes, ensuring proper connector OS resource release on idle paths, and introduces an overlapped named pipe spike for future enhancements.",
+      "commits": ["45f7f7e", "e6c139e", "0cf59cd", "83ecc53", "da840ee", "ae546b4", "a712d10", "3ce236b", "71d6339"]
+    },
+    {
+      "number": 47,
+      "title": "fix: pub workspace resolution and bump runtime_ci_tooling",
+      "author": "tsavo-at-pieces",
+      "labels": [],
+      "summary": "Aligns Dart workspace resolution, bumps runtime_ci_tooling dependency constraints, and applies line-length formatting across the codebase.",
+      "commits": ["179354e", "f4ed4e4", "1d7be33", "4cf6e8f", "eb4abd9"]
+    }
+  ]
+}

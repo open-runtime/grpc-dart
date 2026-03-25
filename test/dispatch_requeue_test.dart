@@ -240,7 +240,7 @@ void main() {
       final client = EchoClient(channel);
 
       // Fire 100 concurrent server-streaming calls,
-      // each requesting 10 items (yields 1..10).
+      // each requesting 10 items (yields 0..9).
       final futures = List.generate(
         100,
         (i) => settleRpc(
@@ -253,14 +253,14 @@ void main() {
       );
       final results = await Future.wait(futures);
 
-      final expected = List.generate(10, (i) => i + 1);
+      final expected = List.generate(10, (i) => i);
       var successCount = 0;
       var errorCount = 0;
 
       for (var i = 0; i < results.length; i++) {
         final r = results[i];
         if (r is List<int>) {
-          expect(r, equals(expected), reason: 'Stream $i should yield [1..10]');
+          expect(r, equals(expected), reason: 'Stream $i should yield [0..9]');
           successCount++;
         } else if (r is GrpcError) {
           // Under extreme concurrency, some

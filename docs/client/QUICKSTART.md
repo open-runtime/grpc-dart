@@ -1,184 +1,194 @@
 # gRPC Client Quickstart
 
 ## 1. Overview
-The **gRPC Client** module provides the core transport mechanisms and foundational classes required to communicate with gRPC services from Dart applications. It includes robust support for HTTP/2 network connections (`ClientChannel`), gRPC-Web via XHR for browser environments (`GrpcWebClientChannel`), and highly efficient local IPC mechanisms via Unix Domain Sockets and Windows Named Pipes (`LocalGrpcChannel`). It also exposes extensible utilities for managing connection lifecycles, constructing RPC channels, modifying call metadata, and intercepting calls via the `ClientInterceptor` interface.
+The gRPC Client module provides the foundational classes and transports required to communicate with gRPC and gRPC-Web servers. It includes full support for HTTP/2 based gRPC, gRPC-Web via XHR, and local inter-process communication (IPC) via Unix domain sockets and Windows named pipes. Developers use this module to configure connection channels, apply interceptors, manage connection states, and execute unary or streaming Remote Procedure Calls (RPCs).
 
 ## 2. Import
-Depending on your target platform and transport requirements, use the following real import paths:
+The client classes are exported through the main package entry points.
 
 ```dart
-// Core HTTP/2 client (Mobile/Desktop/Server) and Local IPC
+// For standard HTTP/2 and IPC gRPC clients:
 import 'package:grpc/grpc.dart';
 
-// Browser-based gRPC-Web client (Web only)
-import 'package:grpc/grpc_web.dart';
+// For Int64 support in protobuf fields:
+import 'package:fixnum/fixnum.dart';
 
-// Platform-agnostic client (selects HTTP/2 or gRPC-Web automatically)
-import 'package:grpc/grpc_or_grpcweb.dart';
+// For gRPC-Web clients (browser environments):
+import 'package:grpc/grpc_web.dart'; 
 ```
 
 ## 3. Setup
-To use the client, you must first create a channel which manages the transport connection to the server. You then pass this channel to your generated service stub (e.g., `MyServiceClient`).
+To get started, instantiate a client channel and pass it to your generated service client stub (which extends the base `Client` class). 
 
-### Standard HTTP/2 Channel
 ```dart
-import 'package:grpc/grpc.dart';
+// 1. Configure the credentials (e.g., insecure for local development)
+final credentials = ChannelCredentials.insecure();
 
+// 2. Configure channel options
+final options = ChannelOptions(
+  credentials: credentials,
+  idleTimeout: Duration(minutes: 5),
+  connectTimeout: Duration(seconds: 5),
+);
+
+// 3. Instantiate the standard HTTP/2 client channel
 final channel = ClientChannel(
   'localhost',
   port: 50051,
-  options: const ChannelOptions(
-    credentials: ChannelCredentials.insecure(),
-  ),
+  options: options,
 );
+
+// Alternative: gRPC-Web (requires a gRPC-Web proxy like Envoy)
+// final webChannel = GrpcWebClientChannel.xhr(Uri.parse('http://localhost:8080'));
+
+// Alternative: Local IPC (Unix domain sockets on macOS/Linux or Named Pipes on Windows)
+// final localChannel = LocalGrpcChannel('my-service');
 ```
 
-### Local IPC Channel (Unix Domain Socket / Named Pipe)
+## 4. Executing RPCs
+
+Once your channel is set up, you can execute RPCs using your generated client stub. Below are examples using a hypothetical `RouteGuide` and `MailService`.
+
+### Unary RPC
+A simple RPC where the client sends a single request and receives a single response.
+
 ```dart
-import 'package:grpc/grpc.dart';
-
-final localChannel = LocalGrpcChannel(
-  'my-service',
-  options: const LocalChannelOptions(),
-);
-```
-
-### gRPC-Web Channel
-```dart
-import 'package:grpc/grpc_web.dart';
-
-final webChannel = GrpcWebClientChannel.xhr(
-  Uri.parse('http://localhost:8080'),
-);
-```
-
-### Platform-Agnostic Channel
-```dart
-import 'package:grpc/grpc_or_grpcweb.dart';
-
-// Automatically uses HTTP/2 on native platforms and XHR on the web.
-final platformChannel = GrpcOrGrpcWebClientChannel.grpc(
-  'localhost',
-  port: 50051,
-  options: const ChannelOptions(
-    credentials: ChannelCredentials.insecure(),
-  ),
-);
-```
-
-## 4. Common Operations
-
-*(The following examples assume you have generated a `GreeterClient`, `HelloRequest`, and `HelloReply` from a `.proto` file.)*
-
-### Making a Unary RPC Call
-```dart
-// Instantiate the client stub using your chosen channel
-final stub = GreeterClient(channel);
-final request = HelloRequest()..name = 'World';
+// Obtains the feature at a given position.
+final stub = RouteGuideClient(channel);
+final point = Point()
+  ..latitude = 409146138
+  ..longitude = -746188606;
 
 try {
-  // Execute a unary call
-  final response = await stub.sayHello(request);
-  print('Greeting: ${response.message}');
-} on GrpcError catch (e) {
-  print('Caught gRPC error: ${e.codeName} - ${e.message}');
+  final feature = await stub.getFeature(point);
+  print('Found feature "${feature.name}" at ${feature.location}');
 } catch (e) {
-  print('Caught error: $e');
+  print('Error: $e');
 }
 ```
 
-### Making a Server Streaming RPC Call
+### Server-to-Client Streaming RPC
+The client sends a single request and gets a stream to read a sequence of messages back.
+
 ```dart
-final streamRequest = HelloRequest()..name = 'World';
+// Obtains the Features available within the given Rectangle.
+final rect = Rectangle()
+  ..lo = (Point()..latitude = 400000000..longitude = -750000000)
+  ..hi = (Point()..latitude = 420000000..longitude = -730000000);
 
-// Execute a server streaming call
-final stream = stub.sayHelloStream(streamRequest);
-
-// Listen to incoming messages asynchronously
-await for (var response in stream) {
-  print('Received: ${response.message}');
+final responseStream = stub.listFeatures(rect);
+await for (var feature in responseStream) {
+  print('Feature: ${feature.name}');
 }
 ```
 
-### Making a Client Streaming RPC Call
-```dart
-// Create a stream of requests
-Stream<HelloRequest> requestStream() async* {
-  yield HelloRequest()..name = 'Alice';
-  await Future.delayed(const Duration(seconds: 1));
-  yield HelloRequest()..name = 'Bob';
-}
+### Client-to-Server Streaming RPC
+The client writes a sequence of messages and sends them to the server using a provided stream.
 
-// Execute a client streaming call
-final response = await stub.sayHelloClientStream(requestStream());
-print('Greeting: ${response.message}');
+```dart
+// Accepts a stream of Points on a route being traversed, returning a RouteSummary.
+final points = [
+  Point()..latitude = 40712776..longitude = -74005974,
+  Point()..latitude = 34052235..longitude = -118243683,
+];
+
+final summary = await stub.recordRoute(Stream.fromIterable(points));
+print('Finished route with ${summary.pointCount} points.');
 ```
 
-### Making a Bidirectional Streaming RPC Call
+### Bidirectional Streaming RPC
+Both sides send a sequence of messages using a read-write stream.
+
 ```dart
-// Create a stream of requests
-Stream<HelloRequest> requestStream() async* {
-  yield HelloRequest()..name = 'Alice';
-  await Future.delayed(const Duration(seconds: 1));
-  yield HelloRequest()..name = 'Bob';
-}
+// Accepts a stream of RouteNotes while receiving other RouteNotes.
+final notes = [
+  RouteNote()..message = 'First note'..location = points[0],
+  RouteNote()..message = 'Second note'..location = points[1],
+];
 
-// Execute a bidirectional streaming call
-final responseStream = stub.sayHelloBidiStream(requestStream());
-
-// Listen to incoming messages asynchronously
-await for (var response in responseStream) {
-  print('Received: ${response.message}');
+final chatStream = stub.routeChat(Stream.fromIterable(notes));
+await for (var note in chatStream) {
+  print('Received note: ${note.message} at ${note.location}');
 }
 ```
 
-### Accessing Response Headers and Trailers
+## 5. Message and Field Naming
+
+### Naming Conventions
+Protobuf-generated Dart code converts `snake_case` field names to `camelCase` to align with Dart conventions. **Always use camelCase when accessing message fields in Dart code.**
+
+| Proto Field Name | Dart Property Name |
+|------------------|--------------------|
+| `batch_id` | `batchId` |
+| `send_at` | `sendAt` |
+| `mail_settings` | `mailSettings` |
+| `tracking_settings` | `trackingSettings` |
+| `click_tracking` | `clickTracking` |
+| `open_tracking` | `openTracking` |
+| `sandbox_mode` | `sandboxMode` |
+| `dynamic_template_data` | `dynamicTemplateData` |
+| `content_id` | `contentId` |
+| `custom_args` | `customArgs` |
+| `ip_pool_name` | `ipPoolName` |
+| `reply_to` | `replyTo` |
+| `reply_to_list` | `replyToList` |
+| `template_id` | `templateId` |
+| `enable_text` | `enableText` |
+| `substitution_tag` | `substitutionTag` |
+| `group_id` | `groupId` |
+| `groups_to_display` | `groupsToDisplay` |
+
+### Complex Message Example
+The following example demonstrates constructing a complex `SendMailRequest` message using the builder pattern (cascades) and correct `camelCase` field access.
+
 ```dart
-final request = HelloRequest()..name = 'World';
+final mailStub = MailServiceClient(channel);
 
-// Instead of awaiting the response directly, you can hold the ResponseFuture
-final call = stub.sayHello(request);
+final request = SendMailRequest()
+  ..batchId = 'batch-123' // string batch_id = 1;
+  ..sendAt = Int64(1679700000) // int64 send_at = 2;
+  ..mailSettings = (MailSettings()
+    ..sandboxMode = true // bool sandbox_mode = 1; (Whether to run in sandbox mode)
+    ..enableText = true // bool enable_text = 2; (Whether to enable text format)
+  )
+  ..trackingSettings = (TrackingSettings()
+    ..clickTracking = (ClickTracking() // ClickTracking click_tracking = 1;
+      ..enable = true
+      ..enableText = true // bool enable_text = 2; (Enable text for click tracking)
+    )
+    ..openTracking = (OpenTracking() // OpenTracking open_tracking = 2;
+      ..enable = true
+      ..substitutionTag = '[open]' // string substitution_tag = 2; (The substitution tag)
+    )
+  )
+  ..dynamicTemplateData.addAll({ // map<string, string> dynamic_template_data = 5;
+    'user_name': 'Dart Developer',
+    'plan': 'Pro',
+  })
+  ..contentId = 'template-v1' // string content_id = 6;
+  ..customArgs.addAll({ // map<string, string> custom_args = 7;
+    'internal_id': '88990',
+  })
+  ..ipPoolName = 'transactional-pool' // string ip_pool_name = 8;
+  ..replyTo = 'support@example.com' // string reply_to = 9;
+  ..replyToList.addAll(['billing@example.com', 'dev@example.com']) // repeated string reply_to_list = 10;
+  ..templateId = 'd-998877' // string template_id = 11;
+  ..groupId = 42 // int32 group_id = 12;
+  ..groupsToDisplay.addAll([1, 2, 3]) // repeated int32 groups_to_display = 13;
+  ..mailFrom = MailFrom.MAIL_FROM_SUPPORT; // MailFrom mail_from = 14; (Enum value)
 
-// Access headers before the response completes
-final headers = await call.headers;
-print('Headers: $headers');
-
-// Wait for the response
-final response = await call;
-print('Greeting: ${response.message}');
-
-// Access trailers after the response completes
-final trailers = await call.trailers;
-print('Trailers: $trailers');
+final response = await mailStub.sendMail(request);
+print('Mail sent with ID: ${response.messageId}');
 ```
 
-### Cancelling a Call
-```dart
-final request = HelloRequest()..name = 'World';
-final call = stub.sayHello(request);
-
-// Cancel the call if needed
-await call.cancel();
-```
-
-### Using Call Options and Metadata
-You can customize the execution of a single call (or a stream) by providing a `CallOptions` object:
+## 6. Using Interceptors
+You can define a `ClientInterceptor` to inject headers, log requests, or handle errors globally. Interceptors are applied in the order they are provided.
 
 ```dart
-final options = CallOptions(
-  metadata: {'authorization': 'Bearer token_123'},
-  timeout: const Duration(seconds: 30),
-);
+class AuthInterceptor extends ClientInterceptor {
+  final String token;
+  AuthInterceptor(this.token);
 
-final request = HelloRequest()..name = 'Authorized User';
-final response = await stub.sayHello(request, options: options);
-```
-
-### Intercepting Calls
-You can intercept and manipulate requests/responses using the `ClientInterceptor` interface:
-
-```dart
-class LoggingInterceptor extends ClientInterceptor {
   @override
   ResponseFuture<R> interceptUnary<Q, R>(
     ClientMethod<Q, R> method,
@@ -186,77 +196,45 @@ class LoggingInterceptor extends ClientInterceptor {
     CallOptions options,
     ClientUnaryInvoker<Q, R> invoker,
   ) {
-    print('Sending request to ${method.path}');
-    return invoker(method, request, options);
+    // Add authorization header to the call metadata
+    final newOptions = options.mergedWith(
+      CallOptions(metadata: {'authorization': 'Bearer $token'}),
+    );
+    return invoker(method, request, newOptions);
   }
 }
 
-// Attach the interceptor when creating the Client
-final client = Client(
+final stubWithAuth = MailServiceClient(
   channel,
-  interceptors: [LoggingInterceptor()],
-);
-// Or pass it to your generated stub constructor directly
-final stubWithInterceptor = GreeterClient(
-  channel,
-  interceptors: [LoggingInterceptor()],
+  interceptors: [AuthInterceptor('SECRET_TOKEN')],
 );
 ```
 
-### Graceful Shutdown
-When your application terminates or you are done communicating, shut down the channel to free underlying network resources:
+## 7. Cleaning Up
+Channels maintain persistent connections. Always shut them down when they are no longer needed to release OS resources (like sockets or pipe handles).
 
 ```dart
+// Gracefully shut down the channel, allowing active RPCs to finish
 await channel.shutdown();
-// or terminate immediately:
+
+// Or forcefully terminate the connection immediately (cancels active calls)
 // await channel.terminate();
 ```
 
-## 5. Configuration
+## 8. Configuration Reference
 
-Client behavior is configured primarily through `ChannelOptions` when instantiating `ClientChannel` or `GrpcOrGrpcWebClientChannelInternal`. Key options include:
+### `ChannelOptions`
+Used when constructing a `ClientChannel` or `LocalGrpcChannel`.
+- **`credentials`**: A `ChannelCredentials` instance (e.g., `secure()` or `insecure()`).
+- **`idleTimeout`**: Time before idle connections are proactively closed.
+- **`connectTimeout`**: Maximum time allowed to establish a connection.
+- **`keepAlive`**: A `ClientKeepAliveOptions` instance to configure pings for health monitoring.
+- **`maxInboundMessageSize`**: Limits the maximum allowed size of incoming messages.
 
-- **`credentials`**: Determines if the connection is secure via `ChannelCredentials.secure()` or plaintext via `ChannelCredentials.insecure()`.
-- **`idleTimeout`**: The duration before an idle connection is dropped (defaults to 5 minutes).
-- **`connectionTimeout`**: The max duration a single connection is kept alive for new requests (defaults to 50 minutes to avoid forceful server closures).
-- **`connectTimeout`**: The max allowed time to wait for connection establishment.
-- **`keepAlive`**: Settings for sending HTTP/2 PING frames to keep the connection alive via `ClientKeepAliveOptions`.
-- **`proxy`**: An optional `Proxy` configuration specifying a proxy host, port, and credentials.
-- **`backoffStrategy`**: An algorithm function to determine reconnection delay (defaults to an exponential backoff with jitter via `defaultBackoffStrategy`).
-- **`maxInboundMessageSize`**: Maximum allowed inbound message size in bytes.
-
-For `LocalGrpcChannel`, configuration is provided via `LocalChannelOptions`:
-```dart
-final localChannel = LocalGrpcChannel(
-  'my-service',
-  options: LocalChannelOptions(
-    connectTimeout: const Duration(seconds: 5),
-    keepAlive: const ClientKeepAliveOptions(
-      pingInterval: Duration(minutes: 5),
-    ),
-  ),
-);
-```
-
-For `GrpcWebClientChannel`, `maxInboundMessageSize` and `channelShutdownHandler` are provided directly during instantiation:
-```dart
-final webChannel = GrpcWebClientChannel.xhr(
-  Uri.parse('http://localhost:8080'),
-  maxInboundMessageSize: 1024 * 1024 * 10, // 10 MB limit
-);
-```
-
-When building for gRPC-Web with Cross-Origin Resource Sharing (CORS) preflight bypassing, you can use `WebCallOptions`:
-```dart
-final webOptions = WebCallOptions(
-  metadata: {'custom-header': 'value'},
-  bypassCorsPreflight: true,
-  withCredentials: true,
-);
-```
-
-## 6. Related Modules
-- **`package:grpc/grpc.dart`**: General exports encompassing both client and server APIs, authentication, core gRPC models, and IPC paths.
-- **`package:grpc/src/client/interceptor.dart`**: Contains the `ClientInterceptor` base class and typedefs for injecting custom logic into unary and streaming RPC calls.
-- **`package:grpc/src/client/transport/transport.dart`**: Interfaces (`GrpcTransportStream`) and typedefs for pluggable custom transport connectivity implementations.
-- **`package:grpc/src/client/transport/cors.dart`**: Utilities for manipulating HTTP headers and paths for bypassing CORS preflight requests in the browser.
+### `CallOptions` & `WebCallOptions`
+Passed to individual RPCs to configure per-call behavior.
+- **`metadata`**: A `Map<String, String>` of custom headers.
+- **`timeout`**: Maximum duration the specific call is allowed to take.
+- **`compression`**: Specify a codec (e.g., `GzipCodec()`) for request compression.
+- **`bypassCorsPreflight`** *(WebCallOptions only)*: Packs headers into a query parameter to avoid CORS preflights.
+- **`withCredentials`** *(WebCallOptions only)*: Sends cookies/credentials with the XHR request.

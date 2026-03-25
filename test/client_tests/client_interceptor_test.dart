@@ -65,20 +65,14 @@ class FakeInterceptor implements ClientInterceptor {
   ) {
     _invocations.add(InterceptorInvocation(_id, _unary, ++_streaming));
 
-    final requestStream = _id > 10
-        ? requests.cast<int>().map((req) => req * _id).cast<Q>()
-        : requests;
+    final requestStream = _id > 10 ? requests.cast<int>().map((req) => req * _id).cast<Q>() : requests;
 
     return invoker(method, requestStream, _inject(options));
   }
 
   CallOptions _inject(CallOptions options) {
     return options.mergedWith(
-      CallOptions(
-        metadata: {
-          'x-interceptor': _invocations.map((i) => i.toString()).join(', '),
-        },
-      ),
+      CallOptions(metadata: {'x-interceptor': _invocations.map((i) => i.toString()).join(', ')}),
     );
   }
 
@@ -110,9 +104,7 @@ void main() {
       clientCall: harness.client.unary(requestValue),
       expectedResult: responseValue,
       expectedPath: '/Test/Unary',
-      expectedCustomHeaders: {
-        'x-interceptor': '{id: 1, unary: 1, streaming: 0}',
-      },
+      expectedCustomHeaders: {'x-interceptor': '{id: 1, unary: 1, streaming: 0}'},
       serverHandlers: [handleRequest],
     );
 
@@ -142,10 +134,7 @@ void main() {
       clientCall: harness.client.unary(requestValue),
       expectedResult: responseValue,
       expectedPath: '/Test/Unary',
-      expectedCustomHeaders: {
-        'x-interceptor':
-            '{id: 1, unary: 1, streaming: 0}, {id: 2, unary: 1, streaming: 0}',
-      },
+      expectedCustomHeaders: {'x-interceptor': '{id: 1, unary: 1, streaming: 0}, {id: 2, unary: 1, streaming: 0}'},
       serverHandlers: [handleRequest],
     );
 
@@ -179,14 +168,10 @@ void main() {
     }
 
     await harness.runTest(
-      clientCall: harness.client
-          .bidirectional(Stream.fromIterable(requests))
-          .toList(),
+      clientCall: harness.client.bidirectional(Stream.fromIterable(requests)).toList(),
       expectedResult: responses,
       expectedPath: '/Test/Bidirectional',
-      expectedCustomHeaders: {
-        'x-interceptor': '{id: 1, unary: 0, streaming: 1}',
-      },
+      expectedCustomHeaders: {'x-interceptor': '{id: 1, unary: 0, streaming: 1}'},
       serverHandlers: [handleRequest, handleRequest, handleRequest],
       doneHandler: handleDone,
     );
@@ -221,15 +206,10 @@ void main() {
     }
 
     await harness.runTest(
-      clientCall: harness.client
-          .bidirectional(Stream.fromIterable(requests))
-          .toList(),
+      clientCall: harness.client.bidirectional(Stream.fromIterable(requests)).toList(),
       expectedResult: responses,
       expectedPath: '/Test/Bidirectional',
-      expectedCustomHeaders: {
-        'x-interceptor':
-            '{id: 1, unary: 0, streaming: 1}, {id: 2, unary: 0, streaming: 1}',
-      },
+      expectedCustomHeaders: {'x-interceptor': '{id: 1, unary: 0, streaming: 1}, {id: 2, unary: 0, streaming: 1}'},
       serverHandlers: [handleRequest, handleRequest, handleRequest],
       doneHandler: handleDone,
     );
@@ -265,9 +245,7 @@ void main() {
     }
 
     await harness.runTest(
-      clientCall: harness.client
-          .bidirectional(Stream.fromIterable(requests))
-          .toList(),
+      clientCall: harness.client.bidirectional(Stream.fromIterable(requests)).toList(),
       expectedResult: responses,
       expectedPath: '/Test/Bidirectional',
       serverHandlers: [handleRequest, handleRequest, handleRequest],

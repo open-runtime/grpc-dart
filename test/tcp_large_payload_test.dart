@@ -67,11 +67,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -92,11 +88,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -117,11 +109,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -148,11 +136,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -171,11 +155,7 @@ void main() {
         expect(chunks[i].length, equals(chunkSize), reason: 'chunk $i length');
         // Verify fill pattern: byte at position j in chunk i = (i+j) & 0xFF.
         for (var j = 0; j < chunkSize; j++) {
-          expect(
-            chunks[i][j],
-            equals((i + j) & 0xFF),
-            reason: 'chunk $i byte $j',
-          );
+          expect(chunks[i][j], equals((i + j) & 0xFF), reason: 'chunk $i byte $j');
         }
       }
 
@@ -190,11 +170,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -211,11 +187,7 @@ void main() {
       for (var i = 0; i < chunkCount; i++) {
         expect(chunks[i].length, equals(chunkSize), reason: 'chunk $i length');
         for (var j = 0; j < chunkSize; j++) {
-          expect(
-            chunks[i][j],
-            equals((i + j) & 0xFF),
-            reason: 'chunk $i byte $j',
-          );
+          expect(chunks[i][j], equals((i + j) & 0xFF), reason: 'chunk $i byte $j');
         }
       }
 
@@ -225,9 +197,7 @@ void main() {
 
     // 6. Bidi stream: 20 chunks of 8KB each, echoed back.
     testTcpAndUds('bidi stream: 20 x 8KB chunks', (address) async {
-      final transport = address.type == InternetAddressType.unix
-          ? 'UDS'
-          : 'TCP';
+      final transport = address.type == InternetAddressType.unix ? 'UDS' : 'TCP';
       final sw = Stopwatch()..start();
       void log(String msg) => print(
         '[bidi-20x8KB/$transport '
@@ -240,11 +210,7 @@ void main() {
       log('server on port ${server.port}');
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -280,11 +246,7 @@ void main() {
 
       expect(responses.length, equals(chunkCount));
       for (var i = 0; i < chunkCount; i++) {
-        expect(
-          responses[i],
-          equals(inputChunks[i]),
-          reason: 'bidi chunk $i mismatch',
-        );
+        expect(responses[i], equals(inputChunks[i]), reason: 'bidi chunk $i mismatch');
       }
 
       log('shutting down...');
@@ -295,9 +257,7 @@ void main() {
 
     // 7. Bidi stream: 5 chunks of 100KB each.
     testTcpAndUds('bidi stream: 5 x 100KB chunks', (address) async {
-      final transport = address.type == InternetAddressType.unix
-          ? 'UDS'
-          : 'TCP';
+      final transport = address.type == InternetAddressType.unix ? 'UDS' : 'TCP';
       final sw = Stopwatch()..start();
       void log(String msg) => print(
         '[bidi-5x100KB/$transport '
@@ -310,11 +270,7 @@ void main() {
       log('server on port ${server.port}');
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -346,11 +302,7 @@ void main() {
 
       expect(responses.length, equals(chunkCount));
       for (var i = 0; i < chunkCount; i++) {
-        expect(
-          responses[i],
-          equals(inputChunks[i]),
-          reason: 'bidi chunk $i mismatch',
-        );
+        expect(responses[i], equals(inputChunks[i]), reason: 'bidi chunk $i mismatch');
       }
 
       log('shutting down...');
@@ -373,11 +325,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -399,16 +347,8 @@ void main() {
 
       // Verify each response matches its original payload exactly.
       for (var i = 0; i < concurrentCount; i++) {
-        expect(
-          results[i].length,
-          equals(payloadSize),
-          reason: 'response $i length',
-        );
-        expect(
-          results[i],
-          equals(payloads[i]),
-          reason: 'response $i data mismatch — possible cross-contamination',
-        );
+        expect(results[i].length, equals(payloadSize), reason: 'response $i length');
+        expect(results[i], equals(payloads[i]), reason: 'response $i data mismatch — possible cross-contamination');
       }
 
       await channel.shutdown();
@@ -423,11 +363,7 @@ void main() {
       addTearDown(() => server.shutdown());
 
       final channel = TestClientChannel(
-        Http2ClientConnection(
-          address,
-          server.port!,
-          ChannelOptions(credentials: ChannelCredentials.insecure()),
-        ),
+        Http2ClientConnection(address, server.port!, ChannelOptions(credentials: ChannelCredentials.insecure())),
       );
       final client = EchoClient(channel);
 
@@ -438,19 +374,11 @@ void main() {
         // Large payload RPC.
         final payload = generatePayload(largeSize, i);
         final largeResponse = await client.echoBytes(payload);
-        expect(
-          largeResponse,
-          equals(payload),
-          reason: 'large payload mismatch at iteration $i',
-        );
+        expect(largeResponse, equals(payload), reason: 'large payload mismatch at iteration $i');
 
         // Small payload RPC (single int echo).
         final smallResponse = await client.echo(i);
-        expect(
-          smallResponse,
-          equals(i),
-          reason: 'small payload mismatch at iteration $i',
-        );
+        expect(smallResponse, equals(i), reason: 'small payload mismatch at iteration $i');
       }
 
       await channel.shutdown();
@@ -480,10 +408,7 @@ void main() {
       final client = EchoClient(channel);
 
       final payload = generatePayload(102400); // 100KB
-      final response = await client.echoBytes(
-        payload,
-        options: CallOptions(compression: const GzipCodec()),
-      );
+      final response = await client.echoBytes(payload, options: CallOptions(compression: const GzipCodec()));
 
       expect(response.length, equals(102400));
       expect(response, equals(payload));

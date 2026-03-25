@@ -19,8 +19,9 @@ doc/api/
 # CI/CD local run audit trails
 .cicd_runs/
 
-# Runtime CI runs
+# Runtime CI runs and workflow logs (long paths break Windows pub get)
 .runtime_ci/runs/
+.runtime_ci/workflow_logs/
 
 # Override files
 pubspec_overrides.yaml

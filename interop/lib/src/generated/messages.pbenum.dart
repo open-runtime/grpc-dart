@@ -18,20 +18,16 @@ import 'package:protobuf/protobuf.dart' as $pb;
 /// The type of payload that should be returned.
 class PayloadType extends $pb.ProtobufEnum {
   /// Compressable text format.
-  static const PayloadType COMPRESSABLE =
-      PayloadType._(0, _omitEnumNames ? '' : 'COMPRESSABLE');
+  static const PayloadType COMPRESSABLE = PayloadType._(0, _omitEnumNames ? '' : 'COMPRESSABLE');
 
   static const $core.List<PayloadType> values = <PayloadType>[
     COMPRESSABLE,
   ];
 
-  static final $core.List<PayloadType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 0);
-  static PayloadType? valueOf($core.int value) =>
-      value < 0 || value >= _byValue.length ? null : _byValue[value];
+  static final $core.List<PayloadType?> _byValue = $pb.ProtobufEnum.$_initByValueList(values, 0);
+  static PayloadType? valueOf($core.int value) => value < 0 || value >= _byValue.length ? null : _byValue[value];
 
   const PayloadType._(super.value, super.name);
 }
 
-const $core.bool _omitEnumNames =
-    $core.bool.fromEnvironment('protobuf.omit_enum_names');
+const $core.bool _omitEnumNames = $core.bool.fromEnvironment('protobuf.omit_enum_names');
