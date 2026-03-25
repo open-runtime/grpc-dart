@@ -18,8 +18,8 @@
         "api_reference",
         "examples"
       ],
-      "hash": "a5a2f9ec2c5980996da1664178796236b3cffb74670d7d1fbd4de848270dd763",
-      "last_updated": "2026-03-24T17:55:53.531802Z"
+      "hash": "37661f4ba5bb5f3182078437c26f66bf1196a1b0d8967c1bb9cc8ca2a348fcdf",
+      "last_updated": "2026-03-25T02:14:38.177630Z"
     },
     {
       "id": "client",
@@ -36,8 +36,8 @@
         "api_reference",
         "examples"
       ],
-      "hash": "246d0ec4c3f2fedfccf4fa6b538274c0c5235c0413cd7403471cc790b13a4ccf",
-      "last_updated": "2026-03-24T17:55:53.531973Z"
+      "hash": "9b3fbafb17619df17e4fc93db0d9c48ac302f33649ad53e284414a11ab1e51b2",
+      "last_updated": "2026-03-25T02:14:38.177928Z"
     },
     {
       "id": "server",
@@ -54,8 +54,8 @@
         "api_reference",
         "examples"
       ],
-      "hash": "b0cc260bc1ea73ecdf8032490572bb315e7aee307dc0be58d942db3e25f0f1f9",
-      "last_updated": "2026-03-24T17:55:53.531976Z"
+      "hash": "2881ac49f62a26bb3529c1a69310a258f2b00e6fef2e83f0844e364ff71a0308",
+      "last_updated": "2026-03-25T02:14:38.177937Z"
     },
     {
       "id": "shared",
@@ -70,8 +70,8 @@
       "generate": [
         "api_reference"
       ],
-      "hash": "c70aed638b435a1d574126df4611566d8540f8607f2f4c7a806771136b41866e",
-      "last_updated": "2026-03-24T17:55:53.531978Z"
+      "hash": "25ee182fafb2cae5b2fa95fd8fb1083898c878e877f6ecfa18c483321ddfe72d",
+      "last_updated": "2026-03-25T02:14:38.177941Z"
     },
     {
       "id": "protos",
@@ -85,8 +85,8 @@
       "generate": [
         "api_reference"
       ],
-      "hash": "fe41059d09b924433874d1f7aa628d532f606920faee80a2f46f4d08d0ad4573",
-      "last_updated": "2026-03-24T17:55:53.531980Z"
+      "hash": "fd3439f1166945115edd32976e0a200b11aa4ed14953680d1a20beb5ecebd929",
+      "last_updated": "2026-03-25T02:14:38.177945Z"
     },
     {
       "id": "top_level",
@@ -99,8 +99,8 @@
       "generate": [
         "quickstart"
       ],
-      "hash": "fcdf6fd1c5c5ddd6c4ab19d85fbe7fb3929d5a0fade0c40f43a393d2faf25145",
-      "last_updated": "2026-03-24T17:55:53.531982Z"
+      "hash": "e3b536795e1c3a5b55cafb4b66365dfdd92cdae88457a36f7c2d1b9bb76c317b",
+      "last_updated": "2026-03-25T02:14:38.177948Z"
     },
     {
       "id": "generated",
@@ -116,8 +116,8 @@
         "quickstart",
         "api_reference"
       ],
-      "hash": "5c4f0d45c7408be963695f676e202f9a8ce94ace45391317e92ecc363e0321c3",
-      "last_updated": "2026-03-24T17:55:53.531983Z"
+      "hash": "534b4db45bee716858bd931dce8b0072fe744689d7187272fae2389c6a793721",
+      "last_updated": "2026-03-25T02:14:38.177951Z"
     },
     {
       "id": "http2",
@@ -133,8 +133,8 @@
         "quickstart",
         "api_reference"
       ],
-      "hash": "",
-      "last_updated": null
+      "hash": "516f0c043aaf1b97af5e26b67cdf05efb71b3d9798cbbc1f4f8dfefe9ad7d9f6",
+      "last_updated": "2026-03-25T02:14:38.177955Z"
     }
   ],
   "templates": {

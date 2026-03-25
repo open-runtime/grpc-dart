@@ -1,231 +1,181 @@
 # Generated Module Quickstart
 
 ## 1. Overview
-The Generated module provides the generated Dart classes for standard Google Protocol Buffer well-known types (`Any`, `Duration`) and Google RPC error models (`Status`, `ErrorInfo`, `BadRequest`, etc.). These generated message classes allow developers to easily construct, serialize, deserialize, and introspect rich standard gRPC error payloads, debugging metadata, and generic messages across different APIs.
+The `Generated` module provides pre-compiled Dart Protocol Buffer classes for standard Google types. It supplies widely-used utilities for your gRPC APIs, including `Any` for arbitrary message packing, `Duration` for fixed-length time spans, and rich RPC error models like `Status` and standardized error details (e.g., `ErrorInfo`, `BadRequest`).
 
-## 2. Import
-To use these generated classes, import the corresponding `.pb.dart` files from the `lib/src/generated/` directory. You will likely also need the `Int64` type from the `fixnum` package:
+## 2. Naming Conventions (Protobuf to Dart)
+When using Protobuf-generated Dart code, all `snake_case` field names from the `.proto` files are automatically converted to `camelCase` to follow Dart's style guidelines.
+
+| Proto Field Name | Dart Property Name |
+|------------------|--------------------|
+| `batch_id` | `batchId` |
+| `send_at` | `sendAt` |
+| `mail_settings` | `mailSettings` |
+| `tracking_settings` | `trackingSettings` |
+| `click_tracking` | `clickTracking` |
+| `open_tracking` | `openTracking` |
+| `sandbox_mode` | `sandboxMode` |
+| `dynamic_template_data` | `dynamicTemplateData` |
+| `content_id` | `contentId` |
+| `custom_args` | `customArgs` |
+| `ip_pool_name` | `ipPoolName` |
+| `reply_to` | `replyTo` |
+| `reply_to_list` | `replyToList` |
+| `template_id` | `templateId` |
+| `enable_text` | `enableText` |
+| `substitution_tag` | `substitutionTag` |
+| `group_id` | `groupId` |
+| `groups_to_display` | `groupsToDisplay` |
+
+**Note on Keyword Conflicts:** If a field name conflicts with a Dart keyword (e.g., `field`), the generator appends a suffix (e.g., `field_1`). These are the only exceptions where `snake_case` or numerical suffixes may appear in Dart property names.
+
+## 3. Import
+Based on the `lib` directory structure, you can import the generated models using the following paths. Always use the `package:grpc-dart/` prefix for imports.
+
+```dart
+import 'package:grpc-dart/src/generated/google/protobuf/any.pb.dart';
+import 'package:grpc-dart/src/generated/google/protobuf/duration.pb.dart';
+import 'package:grpc-dart/src/generated/google/rpc/status.pb.dart';
+import 'package:grpc-dart/src/generated/google/rpc/error_details.pb.dart';
+```
+
+## 4. Setup
+These classes extend `$pb.GeneratedMessage`. While they provide factory constructors, the **Builder Pattern (cascade notation)** is the preferred way to instantiate and configure them. Some types, like `seconds` in `Duration`, require the `fixnum` package for 64-bit integer support.
 
 ```dart
 import 'package:fixnum/fixnum.dart';
-import 'package:grpc/src/generated/google/protobuf/any.pb.dart';
-import 'package:grpc/src/generated/google/protobuf/duration.pb.dart';
-import 'package:grpc/src/generated/google/rpc/error_details.pb.dart';
-import 'package:grpc/src/generated/google/rpc/status.pb.dart';
-```
+import 'package:grpc-dart/src/generated/google/rpc/error_details.pb.dart';
 
-## 3. Setup
-You can directly instantiate any of the generated message classes using their named constructors or the cascade builder pattern. They are regular Dart classes inheriting from `$pb.GeneratedMessage`.
-
-```dart
-// Instantiate a protobuf Duration using the cascade builder pattern
-final duration = Duration()
-  // Signed seconds of the span of time. Must be from -315,576,000,000
-  // to +315,576,000,000 inclusive.
-  ..seconds = Int64(60)
-  // Signed fractions of a second at nanosecond resolution of the span
-  // of time.
-  ..nanos = 0;
-
-// Instantiate a Status message using the cascade builder pattern
-final status = Status()
-  // The status code, which should be an enum value of google.rpc.Code.
-  ..code = 3 // INVALID_ARGUMENT
-  // A developer-facing error message, which should be in English.
-  ..message = 'Invalid request payload'
-  // A list of messages that carry the error details.
-  ..details.addAll([]); // List of Any
-```
-
-## 4. Common Operations
-
-The following examples exhaustively cover EVERY message and field generated in this module. *(Note: There are no explicit Enums or Services defined in these specific proto files, only Messages).*
-
-### Using `google.protobuf.Duration`
-The `Duration` message represents a signed, fixed-length span of time. It provides helpful `toDart()` and `fromDart()` extension methods.
-
-```dart
-final duration = Duration()
-  // Signed seconds of the span of time. Must be from -315,576,000,000
-  // to +315,576,000,000 inclusive.
-  ..seconds = Int64(3600)
-  // Signed fractions of a second at nanosecond resolution of the span
-  // of time.
-  ..nanos = 500000000;
-
-// Convert to/from standard dart:core Duration
-final dartDuration = duration.toDart();
-final protoDuration = Duration.fromDart(dartDuration);
-```
-
-### Using `google.protobuf.Any`
-The `Any` message contains an arbitrary serialized protocol buffer message along with a URL that describes its type.
-
-```dart
-final anyMessage = Any()
-  // A URL/resource name that uniquely identifies the type of the serialized
-  // protocol buffer message.
-  ..typeUrl = 'type.googleapis.com/google.protobuf.Duration'
-  // Must be a valid serialized protocol buffer of the above specified type.
-  ..value = duration.writeToBuffer();
-
-// Or conveniently pack it using the static helper method:
-final packedAny = Any.pack(duration);
-```
-
-### Using `google.rpc.Status`
-The `Status` message defines a logical error model suitable for REST and RPC APIs.
-
-```dart
-final errorStatus = Status()
-  // The status code, which should be an enum value of google.rpc.Code.
-  ..code = 7 // PERMISSION_DENIED
-  // A developer-facing error message, which should be in English.
-  ..message = 'User lacks required permissions.'
-  // A list of messages that carry the error details.
-  ..details.add(packedAny);
-```
-
-### Using `google.rpc.error_details` (Rich Error Models)
-The `error_details.proto` defines a standard set of rich error message payloads. Below is a complete guide to instantiating every single one, covering all their respective fields.
-
-**RetryInfo**
-Describes when the clients can retry a failed request.
-```dart
-final retryInfo = RetryInfo()
-  // Clients should wait at least this long between retrying the same request.
-  ..retryDelay = (Duration()
-    ..seconds = Int64(5)
-    ..nanos = 0);
-```
-
-**DebugInfo**
-Describes additional debugging info.
-```dart
-final debugInfo = DebugInfo()
-  // The stack trace entries indicating where the error occurred.
-  ..stackEntries.addAll(['package:my_app/main.dart:10', 'package:grpc/src/server.dart:45'])
-  // Additional debugging information provided by the server.
-  ..detail = 'Null pointer exception encountered in the main handler.';
-```
-
-**QuotaFailure & QuotaFailure_Violation**
-Describes how a quota check failed.
-```dart
-final quotaViolation = QuotaFailure_Violation()
-  // The subject on which the quota check failed.
-  // For example, "clientip:<ip address of client>"
-  ..subject = 'clientip:192.168.1.1'
-  // A description of how the quota check failed.
-  ..description = 'Daily Limit for read operations exceeded';
-
-final quotaFailure = QuotaFailure()
-  // Describes all quota violations.
-  ..violations.add(quotaViolation);
-```
-
-**ErrorInfo**
-Describes the cause of the error with structured details.
-```dart
+// Instantiating ErrorInfo using cascades
 final errorInfo = ErrorInfo()
-  // The reason of the error. This is a constant value that identifies the
-  // proximate cause of the error.
-  ..reason = 'API_DISABLED'
-  // The logical grouping to which the "reason" belongs.
-  ..domain = 'googleapis.com'
-  // Additional structured details about this error.
-  ..metadata.addAll({
-    'resource': 'projects/123',
-    'service': 'pubsub.googleapis.com',
+  ..reason = 'USER_NOT_FOUND' // The reason of the error. A constant value (e.g., STOCKOUT).
+  ..domain = 'my-service.com' // The logical grouping to which the "reason" belongs.
+  ..metadata.addAll({         // Additional structured details about this error.
+    'userId': '12345',
+    'attempt': '3',
   });
 ```
 
-**PreconditionFailure & PreconditionFailure_Violation**
-Describes what preconditions have failed.
-```dart
-final preconditionViolation = PreconditionFailure_Violation()
-  // The type of PreconditionFailure.
-  ..type = 'TOS'
-  // The subject, relative to the type, that failed.
-  ..subject = 'google.com/cloud'
-  // A description of how the precondition failed.
-  ..description = 'Terms of service not accepted';
+## 5. Common Operations
 
-final preconditionFailure = PreconditionFailure()
-  // Describes all precondition violations.
-  ..violations.add(preconditionViolation);
+### Converting between Protobuf Duration and Dart Duration
+The `Duration` class provides convenient `toDart()` and `fromDart()` converters.
+```dart
+import 'package:grpc-dart/src/generated/google/protobuf/duration.pb.dart' as pb;
+
+// Dart core Duration to Protobuf Duration
+final dartDuration = Duration(seconds: 30, milliseconds: 500);
+final pbDuration = pb.Duration.fromDart(dartDuration);
+
+// Protobuf Duration back to Dart core Duration
+final backToDart = pbDuration.toDart();
+
+// Manual configuration using cascades and fixnum.Int64
+final customDuration = pb.Duration()
+  ..seconds = Int64(60) // Signed seconds of the span of time.
+  ..nanos = 0;          // Signed fractions of a second at nanosecond resolution.
 ```
 
-**BadRequest & BadRequest_FieldViolation**
-Describes violations in a client request. *Note: The protobuf field name `field` is generated as `field_1` in Dart to avoid naming conflicts with Dart keywords.*
+### Using `Any` to Pack and Unpack Messages
+The `Any` class lets you embed an arbitrary message inside another message, such as attaching debug info to a `Status`.
 ```dart
-final fieldViolation = BadRequest_FieldViolation()
-  // A path leading to a field in the request body.
-  ..field_1 = 'user.password'
-  // A description of why the request element is bad.
-  ..description = 'Password must be at least 8 characters long.';
+import 'package:grpc-dart/src/generated/google/protobuf/any.pb.dart';
+import 'package:grpc-dart/src/generated/google/rpc/error_details.pb.dart';
+
+final debugInfo = DebugInfo()
+  ..detail = 'Null pointer in user service' // Additional debugging information provided by the server.
+  ..stackEntries.addAll(['line 42', 'line 100']); // The stack trace entries indicating where the error occurred.
+
+// Pack into an Any message
+final anyMessage = Any.pack(debugInfo);
+```
+
+### Constructing Rich Error Details (BadRequest)
+Use the `error_details.pb.dart` models to provide structured error metadata. Note that the `field` property in `BadRequest_FieldViolation` is generated as `field_1` in Dart to avoid naming conflicts.
+```dart
+import 'package:grpc-dart/src/generated/google/rpc/error_details.pb.dart';
 
 final badRequest = BadRequest()
-  // Describes all violations in a client request.
-  ..fieldViolations.add(fieldViolation);
+  ..fieldViolations.add(
+    BadRequest_FieldViolation()
+      ..field_1 = 'email' // A path leading to a field in the request body.
+      ..description = 'Must be a valid email address' // A description of why the request element is bad.
+  );
 ```
 
-**RequestInfo**
-Contains metadata about the request that clients can attach when filing a bug.
+### Handling Quota Failures
 ```dart
-final requestInfo = RequestInfo()
-  // An opaque string that should only be interpreted by the service generating it.
-  ..requestId = 'req-987654321'
-  // Any data that was used to serve this request.
-  ..servingData = 'base64_encrypted_stack_trace_data';
+import 'package:grpc-dart/src/generated/google/rpc/error_details.pb.dart';
+
+final quotaFailure = QuotaFailure()
+  ..violations.add(
+    QuotaFailure_Violation()
+      ..subject = 'clientip:192.168.1.1' // The subject on which the quota check failed.
+      ..description = 'Daily API limit exceeded' // A description of how the quota check failed.
+  );
 ```
 
-**ResourceInfo**
-Describes the resource that is being accessed.
-```dart
-final resourceInfo = ResourceInfo()
-  // A name for the type of resource being accessed, e.g. "sql table" or the type URL.
-  ..resourceType = 'type.googleapis.com/google.pubsub.v1.Topic'
-  // The name of the resource being accessed.
-  ..resourceName = 'projects/my-project/topics/my-topic'
-  // The owner of the resource (optional).
-  ..owner = 'user:admin@example.com'
-  // Describes what error is encountered when accessing this resource.
-  ..description = 'Topic does not exist or was deleted.';
-```
+## 6. Exhaustive Message Reference
 
-**Help & Help_Link**
-Provides links to documentation or for performing an out-of-band action.
-```dart
-final helpLink = Help_Link()
-  // Describes what the link offers.
-  ..description = 'Google Cloud Console - Quotas'
-  // The URL of the link.
-  ..url = 'https://console.cloud.google.com/project/quotas';
+### `google/protobuf/any.pb.dart`
+*   **`Any`**: Contains an arbitrary serialized protocol buffer message along with a URL that describes the type.
+    *   `typeUrl` (String): A URL/resource name that uniquely identifies the type.
+    *   `value` (List<int>): Must be a valid serialized protocol buffer.
 
-final help = Help()
-  // URL(s) pointing to additional information on handling the current error.
-  ..links.add(helpLink);
-```
+### `google/protobuf/duration.pb.dart`
+*   **`Duration`**: Represents a signed, fixed-length span of time at nanosecond resolution.
+    *   `seconds` (Int64): Signed seconds of the span of time.
+    *   `nanos` (int): Signed fractions of a second at nanosecond resolution.
 
-**LocalizedMessage**
-Provides a localized error message that is safe to return to the user.
-```dart
-final localizedMessage = LocalizedMessage()
-  // The locale used following the specification defined at
-  // http://www.rfc-editor.org/rfc/bcp/bcp47.txt.
-  ..locale = 'en-US'
-  // The localized error message in the above locale.
-  ..message = 'You do not have permission to access this resource.';
-```
+### `google/rpc/status.pb.dart`
+*   **`Status`**: Defines a logical error model suitable for REST and RPC APIs.
+    *   `code` (int): The status code, which should be an enum value of google.rpc.Code.
+    *   `message` (String): A developer-facing error message (English).
+    *   `details` (Iterable<Any>): A list of messages that carry the error details.
 
-## 5. Configuration
-The Generated module does not require explicit configuration files or environment variables. All serialization and deserialization rely inherently on the standard implementations provided by the `protobuf` package.
+### `google/rpc/error_details.pb.dart`
+*   **`RetryInfo`**: Describes when clients can retry a failed request.
+    *   `retryDelay` (Duration): Clients should wait at least this long before retrying.
+*   **`DebugInfo`**: Describes additional debugging info.
+    *   `stackEntries` (Iterable<String>): The stack trace entries indicating where the error occurred.
+    *   `detail` (String): Additional debugging information provided by the server.
+*   **`QuotaFailure`**: Describes how a quota check failed.
+    *   `violations` (Iterable<QuotaFailure_Violation>): Describes all quota violations.
+*   **`QuotaFailure_Violation`**: A single quota violation.
+    *   `subject` (String): The subject on which the quota check failed.
+    *   `description` (String): A description of how the quota check failed.
+*   **`ErrorInfo`**: Describes the cause of the error with structured details.
+    *   `reason` (String): The reason of the error. Unique constant within a domain.
+    *   `domain` (String): The logical grouping to which the reason belongs.
+    *   `metadata` (Map<String, String>): Additional structured details about this error.
+*   **`PreconditionFailure`**: Describes what preconditions have failed.
+    *   `violations` (Iterable<PreconditionFailure_Violation>): Describes all precondition violations.
+*   **`PreconditionFailure_Violation`**: A single precondition failure.
+    *   `type` (String): The type of PreconditionFailure (e.g., "TOS").
+    *   `subject` (String): The subject, relative to the type, that failed.
+    *   `description` (String): A description of how the precondition failed.
+*   **`BadRequest`**: Describes syntactic violations in a client request.
+    *   `fieldViolations` (Iterable<BadRequest_FieldViolation>): Describes all violations.
+*   **`BadRequest_FieldViolation`**: A single bad request field.
+    *   `field_1` (String): A path leading to a field in the request body. (*Note: mapped from `field` proto keyword.*)
+    *   `description` (String): A description of why the request element is bad.
+*   **`RequestInfo`**: Metadata about the request clients can attach when filing bugs.
+    *   `requestId` (String): An opaque string identifying the request.
+    *   `servingData` (String): Any data used to serve this request (e.g., trace).
+*   **`ResourceInfo`**: Describes the resource that is being accessed.
+    *   `resourceType` (String): A name for the type of resource being accessed.
+    *   `resourceName` (String): The name of the resource being accessed.
+    *   `owner` (String): The owner of the resource (optional).
+    *   `description` (String): Describes what error is encountered when accessing this resource.
+*   **`Help`**: Provides links to documentation or out-of-band actions.
+    *   `links` (Iterable<Help_Link>): URL(s) pointing to additional information.
+*   **`Help_Link`**: A URL link.
+    *   `description` (String): Describes what the link offers.
+    *   `url` (String): The URL of the link.
+*   **`LocalizedMessage`**: A localized error message safe to return to the user.
+    *   `locale` (String): The locale used (e.g., "en-US").
+    *   `message` (String): The localized error message.
 
-Ensure your `pubspec.yaml` includes:
-- `protobuf` (Required for base `$pb.GeneratedMessage` and extensions).
-- `fixnum` (Required for `$fixnum.Int64` support for `int64` proto fields like `Duration.seconds`).
-
-## 6. Related Modules
-- `package:protobuf/protobuf.dart`: The core Dart protobuf library containing serializers, deserializers, and base classes.
-- `package:fixnum/fixnum.dart`: The library providing the 64-bit integer (`Int64`) implementation necessary for many proto-generated types.
+## 7. Related Modules
+*   `package:protobuf/protobuf.dart`: The core Dart protobuf library.
+*   `package:fixnum/fixnum.dart`: Required for handling 64-bit integers (`Int64`).
