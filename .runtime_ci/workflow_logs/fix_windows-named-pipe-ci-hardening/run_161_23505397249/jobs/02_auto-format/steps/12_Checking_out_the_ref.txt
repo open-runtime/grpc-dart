@@ -1,5 +1,0 @@
-2026-03-24T18:18:21.1260451Z ##[group]Checking out the ref
-2026-03-24T18:18:21.1264540Z [command]/usr/bin/git checkout --progress --force -B fix/windows-named-pipe-ci-hardening refs/remotes/origin/fix/windows-named-pipe-ci-hardening
-2026-03-24T18:18:21.1655285Z Switched to a new branch 'fix/windows-named-pipe-ci-hardening'
-2026-03-24T18:18:21.1659932Z branch 'fix/windows-named-pipe-ci-hardening' set up to track 'origin/fix/windows-named-pipe-ci-hardening'.
-2026-03-24T18:18:21.1667044Z ##[endgroup]

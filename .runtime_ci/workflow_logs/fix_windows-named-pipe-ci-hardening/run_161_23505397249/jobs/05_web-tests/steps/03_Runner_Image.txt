@@ -1,6 +1,0 @@
-2026-03-24T18:19:01.2553534Z ##[group]Runner Image
-2026-03-24T18:19:01.2554038Z Image: ubuntu-24.04
-2026-03-24T18:19:01.2554603Z Version: 20260309.50.1
-2026-03-24T18:19:01.2555954Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260309.50/images/ubuntu/Ubuntu2404-Readme.md
-2026-03-24T18:19:01.2557451Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260309.50
-2026-03-24T18:19:01.2558326Z ##[endgroup]
