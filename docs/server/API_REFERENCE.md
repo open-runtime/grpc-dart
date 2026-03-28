@@ -1,13 +1,13 @@
 # gRPC Server API Reference
 
-The **gRPC Server** module provides the core implementation for hosting gRPC services in Dart. It supports standard TCP/IP servers (with optional TLS), local IPC (Unix Domain Sockets and Windows Named Pipes), interceptors, and keepalive management.
+This document provides a comprehensive API reference for the **gRPC Server** module. It covers the core classes, server implementations, and configuration options required for building gRPC servers in Dart.
 
-## 1. Naming Conventions in Generated Code
+## 0. Naming Conventions (Protobuf to Dart)
 
-Protobuf definitions frequently use `snake_case` for field names. When the Dart code is generated, these are automatically converted to `camelCase` to follow Dart's idiomatic style.
+When implementing a gRPC service in Dart, all `snake_case` field names from the `.proto` files are automatically converted to `camelCase` in the generated Dart messages.
 
-| Proto Field (snake_case) | Dart Field (camelCase) |
-| :--- | :--- |
+| Proto Field Name | Dart Property Name |
+|------------------|--------------------|
 | `batch_id` | `batchId` |
 | `send_at` | `sendAt` |
 | `mail_settings` | `mailSettings` |
@@ -27,175 +27,171 @@ Protobuf definitions frequently use `snake_case` for field names. When the Dart 
 | `group_id` | `groupId` |
 | `groups_to_display` | `groupsToDisplay` |
 
-Always use the **camelCase** variant when accessing or setting fields in your service implementation or when using the builder pattern.
-
----
-
-## 2. Core Server Classes
-
-### **Server**
-The primary class for hosting gRPC services over network sockets.
-
-*   **Constructors:**
-    *   `Server.create({required List<Service> services, ServerKeepAliveOptions keepAliveOptions, List<Interceptor> interceptors, List<ServerInterceptor> serverInterceptors, CodecRegistry? codecRegistry, GrpcErrorHandler? errorHandler, int? maxInboundMessageSize})` - **Preferred** way to create a server.
-*   **Properties:**
-    *   `int? port` - The port the server is listening on. `null` if the server is not active.
-*   **Methods:**
-    *   `Future<void> serve({dynamic address, int? port, ServerCredentials? security, ServerSettings? http2ServerSettings, int backlog = 0, bool v6Only = false, bool shared = false, bool requestClientCertificate = false, bool requireClientCertificate = false})` - Starts listening for RPCs.
-    *   `Future<void> shutdown()` - Gracefully shuts down the server, draining active connections.
-
----
-
-### **LocalGrpcServer**
-A specialized server for local-only IPC, automatically selecting the best transport per platform (UDS on macOS/Linux, Named Pipes on Windows).
-
-*   **Constructors:**
-    *   `LocalGrpcServer(String serviceName, {required List<Service> services, ...})` - Creates a local server with the given service name (used for the socket/pipe path).
-*   **Properties:**
-    *   `String serviceName` - The name used for address resolution.
-    *   `bool isServing` - Whether the server is active.
-    *   `String? address` - The resolved IPC path.
-*   **Methods:**
-    *   `Future<void> serve()` - Starts the local server.
-    *   `Future<void> shutdown()` - Gracefully shuts down the local server.
-
----
-
-### **NamedPipeServer**
-A gRPC server specifically for Windows Named Pipes.
-
-*   **Constructors:**
-    *   `NamedPipeServer.create({required List<Service> services, ...})`
-*   **Properties:**
-    *   `String? pipePath` - The full Windows pipe path (`\\.\pipe\...`).
-    *   `bool isRunning` - Whether the server is running.
-*   **Methods:**
-    *   `Future<void> serve({required String pipeName, int maxInstances, ServerSettings? http2ServerSettings})` - Starts the pipe server.
-
----
-
-## 3. Service Implementation Classes
-
-### **Service** (Abstract)
-Base class for all gRPC service implementations. Your generated service stubs extend this class.
-
-*   **Properties:**
-    *   `String $name` - The full name of the service.
-*   **Methods:**
-    *   `void $onMetadata(ServiceCall call)` - Override to handle metadata for all methods in the service.
-
----
-
-### **ServiceCall**
-Contextual information for an active RPC, providing access to metadata and call lifecycle.
-
-*   **Properties:**
-    *   `Map<String, String>? clientMetadata` - Incoming headers from the client.
-    *   `Map<String, String>? headers` - Headers to be sent to the client (mutable before sending).
-    *   `Map<String, String>? trailers` - Trailers to be sent after response messages.
-    *   `DateTime? deadline` - The point in time after which the call is considered expired.
-    *   `bool isTimedOut` - `true` if the deadline has passed.
-    *   `bool isCanceled` - `true` if the client or server cancelled the call.
-    *   `X509Certificate? clientCertificate` - The peer's TLS certificate, if available.
-    *   `InternetAddress? remoteAddress` - The client's IP address.
-*   **Methods:**
-    *   `void sendHeaders()` - Manually sends the headers. Done automatically before the first response.
-    *   `void sendTrailers({int? status, String? message})` - Sends trailers and closes the call.
-
----
-
-## 4. Interceptors and Typedefs
-
-### **Interceptor**
-A simple function-based interceptor for filtering calls.
-
-*   **Typedef:** `FutureOr<GrpcError?> Function(ServiceCall call, ServiceMethod method)`
-*   Return a `GrpcError` to reject the call, or `null` to allow it.
-
-### **ServerInterceptor** (Abstract)
-A class-based interceptor that can wrap the entire request/response stream.
-
-*   **Methods:**
-    *   `Stream<R> intercept<Q, R>(ServiceCall call, ServiceMethod<Q, R> method, Stream<Q> requests, ServerStreamingInvoker<Q, R> invoker)`
-
-### **Other Typedefs**
-*   **GrpcErrorHandler**: `void Function(GrpcError error, StackTrace? trace)` - Used for global error logging.
-*   **ServerStreamingInvoker<Q, R>**: `Stream<R> Function(ServiceCall call, ServiceMethod<Q, R> method, Stream<Q> requests)`
-
----
-
-## 5. Security and KeepAlive
-
-### **ServerCredentials**
-Base class for server authentication.
-*   `ServerLocalCredentials`: Restricts connections to the loopback address.
-*   `ServerTlsCredentials`: Configures TLS using a certificate chain and private key.
-
-### **ServerKeepAliveOptions**
-*   `int? maxBadPings`: Maximum strikes before closing a connection.
-*   `Duration minIntervalBetweenPingsWithoutData`: Threshold for ping-flood protection.
-
----
-
-## 6. Usage Examples
-
-### Implementing a Service with camelCase Fields
+### Server Implementation Example
+Always use camelCase when accessing fields on the request object or constructing the response:
 
 ```dart
-import 'dart:async';
 import 'package:grpc/grpc.dart';
-// import 'src/generated/mail.pbgrpc.dart';
 
-class MailServiceImpl extends MailServiceBase {
+class MyMailService extends MailServiceBase {
   @override
   Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
-    // 1. Access snake_case proto fields using camelCase Dart fields
-    final String batchId = request.batchId;           // from batch_id
-    final Int64 sendAt = request.sendAt;              // from send_at
-    final bool sandboxMode = request.mailSettings.sandboxMode; // from sandbox_mode
+    // Accessing request fields (snake_case in proto becomes camelCase in Dart)
+    final batchId = request.batchId;             // string batch_id = 1;
+    final sendAt = request.sendAt;               // int64 send_at = 2;
+    
+    if (request.mailSettings.sandboxMode) {      // sandbox_mode
+      print('Processing sandbox mail for $batchId');
+    }
 
-    // 2. Perform business logic...
-    print('Sending batch: $batchId');
-
-    // 3. Construct response using builder pattern
+    // Constructing response using the builder pattern
     return SendMailResponse()
-      ..messageId = 'msg_${batchId}';
+      ..messageId = 'msg-123'                    // string message_id = 1;
+      ..status = 'ACCEPTED';                     // string status = 2;
   }
 }
 ```
 
-### Constructing Complex Messages
+---
 
-Use the cascade operator (`..`) for clean construction of nested messages.
+## 1. Server Implementations
+
+### Server
+The standard gRPC server that listens for incoming RPCs via TCP or TLS.
+
+- **Constructors:**
+  - `Server.create({required List<Service> services, ServerKeepAliveOptions keepAliveOptions, List<Interceptor> interceptors, List<ServerInterceptor> serverInterceptors, CodecRegistry? codecRegistry, GrpcErrorHandler? errorHandler, int? maxInboundMessageSize})`
+- **Methods:**
+  - `Future<void> serve({dynamic address, int? port, ServerCredentials? security, ServerSettings? http2ServerSettings, int backlog = 0, bool v6Only = false, bool shared = false, bool requestClientCertificate = false, bool requireClientCertificate = false})` - Starts the server.
+  - `Future<void> shutdown()` - Gracefully shuts down active connections and sockets.
+- **Properties:**
+  - `int? port` - The port the server is listening on (available after `serve`).
+
+### LocalGrpcServer
+A high-performance, local-only gRPC server that automatically selects the best IPC transport for the platform (Unix domain sockets on macOS/Linux, Named Pipes on Windows).
+
+- **Constructors:**
+  - `LocalGrpcServer(String serviceName, {required List<Service> services, List<Interceptor> interceptors, List<ServerInterceptor> serverInterceptors, CodecRegistry? codecRegistry, GrpcErrorHandler? errorHandler, ServerKeepAliveOptions keepAliveOptions, int? maxInboundMessageSize})`
+- **Methods:**
+  - `Future<void> serve()` - Starts listening on the appropriate IPC transport.
+  - `Future<void> shutdown()` - Gracefully shuts down and cleans up IPC resources (e.g., socket files).
+- **Properties:**
+  - `String serviceName` - The name used for address resolution.
+  - `String? address` - The resolved IPC address (socket path or pipe path).
+
+### NamedPipeServer
+A specialized gRPC server for Windows Named Pipes. Typically used via `LocalGrpcServer` on Windows but can be used directly.
+
+- **Constructors:**
+  - `NamedPipeServer.create({required List<Service> services, ServerKeepAliveOptions keepAliveOptions, List<Interceptor> interceptors, List<ServerInterceptor> serverInterceptors, CodecRegistry? codecRegistry, GrpcErrorHandler? errorHandler, int? maxInboundMessageSize})`
+- **Methods:**
+  - `Future<void> serve({required String pipeName, int maxInstances = 255, ServerSettings? http2ServerSettings})` - Starts the named pipe server.
+  - `Future<void> shutdown()` - Gracefully shuts down the server.
+
+---
+
+## 2. Service & Method Definitions
+
+### Service
+The base class for all gRPC service implementations. Typically, you extend a generated `ServiceBase` class.
+
+- **Methods:**
+  - `$addMethod(ServiceMethod method)` - Registers a method in the service.
+  - `$onMetadata(ServiceCall context)` - Override to handle incoming metadata before method execution.
+- **Properties:**
+  - `String get $name` - The name of the service.
+
+### ServiceCall
+The server-side context for an active gRPC call. Provides access to metadata and control over headers/trailers.
+
+- **Properties:**
+  - `Map<String, String>? clientMetadata` - Custom metadata sent by the client.
+  - `Map<String, String>? headers` - Custom metadata to be sent in the response headers.
+  - `Map<String, String>? trailers` - Custom metadata to be sent in the response trailers.
+  - `DateTime? deadline` - The deadline for the call.
+  - `bool isTimedOut` - Whether the deadline has been exceeded.
+  - `bool isCanceled` - Whether the client has canceled the call.
+  - `X509Certificate? clientCertificate` - The client certificate (for MTLS).
+  - `InternetAddress? remoteAddress` - The IP address of the client.
+- **Methods:**
+  - `void sendHeaders()` - Manually sends response headers.
+  - `void sendTrailers({int? status, String? message})` - Manually sends trailers and ends the call.
+
+### ServiceMethod<Q, R>
+Represents a single RPC method within a service.
+
+- **Properties:**
+  - `String name` - The name of the method.
+  - `bool streamingRequest` - Whether the method accepts a stream of requests.
+  - `bool streamingResponse` - Whether the method returns a stream of responses.
+
+---
+
+## 3. Middleware & Interceptors
+
+### Interceptor (Typedef)
+A simple functional interceptor called before a service method is invoked.
 
 ```dart
-final request = SendMailRequest()
-  ..batchId = 'TXN-2026'
-  ..sendAt = Int64(1774396800)
-  ..mailSettings = (MailSettings()
-    ..sandboxMode = true
-    ..enableText = true)
-  ..trackingSettings = (TrackingSettings()
-    ..clickTracking = (ClickTracking()..enable = true)
-    ..openTracking = (OpenTracking()..substitutionTag = '[open]'))
-  ..dynamicTemplateData.addAll({'name': 'Valued Customer'})
-  ..replyToList.addAll(['support@example.com', 'billing@example.com']);
+typedef Interceptor = FutureOr<GrpcError?> Function(ServiceCall call, ServiceMethod method);
 ```
 
-### Starting a Secure Server
+### ServerInterceptor
+An interceptor class that allows wrapping the entire RPC execution, including the request and response streams.
 
 ```dart
-void main() async {
-  final credentials = ServerTlsCredentials(
-    certificate: await File('server.crt').readAsBytes(),
-    privateKey: await File('server.key').readAsBytes(),
-  );
-
-  final server = Server.create(
-    services: [MailServiceImpl()],
-    interceptors: [authInterceptor],
-  );
-
-  await server.serve(port: 443, security: credentials);
+class MyServerInterceptor extends ServerInterceptor {
+  @override
+  Stream<R> intercept<Q, R>(
+    ServiceCall call,
+    ServiceMethod<Q, R> method,
+    Stream<Q> requests,
+    ServerStreamingInvoker<Q, R> invoker,
+  ) {
+    print('Intercepting: ${method.name}');
+    return invoker(call, method, requests);
+  }
 }
 ```
+
+---
+
+## 4. Security & Configuration
+
+### ServerCredentials
+- `ServerTlsCredentials({List<int>? certificate, String? certificatePassword, List<int>? privateKey, String? privateKeyPassword})` - Standard TLS credentials.
+- `ServerLocalCredentials()` - Restricts connections to the local loopback address.
+
+### ServerKeepAliveOptions
+Configuration for monitoring connection health.
+
+- **Fields:**
+  - `int? maxBadPings` - Max number of bad pings allowed before closing the connection.
+  - `Duration minIntervalBetweenPingsWithoutData` - Minimum interval expected between pings when no data is sent.
+
+### GrpcErrorHandler (Typedef)
+Global error handler for catching unhandled exceptions in service methods.
+
+```dart
+typedef GrpcErrorHandler = void Function(GrpcError error, StackTrace? trace);
+```
+
+---
+
+## 5. Advanced Lifecycle Management
+
+### ConnectionServer
+A base class for servers that manage multiple `ServerTransportConnection`s.
+
+- **Methods:**
+  - `Future<void> serveConnection({required ServerTransportConnection connection, X509Certificate? clientCertificate, InternetAddress? remoteAddress})`
+  - `Service? lookupService(String service)`
+
+### ServerHandler
+Manages the lifecycle of a single gRPC call on the server.
+
+- **Properties:**
+  - `Future<void> onCanceled` - Completes when the call is canceled.
+  - `Future<void> onTerminated` - Completes when the call terminates.
+- **Methods:**
+  - `void cancel()` - Forcefully cancels the call.

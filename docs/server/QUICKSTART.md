@@ -1,168 +1,173 @@
-# gRPC Server Quickstart
+# gRPC Server QUICKSTART
 
-The gRPC Server module provides the core infrastructure to host and serve gRPC services in Dart. It handles HTTP/2 transport protocol framing, request multiplexing, bidirectional streaming, request interception, and keepalive management.
+## 1. Overview
+The gRPC Server module provides robust, high-performance implementations for serving gRPC services in Dart. It supports standard TCP/TLS sockets, cross-platform local IPC (Unix Domain Sockets on macOS/Linux and Named Pipes on Windows), and built-in handling for interceptors, keep-alive policies, TLS credentials, and graceful timeouts/shutdowns.
 
-## 1. Import
-
-Everything needed to build a gRPC server is available through the main `package:grpc/grpc.dart` export:
+## 2. Import
+The server classes are exported through the main package entry point.
 
 ```dart
 import 'package:grpc/grpc.dart';
+
+// For Int64 support in protobuf fields:
+import 'package:fixnum/fixnum.dart';
 ```
 
-## 2. Implementing a Service
-
-To create a gRPC server, you first need to implement the service generated from your `.proto` file. The server logic lives within a class that extends the generated base service class (e.g., `MailServiceBase`).
-
-### Handling Field Names (snake_case to camelCase)
-
-Protobuf-generated Dart code converts `snake_case` field names to `camelCase`. **Always use camelCase** for Dart field access. Message and enum names remain `PascalCase` (e.g., `SendMailRequest`, `MailFrom`).
-
-| Proto Field | Dart Field | Description |
-| :--- | :--- | :--- |
-| `batch_id` | `batchId` | String identifier |
-| `send_at` | `sendAt` | Int64 timestamp |
-| `mail_settings` | `mailSettings` | Nested message |
-| `tracking_settings` | `trackingSettings` | Tracking configuration |
-| `click_tracking` | `clickTracking` | Click tracking toggle |
-| `open_tracking` | `openTracking` | Open tracking toggle |
-| `sandbox_mode` | `sandboxMode` | Boolean flag |
-| `dynamic_template_data` | `dynamicTemplateData` | Map field |
-| `content_id` | `contentId` | String content ID |
-| `custom_args` | `customArgs` | Map of custom arguments |
-| `ip_pool_name` | `ipPoolName` | IP pool identifier |
-| `reply_to` | `replyTo` | Single reply address |
-| `reply_to_list` | `replyToList` | Repeated reply addresses |
-| `template_id` | `templateId` | Template identifier |
-| `enable_text` | `enableText` | Boolean flag |
-| `substitution_tag` | `substitutionTag` | String tag |
-| `group_id` | `groupId` | Int32 group ID |
-| `groups_to_display` | `groupsToDisplay` | Repeated group IDs |
+## 3. Setup
+The standard `Server` listens on TCP sockets. Instantiate it using `Server.create()`, passing in your generated service implementations.
 
 ```dart
-import 'dart:async';
+import 'dart:io';
+import 'package:grpc/grpc.dart';
+
+// Assuming you have a generated Service implementation (e.g. MyServiceImpl)
+final server = Server.create(
+  services: [MyServiceImpl()],
+  keepAliveOptions: const ServerKeepAliveOptions(
+    maxBadPings: 2,
+    minIntervalBetweenPingsWithoutData: Duration(minutes: 5),
+  ),
+);
+
+Future<void> main() async {
+  await server.serve(
+    port: 50051,
+    address: InternetAddress.anyIPv4,
+  );
+  print('Server listening on port ${server.port}...');
+}
+```
+
+## 4. Message and Field Naming
+
+### Naming Conventions
+Protobuf-generated Dart code converts `snake_case` field names to `camelCase` to align with Dart conventions. **Always use camelCase when accessing message fields in your service implementation.**
+
+| Proto Field Name | Dart Property Name |
+|------------------|--------------------|
+| `batch_id` | `batchId` |
+| `send_at` | `sendAt` |
+| `mail_settings` | `mailSettings` |
+| `tracking_settings` | `trackingSettings` |
+| `click_tracking` | `clickTracking` |
+| `open_tracking` | `openTracking` |
+| `sandbox_mode` | `sandboxMode` |
+| `dynamic_template_data` | `dynamicTemplateData` |
+| `content_id` | `contentId` |
+| `custom_args` | `customArgs` |
+| `ip_pool_name` | `ipPoolName` |
+| `reply_to` | `replyTo` |
+| `reply_to_list` | `replyToList` |
+| `template_id` | `templateId` |
+| `enable_text` | `enableText` |
+| `substitution_tag` | `substitutionTag` |
+| `group_id` | `groupId` |
+| `groups_to_display` | `groupsToDisplay` |
+
+### Implementing a Service (Example)
+The following example demonstrates implementing a `MailService` that processes a complex `SendMailRequest`. Note the use of `camelCase` for all field access and the builder pattern for constructing the response.
+
+```dart
 import 'package:grpc/grpc.dart';
 import 'package:fixnum/fixnum.dart';
-import 'src/generated/mail.pbgrpc.dart'; // Assume generated protos
+// Assuming generated files from mail.proto
+import 'src/generated/mail.pbgrpc.dart';
 
-class MailServiceImpl extends MailServiceBase {
+class MailService extends MailServiceBase {
   @override
   Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
-    // 1. Access fields using camelCase:
-    final String batchId = request.batchId; // batch_id
-    final Int64 sendAt = request.sendAt;   // send_at
-    final MailSettings mailSettings = request.mailSettings; // mail_settings
+    // 1. Access request fields using camelCase
+    final String batchId = request.batchId; // from batch_id
+    final Int64 sendAt = request.sendAt;    // from send_at
     
-    // 2. Access nested message and its fields:
-    final bool isSandbox = request.mailSettings.sandboxMode; // sandbox_mode
-    final bool textEnabled = request.mailSettings.enableText; // enable_text
+    if (request.mailSettings.sandboxMode) { // from mail_settings.sandbox_mode
+      print('Processing in sandbox mode for batch $batchId');
+    }
 
-    // 3. Access enum fields:
-    final MailFrom sender = request.mailFrom; // mail_from
+    // Access nested fields
+    final bool clickTrackingEnabled = request.trackingSettings.clickTracking.enable;
+    final String? subTag = request.trackingSettings.openTracking.substitutionTag;
 
-    // 4. Access map fields:
-    final Map<String, String> dynamicData = request.dynamicTemplateData;
+    // Handle repeated fields and maps
+    request.replyToList.forEach((email) => print('Reply-to: $email'));
+    request.dynamicTemplateData.forEach((key, value) => print('$key: $value'));
 
-    // 5. Access repeated fields:
-    final List<String> recipients = request.replyToList;
-
-    print('Processing batch $batchId to be sent at $sendAt');
-
-    // 6. Construct response using camelCase:
+    // 2. Build and return the response using camelCase
     return SendMailResponse()
-      ..messageId = 'msg_$batchId'; // message_id
+      ..messageId = 'msg-${DateTime.now().millisecondsSinceEpoch}'
+      ..batchId = batchId
+      ..status = SendStatus.SUCCESS; // Enum access
   }
 }
 ```
 
-## 3. Creating and Starting the Server
+## 5. Common Operations
 
-Instantiate the `Server` class using `Server.create()`, passing in your service implementations.
-
-```dart
-import 'package:grpc/grpc.dart';
-
-final server = Server.create(
-  services: [MailServiceImpl()],
-  keepAliveOptions: ServerKeepAliveOptions(
-    maxBadPings: 2,
-    minIntervalBetweenPingsWithoutData: Duration(minutes: 5),
-  ),
-  maxInboundMessageSize: 4 * 1024 * 1024, // 4MB limit
-);
-
-Future<void> main() async {
-  // Listen on all interfaces on port 50051
-  await server.serve(port: 50051);
-  print('Server listening on port ${server.port}');
-}
-```
-
-## 4. Local IPC Servers
-
-For machine-to-machine communication on the same host, use `LocalGrpcServer`. This avoids opening network ports and uses the best available transport:
-- **macOS/Linux**: Unix Domain Sockets
-- **Windows**: Named Pipes
+### Cross-Platform Local IPC
+For secure, local-only communication, `LocalGrpcServer` automatically selects Unix Domain Sockets (macOS/Linux) or Named Pipes (Windows).
 
 ```dart
 final localServer = LocalGrpcServer(
-  'my-app-service', // Service name used for the socket/pipe path
-  services: [MailServiceImpl()],
+  'my-local-service', 
+  services: [MailService()],
 );
 
 await localServer.serve();
-print('Local server serving at: ${localServer.address}');
+print('Serving locally on: ${localServer.address}');
+
+await localServer.shutdown();
 ```
 
-## 5. Service Context (`ServiceCall`)
-
-The `ServiceCall` object provides access to client metadata and allows you to set response headers and trailers.
+### Service Call Context
+The `ServiceCall` object provides access to call-specific metadata and lifecycle state.
 
 ```dart
 @override
 Future<SendMailResponse> sendMail(ServiceCall call, SendMailRequest request) async {
-  // Read incoming metadata
-  final token = call.clientMetadata?['authorization'];
+  // Check if client has canceled the call
+  if (call.isCanceled) {
+    throw GrpcError.cancelled('Client canceled the request');
+  }
 
   // Check deadline
-  if (call.isTimedOut) {
+  if (call.deadline != null && call.isTimedOut) {
     throw GrpcError.deadlineExceeded('Call timed out');
   }
 
-  // Set response headers (must be done before first message)
-  call.headers?['x-server-id'] = 'node-1';
-  call.sendHeaders(); // Optional: send early
+  // Access metadata (headers) sent by the client
+  final auth = call.clientMetadata?['authorization'];
 
-  // Set response trailers
-  call.trailers?['x-request-cost'] = '1.25';
+  // Send custom headers back to the client
+  call.headers?['x-server-id'] = 'node-01';
+  call.sendHeaders(); // Optional: headers are sent automatically with first response
 
-  return SendMailResponse()..messageId = 'done';
+  // Set trailers (sent after all responses)
+  call.trailers?['x-processing-time'] = '45ms';
+
+  return SendMailResponse()..status = SendStatus.SUCCESS;
 }
 ```
 
-## 6. Interceptors
-
-Interceptors allow you to run middleware before a service method is invoked.
-
-### Simple Interceptor
-Used for authentication or logging. Return `null` to allow the call, or a `GrpcError` to reject it.
+### Request Interceptors
+Interceptors can be used for authentication, logging, or rate limiting. They are executed before the service method.
 
 ```dart
 FutureOr<GrpcError?> authInterceptor(ServiceCall call, ServiceMethod method) {
-  if (call.clientMetadata?['authorization'] != 'secret') {
+  final token = call.clientMetadata?['authorization'];
+  if (token != 'Bearer my-secret-token') {
     return GrpcError.unauthenticated('Invalid token');
   }
-  return null;
+  return null; // Proceed to service method
 }
 
 final server = Server.create(
-  services: [MailServiceImpl()],
+  services: [MailService()],
   interceptors: [authInterceptor],
 );
 ```
 
-### Server Interceptor
-Used for advanced stream modification or global error wrapping.
+### Advanced: Streaming Interceptors
+For more control over the request/response streams, implement `ServerInterceptor`.
 
 ```dart
 class LoggingInterceptor extends ServerInterceptor {
@@ -173,30 +178,20 @@ class LoggingInterceptor extends ServerInterceptor {
     Stream<Q> requests,
     ServerStreamingInvoker<Q, R> invoker,
   ) {
-    print('Starting RPC: ${method.name}');
+    print('Intercepting RPC: ${method.name}');
     return invoker(call, method, requests);
   }
 }
 ```
 
-## 7. Security (TLS)
+## 6. Configuration Reference
+- **`ServerKeepAliveOptions`**: Controls HTTP/2 keep-alive behavior (e.g., `maxBadPings`, `minIntervalBetweenPingsWithoutData`).
+- **`ServerCredentials`**: Define TLS security context using `ServerTlsCredentials` or restrict clients to localhost using `ServerLocalCredentials`.
+- **`CodecRegistry`**: Automatically compress/decompress streams (e.g., gzip).
+- **`GrpcErrorHandler`**: Intercept global errors and add metadata/logging before failing the stream.
+- **`maxInboundMessageSize`**: Limits the size of an incoming payload protecting the server from OOM.
 
-Use `ServerTlsCredentials` to configure encryption for production environments.
-
-```dart
-final credentials = ServerTlsCredentials(
-  certificate: File('server.crt').readAsBytesSync(),
-  privateKey: File('server.key').readAsBytesSync(),
-);
-
-await server.serve(port: 443, security: credentials);
-```
-
-## 8. Graceful Shutdown
-
-Always shut down the server to ensure in-flight RPCs are drained and IPC resources (like socket files) are cleaned up.
-
-```dart
-await server.shutdown();
-print('Server stopped.');
-```
+## 7. Related Modules
+- **Client**: Module for connecting to gRPC services via TCP, Local IPC, or Web.
+- **Shared**: Status definitions (`GrpcError`), Stream utilities, and Codec Registry.
+- **HTTP/2 Transport**: Low-level networking transport for HTTP/2 framing.

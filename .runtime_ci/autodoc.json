@@ -54,8 +54,8 @@
         "api_reference",
         "examples"
       ],
-      "hash": "2881ac49f62a26bb3529c1a69310a258f2b00e6fef2e83f0844e364ff71a0308",
-      "last_updated": "2026-03-25T02:14:38.177937Z"
+      "hash": "4e56393838d2965a10b0116366916ef497025534211ed3e13616009d195345fe",
+      "last_updated": "2026-03-28T18:26:16.636324Z"
     },
     {
       "id": "shared",
@@ -99,8 +99,8 @@
       "generate": [
         "quickstart"
       ],
-      "hash": "e3b536795e1c3a5b55cafb4b66365dfdd92cdae88457a36f7c2d1b9bb76c317b",
-      "last_updated": "2026-03-25T02:14:38.177948Z"
+      "hash": "e0227c92333bded03a94b2287b9ce1a0dcb72dffa479e5c14f291a789a48f033",
+      "last_updated": "2026-03-28T18:26:16.637092Z"
     },
     {
       "id": "generated",
