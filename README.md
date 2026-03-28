@@ -6,7 +6,7 @@
 This is the **open-runtime fork** of the official [grpc/grpc-dart](https://github.com/grpc/grpc-dart) package, maintained with critical production fixes and enhancements.
 
 **Key Features:**
-- **Currently v5.5.0** (Based on upstream 5.0.0 with fork-specific improvements)
+- **Currently v5.5.1** (Based on upstream 5.0.0 with fork-specific improvements)
 - Vendored `http2` implementation for precise connection and flow control
 - Local IPC support via Unix Domain Sockets and Windows Named Pipes (see [LOCAL_IPC_GUIDE.md](docs/LOCAL_IPC_GUIDE.md))
 - Race condition fixes for production stability
@@ -32,7 +32,7 @@ Add the following to your `pubspec.yaml` to use the latest version of this fork:
 
 ```yaml
 dependencies:
-  grpc: ^5.5.0
+  grpc: ^5.5.1
 ```
 
 ## Learn more

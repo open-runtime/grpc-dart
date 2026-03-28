@@ -1,0 +1,16 @@
+{
+  "pull_requests": [
+    {
+      "number": 52,
+      "title": "fix(server): send gRPC CANCELLED trailers on handler cancel when response started",
+      "author": "tsavo-at-pieces",
+      "labels": [],
+      "summary": "When cancel() is called on a ServerHandler that has already sent response headers, it now attempts to send proper gRPC trailers (grpc-status: 1 CANCELLED) before falling back to RST_STREAM. This allows clients to distinguish a server-initiated cancel from a network failure, improving retry logic and error diagnostics.",
+      "commits": [
+        "7009bf69b1dff4cf1e326c1af6c342d94507e202",
+        "8a69a6a5767b8d32b175e2d1cc65d57ea19bb589",
+        "43e396ab98f3347aa3cb7e1126dd62a9c8380b2f"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "version": "5.5.2",
+  "previous_version": "v5.5.1",
+  "total_commits": 3,
+  "categories": {
+    "added": [],
+    "changed": [
+      {
+        "description": "Regenerate module documentation [skip ci]",
+        "pr": "#52",
+        "commits": [
+          "8a69a6a5767b8d32b175e2d1cc65d57ea19bb589"
+        ]
+      }
+    ],
+    "deprecated": [],
+    "removed": [],
+    "fixed": [
+      {
+        "description": "Send gRPC CANCELLED trailers on handler cancel when response started to improve retry logic and error diagnostics",
+        "pr": "#52",
+        "commits": [
+          "7009bf69b1dff4cf1e326c1af6c342d94507e202",
+          "43e396ab98f3347aa3cb7e1126dd62a9c8380b2f"
+        ]
+      }
+    ],
+    "security": []
+  }
+}
