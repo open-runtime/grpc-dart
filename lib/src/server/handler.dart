@@ -657,9 +657,27 @@ class ServerHandler extends ServiceCall {
       );
     });
     _incomingSubscription?.cancel();
-    // If trailers already started the graceful end-of-stream path, avoid
+    // Send proper gRPC CANCELLED trailers when possible so clients see a typed
+    // status instead of an opaque RST_STREAM. Only attempt this when the
+    // response has already started (_headersSent) -- if no headers were sent,
+    // there's no gRPC response context to attach trailers to and RST_STREAM
+    // is the correct signal.
+    if (_headersSent && !_trailersSent) {
+      try {
+        _sendError(GrpcError.cancelled('Cancelled'));
+      } catch (e) {
+        logGrpcEvent(
+          '[gRPC] Failed to send CANCELLED trailers in cancel: $e',
+          component: 'ServerHandler',
+          event: 'cancel_send_error',
+          context: 'cancel',
+          error: e,
+        );
+      }
+    }
+    // If trailers already started the graceful end-of-stream path (either
+    // from the _sendError above or an earlier sendTrailers call), avoid
     // racing that close with an immediate RST_STREAM from cancel().
-    // We still run all cleanup above so shutdown does not leak handlers.
     if (!_trailersSent) {
       _terminateStream();
     }
