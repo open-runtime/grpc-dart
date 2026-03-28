@@ -813,4 +813,51 @@ void main() {
       ).timeout(const Duration(seconds: 10), onTimeout: () => fail('channel shutdown hung after server shutdown'));
     }, udsTimeout: const Timeout(Duration(seconds: 90)));
   });
+
+  // ---------------------------------------------------------------------------
+  // Cancel-after-response: gRPC CANCELLED trailers
+  // ---------------------------------------------------------------------------
+  group('Cancel sends CANCELLED trailers when response already started', () {
+    testTcpAndUds('shutdown after data is flowing delivers GrpcError.cancelled to client', (address) async {
+      final server = Server.create(services: [EchoService()]);
+      await server.serve(address: address, port: 0);
+      addTearDown(() => server.shutdown());
+
+      final channel = createTestChannel(address, server.port!);
+      addTearDown(() => channel.shutdown());
+      final client = EchoClient(channel);
+
+      final firstItemReceived = Completer<void>();
+      final streamFuture = settleRpc(client.serverStream(255).listen(
+        (_) {
+          if (!firstItemReceived.isCompleted) firstItemReceived.complete();
+        },
+      ).asFuture<void>());
+
+      await firstItemReceived.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('No data received before shutdown'),
+      );
+
+      await server.shutdown().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => fail('shutdown hung'),
+      );
+
+      final result = await streamFuture.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('client stream did not settle after shutdown'),
+      );
+
+      expect(result, isA<GrpcError>(), reason: 'Client should receive a GrpcError after shutdown');
+      final error = result as GrpcError;
+      expect(
+        error.code,
+        anyOf(equals(StatusCode.cancelled), equals(StatusCode.unavailable)),
+        reason:
+            'Client should see CANCELLED (handler trailers) or UNAVAILABLE '
+            '(GOAWAY), got code ${error.code}: ${error.message}',
+      );
+    });
+  });
 }
