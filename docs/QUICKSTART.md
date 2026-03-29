@@ -1,240 +1,209 @@
-# gRPC Client Quickstart
+# gRPC Dart Package Entry Points - Quickstart
 
 ## 1. Overview
-The gRPC Client module provides the foundational classes and transports required to communicate with gRPC and gRPC-Web servers. It includes full support for HTTP/2 based gRPC, gRPC-Web via XHR, and local inter-process communication (IPC) via Unix domain sockets and Windows named pipes. Developers use this module to configure connection channels, apply interceptors, manage connection states, and execute unary or streaming Remote Procedure Calls (RPCs).
+The gRPC Package Entry Points module provides the top-level public APIs required to build gRPC clients and servers in Dart. It exports the classes and utilities needed for configuring channels, creating servers, implementing services, and handling authentication.
 
-## 2. Import
-The client classes are exported through the main package entry points.
+This package supports multiple transport layers:
+-   **Native (HTTP/2)**: Standard gRPC for server-to-server and mobile communication.
+-   **gRPC-Web**: For web applications using the gRPC-Web protocol.
+-   **Local IPC**: High-performance local communication using Unix Domain Sockets (macOS/Linux) or Named Pipes (Windows).
+
+## 2. Imports
+Depending on your target platform and needs, you can import different entry points. Always use the `package:grpc-dart/` prefix for imports.
 
 ```dart
-// For standard HTTP/2 and IPC gRPC clients:
-import 'package:grpc/grpc.dart';
+// Main entry point for native (io) gRPC clients and servers
+import 'package:grpc-dart/grpc.dart';
 
-// For Int64 support in protobuf fields:
-import 'package:fixnum/fixnum.dart';
+// Entry point for web-only clients (gRPC-Web)
+import 'package:grpc-dart/grpc_web.dart';
 
-// For gRPC-Web clients (browser environments):
-import 'package:grpc/grpc_web.dart'; 
+// Cross-platform entry point that automatically selects native gRPC or gRPC-Web
+import 'package:grpc-dart/grpc_or_grpcweb.dart';
+
+// Common utility types like Duration and detailed ErrorInfo
+import 'package:grpc-dart/protos.dart';
+
+// Minimal API surface intended primarily for generated stubs
+import 'package:grpc-dart/service_api.dart';
 ```
 
-## 3. Setup
-To get started, instantiate a client channel and pass it to your generated service client stub (which extends the base `Client` class). 
+## 3. Client Setup
+
+### Native HTTP/2 Channel
+Used for standard gRPC communication over TCP/TLS.
 
 ```dart
-// 1. Configure the credentials (e.g., insecure for local development)
-final credentials = ChannelCredentials.insecure();
+import 'package:grpc-dart/grpc.dart';
 
-// 2. Configure channel options
-final options = ChannelOptions(
-  credentials: credentials,
-  idleTimeout: Duration(minutes: 5),
-  connectTimeout: Duration(seconds: 5),
-);
-
-// 3. Instantiate the standard HTTP/2 client channel
 final channel = ClientChannel(
   'localhost',
-  port: 50051,
-  options: options,
-);
-
-// Alternative: gRPC-Web (requires a gRPC-Web proxy like Envoy)
-// final webChannel = GrpcWebClientChannel.xhr(Uri.parse('http://localhost:8080'));
-
-// Alternative: Local IPC (Unix domain sockets on macOS/Linux or Named Pipes on Windows)
-// final localChannel = LocalGrpcChannel('my-service');
-```
-
-## 4. Executing RPCs
-
-Once your channel is set up, you can execute RPCs using your generated client stub. Below are examples using a hypothetical `RouteGuide` and `MailService`.
-
-### Unary RPC
-A simple RPC where the client sends a single request and receives a single response.
-
-```dart
-// Obtains the feature at a given position.
-final stub = RouteGuideClient(channel);
-final point = Point()
-  ..latitude = 409146138
-  ..longitude = -746188606;
-
-try {
-  final feature = await stub.getFeature(point);
-  print('Found feature "${feature.name}" at ${feature.location}');
-} catch (e) {
-  print('Error: $e');
-}
-```
-
-### Server-to-Client Streaming RPC
-The client sends a single request and gets a stream to read a sequence of messages back.
-
-```dart
-// Obtains the Features available within the given Rectangle.
-final rect = Rectangle()
-  ..lo = (Point()..latitude = 400000000..longitude = -750000000)
-  ..hi = (Point()..latitude = 420000000..longitude = -730000000);
-
-final responseStream = stub.listFeatures(rect);
-await for (var feature in responseStream) {
-  print('Feature: ${feature.name}');
-}
-```
-
-### Client-to-Server Streaming RPC
-The client writes a sequence of messages and sends them to the server using a provided stream.
-
-```dart
-// Accepts a stream of Points on a route being traversed, returning a RouteSummary.
-final points = [
-  Point()..latitude = 40712776..longitude = -74005974,
-  Point()..latitude = 34052235..longitude = -118243683,
-];
-
-final summary = await stub.recordRoute(Stream.fromIterable(points));
-print('Finished route with ${summary.pointCount} points.');
-```
-
-### Bidirectional Streaming RPC
-Both sides send a sequence of messages using a read-write stream.
-
-```dart
-// Accepts a stream of RouteNotes while receiving other RouteNotes.
-final notes = [
-  RouteNote()..message = 'First note'..location = points[0],
-  RouteNote()..message = 'Second note'..location = points[1],
-];
-
-final chatStream = stub.routeChat(Stream.fromIterable(notes));
-await for (var note in chatStream) {
-  print('Received note: ${note.message} at ${note.location}');
-}
-```
-
-## 5. Message and Field Naming
-
-### Naming Conventions
-Protobuf-generated Dart code converts `snake_case` field names to `camelCase` to align with Dart conventions. **Always use camelCase when accessing message fields in Dart code.**
-
-| Proto Field Name | Dart Property Name |
-|------------------|--------------------|
-| `batch_id` | `batchId` |
-| `send_at` | `sendAt` |
-| `mail_settings` | `mailSettings` |
-| `tracking_settings` | `trackingSettings` |
-| `click_tracking` | `clickTracking` |
-| `open_tracking` | `openTracking` |
-| `sandbox_mode` | `sandboxMode` |
-| `dynamic_template_data` | `dynamicTemplateData` |
-| `content_id` | `contentId` |
-| `custom_args` | `customArgs` |
-| `ip_pool_name` | `ipPoolName` |
-| `reply_to` | `replyTo` |
-| `reply_to_list` | `replyToList` |
-| `template_id` | `templateId` |
-| `enable_text` | `enableText` |
-| `substitution_tag` | `substitutionTag` |
-| `group_id` | `groupId` |
-| `groups_to_display` | `groupsToDisplay` |
-
-### Complex Message Example
-The following example demonstrates constructing a complex `SendMailRequest` message using the builder pattern (cascades) and correct `camelCase` field access.
-
-```dart
-final mailStub = MailServiceClient(channel);
-
-final request = SendMailRequest()
-  ..batchId = 'batch-123' // string batch_id = 1;
-  ..sendAt = Int64(1679700000) // int64 send_at = 2;
-  ..mailSettings = (MailSettings()
-    ..sandboxMode = true // bool sandbox_mode = 1; (Whether to run in sandbox mode)
-    ..enableText = true // bool enable_text = 2; (Whether to enable text format)
-  )
-  ..trackingSettings = (TrackingSettings()
-    ..clickTracking = (ClickTracking() // ClickTracking click_tracking = 1;
-      ..enable = true
-      ..enableText = true // bool enable_text = 2; (Enable text for click tracking)
-    )
-    ..openTracking = (OpenTracking() // OpenTracking open_tracking = 2;
-      ..enable = true
-      ..substitutionTag = '[open]' // string substitution_tag = 2; (The substitution tag)
-    )
-  )
-  ..dynamicTemplateData.addAll({ // map<string, string> dynamic_template_data = 5;
-    'user_name': 'Dart Developer',
-    'plan': 'Pro',
-  })
-  ..contentId = 'template-v1' // string content_id = 6;
-  ..customArgs.addAll({ // map<string, string> custom_args = 7;
-    'internal_id': '88990',
-  })
-  ..ipPoolName = 'transactional-pool' // string ip_pool_name = 8;
-  ..replyTo = 'support@example.com' // string reply_to = 9;
-  ..replyToList.addAll(['billing@example.com', 'dev@example.com']) // repeated string reply_to_list = 10;
-  ..templateId = 'd-998877' // string template_id = 11;
-  ..groupId = 42 // int32 group_id = 12;
-  ..groupsToDisplay.addAll([1, 2, 3]) // repeated int32 groups_to_display = 13;
-  ..mailFrom = MailFrom.MAIL_FROM_SUPPORT; // MailFrom mail_from = 14; (Enum value)
-
-final response = await mailStub.sendMail(request);
-print('Mail sent with ID: ${response.messageId}');
-```
-
-## 6. Using Interceptors
-You can define a `ClientInterceptor` to inject headers, log requests, or handle errors globally. Interceptors are applied in the order they are provided.
-
-```dart
-class AuthInterceptor extends ClientInterceptor {
-  final String token;
-  AuthInterceptor(this.token);
-
-  @override
-  ResponseFuture<R> interceptUnary<Q, R>(
-    ClientMethod<Q, R> method,
-    Q request,
-    CallOptions options,
-    ClientUnaryInvoker<Q, R> invoker,
-  ) {
-    // Add authorization header to the call metadata
-    final newOptions = options.mergedWith(
-      CallOptions(metadata: {'authorization': 'Bearer $token'}),
-    );
-    return invoker(method, request, newOptions);
-  }
-}
-
-final stubWithAuth = MailServiceClient(
-  channel,
-  interceptors: [AuthInterceptor('SECRET_TOKEN')],
+  port: 8080,
+  options: const ChannelOptions(
+    credentials: ChannelCredentials.insecure(), // Use secure() for TLS
+    idleTimeout: Duration(minutes: 5),
+  ),
 );
 ```
 
-## 7. Cleaning Up
-Channels maintain persistent connections. Always shut them down when they are no longer needed to release OS resources (like sockets or pipe handles).
+### Cross-Platform (Native & Web)
+This channel automatically selects the appropriate implementation based on the platform.
 
 ```dart
-// Gracefully shut down the channel, allowing active RPCs to finish
-await channel.shutdown();
+import 'package:grpc-dart/grpc_or_grpcweb.dart';
 
-// Or forcefully terminate the connection immediately (cancels active calls)
-// await channel.terminate();
+final channel = GrpcOrGrpcWebClientChannel.toSingleEndpoint(
+  host: 'api.example.com',
+  port: 443,
+  transportSecure: true,
+);
 ```
 
-## 8. Configuration Reference
+### Local IPC Channel
+Provides the best performance for same-machine communication.
 
-### `ChannelOptions`
-Used when constructing a `ClientChannel` or `LocalGrpcChannel`.
-- **`credentials`**: A `ChannelCredentials` instance (e.g., `secure()` or `insecure()`).
-- **`idleTimeout`**: Time before idle connections are proactively closed.
-- **`connectTimeout`**: Maximum time allowed to establish a connection.
-- **`keepAlive`**: A `ClientKeepAliveOptions` instance to configure pings for health monitoring.
-- **`maxInboundMessageSize`**: Limits the maximum allowed size of incoming messages.
+```dart
+import 'package:grpc-dart/grpc.dart';
 
-### `CallOptions` & `WebCallOptions`
-Passed to individual RPCs to configure per-call behavior.
-- **`metadata`**: A `Map<String, String>` of custom headers.
-- **`timeout`**: Maximum duration the specific call is allowed to take.
-- **`compression`**: Specify a codec (e.g., `GzipCodec()`) for request compression.
-- **`bypassCorsPreflight`** *(WebCallOptions only)*: Packs headers into a query parameter to avoid CORS preflights.
-- **`withCredentials`** *(WebCallOptions only)*: Sends cookies/credentials with the XHR request.
+// Automatically uses Unix Domain Sockets on Linux/macOS and Named Pipes on Windows
+final channel = LocalGrpcChannel('my-service');
+```
+
+## 4. Server Setup
+
+### Native Server
+```dart
+import 'package:grpc-dart/grpc.dart';
+
+Future<void> main() async {
+  final server = Server.create(
+    services: [MyServiceImplementation()],
+    interceptors: [loggingInterceptor],
+    codecRegistry: CodecRegistry(codecs: const [GzipCodec(), IdentityCodec()]),
+  );
+
+  await server.serve(port: 8080);
+  print('Server listening on port ${server.port}...');
+}
+```
+
+### Local IPC Server
+```dart
+import 'package:grpc-dart/grpc.dart';
+
+final server = LocalGrpcServer(
+  'my-service',
+  services: [MyServiceImplementation()],
+);
+await server.serve();
+```
+
+## 5. Working with Utility Protos
+The `package:grpc-dart/protos.dart` library provides access to common RPC and Protobuf utility types.
+
+### Duration
+Protobuf `Duration` can be converted to and from native Dart `Duration`.
+
+```dart
+import 'package:grpc-dart/protos.dart';
+import 'package:fixnum/fixnum.dart';
+
+// 1. Constructing a Proto Duration using cascades
+final protoDuration = Duration()
+  ..seconds = Int64(30) // Signed seconds of the span of time
+  ..nanos = 500000000;  // Signed fractions of a second at nanosecond resolution
+
+// 2. Conversion methods
+final dartDuration = protoDuration.toDart();
+final backToProto = Duration.fromDart(const Duration(minutes: 1));
+```
+
+### Structured Error Details
+Structured errors provide rich context to clients beyond a simple status code.
+
+```dart
+import 'package:grpc-dart/grpc.dart';
+import 'package:grpc-dart/protos.dart';
+import 'package:fixnum/fixnum.dart';
+
+// 1. Constructing a QuotaFailure
+final violation = QuotaFailure_Violation()
+  ..subject = 'user:123'
+  ..description = 'Daily API rate limit exceeded';
+
+final quotaFailure = QuotaFailure()
+  ..violations.add(violation);
+
+// 2. Constructing a RetryInfo
+final retryInfo = RetryInfo()
+  ..retryDelay = (Duration()..seconds = Int64(60));
+
+// 3. Throwing a GrpcError with structured details
+throw GrpcError.resourceExhausted(
+  'Quota exceeded',
+  [quotaFailure, retryInfo],
+);
+```
+
+### Supported Message Types
+The following messages from `google/rpc/error_details.proto` are available:
+
+*   **`RetryInfo`**: Recommends when to retry.
+    *   `retryDelay`: The delay before retrying.
+*   **`DebugInfo`**: Detailed stack traces.
+    *   `stackEntries`: List of stack trace entries.
+    *   `detail`: Additional debugging information.
+*   **`QuotaFailure`**: Details about quota violations.
+    *   `violations`: List of `QuotaFailure_Violation` objects.
+*   **`ErrorInfo`**: Machine-readable error cause.
+    *   `reason`: Error reason identifier (e.g., `API_DISABLED`).
+    *   `domain`: The logical grouping of the error (e.g., `googleapis.com`).
+    *   `metadata`: Map of additional structured details.
+*   **`PreconditionFailure`**: Requirements that were not met.
+    *   `violations`: List of `PreconditionFailure_Violation` objects.
+*   **`BadRequest`**: Syntactic violations in the request.
+    *   `fieldViolations`: List of `BadRequest_FieldViolation` objects.
+*   **`RequestInfo`**: Metadata for bug reporting.
+    *   `requestId`: Opaque string identifying the request.
+    *   `servingData`: Encrypted trace or server-specific data.
+*   **`ResourceInfo`**: The resource being accessed.
+    *   `resourceType`: Name of the resource type (e.g., `sql table`).
+    *   `resourceName`: Unique name of the resource.
+    *   `owner`: Owner of the resource (optional).
+    *   `description`: Description of the error encountered.
+*   **`Help`**: Links to documentation.
+    *   `links`: List of `Help_Link` objects (containing `description` and `url`).
+-   **`LocalizedMessage`**: User-facing error message.
+    *   `locale`: The BCP-47 locale (e.g., `en-US`).
+    *   `message`: The translated error message.
+-   **`Any`**: A generic message wrapper.
+    *   `typeUrl`: URL identifying the type of the serialized message.
+    *   `value`: The serialized message bytes.
+-   **`Status`**: The standard error model.
+    *   `code`: The status code.
+    *   `message`: A developer-facing error message.
+    *   `details`: A list of messages that carry error details (typically `Any` messages).
+
+
+## 6. Configuration Reference
+
+### ChannelOptions
+Controls client connection behavior.
+- `credentials`: Security settings (`ChannelCredentials.secure()` or `insecure()`).
+- `idleTimeout`: Duration to keep an idle connection open.
+- `connectTimeout`: Maximum time for connection establishment.
+- `connectionTimeout`: Proactive refresh interval (default 50 mins).
+- `maxInboundMessageSize`: Limit on incoming payload size in bytes.
+- `backoffStrategy`: Custom exponential backoff logic.
+- `userAgent`: Custom string for the `User-Agent` header.
+
+### ServerKeepAliveOptions
+Configures server-side health checks.
+- `maxBadPings`: Number of out-of-interval pings tolerated before termination.
+- `minIntervalBetweenPingsWithoutData`: Expected minimum time between pings when no data is flowing.
+
+### ClientKeepAliveOptions
+Configures client-side health checks.
+- `pingInterval`: How often to send a keep-alive ping.
+- `timeout`: Wait time for ping response before closing.
+- `permitWithoutCalls`: Send pings even when there are no active RPCs.
