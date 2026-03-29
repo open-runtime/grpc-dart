@@ -190,7 +190,8 @@ class NamedPipeServer extends ConnectionServer {
   /// [maxInstances] controls the maximum number of simultaneous named-pipe
   /// instances created by the server accept loop. Defaults to
   /// [PIPE_UNLIMITED_INSTANCES]. Primarily useful in tests that need to
-  /// force `ERROR_PIPE_BUSY` conditions.
+  /// force pipe-instance exhaustion (the accept loop retries with backoff
+  /// until an instance becomes available).
   ///
   /// [http2ServerSettings] configures the HTTP/2 transport for each
   /// connection. If `null`, uses the default (65 535-byte stream window,
@@ -1318,10 +1319,27 @@ Future<void> _acceptLoop(_AcceptLoopConfig config) async {
 
       if (hPipe == INVALID_HANDLE_VALUE) {
         final error = GetLastError();
-        // With a bounded maxInstances configuration (e.g. maxInstances=1),
-        // CreateNamedPipe can transiently fail with ERROR_PIPE_BUSY while all
-        // current instances are connected. Retry instead of failing the server.
-        if (error == ERROR_PIPE_BUSY) {
+        // With bounded maxInstances, CreateNamedPipe fails when all
+        // instances are in use. The exact error code is unreliable:
+        //
+        //  - ERROR_PIPE_BUSY (231): observed in practice despite being
+        //    documented primarily for client-side CreateFile.
+        //  - ERROR_ACCESS_DENIED (5): the Microsoft docs for
+        //    CreateNamedPipe document this for exceeding instance limits
+        //    and parameter mismatches.
+        //  - Error 0: Dart FFI clears GetLastError() between the
+        //    failing FFI call and our read (dart-lang/sdk#38832),
+        //    yielding ERROR_SUCCESS for what is actually a busy/denied
+        //    condition. Confirmed on Windows ARM64.
+        //
+        // After the first successful instance (readySent), pipe name
+        // and parameters are validated, so the only realistic failure
+        // is instance exhaustion. Retry with backoff regardless of the
+        // specific error code. The shouldStop flag prevents infinite
+        // retry during shutdown.
+        final isTransientBusy =
+            error == ERROR_PIPE_BUSY || (readySent && config.maxInstances < PIPE_UNLIMITED_INSTANCES);
+        if (isTransientBusy) {
           await Future<void>.delayed(Duration(milliseconds: pipeBusyBackoffMs));
           if (pipeBusyBackoffMs < 50) {
             pipeBusyBackoffMs = (pipeBusyBackoffMs * 2).clamp(1, 50);
